@@ -255,7 +255,7 @@ export default function AttendanceUploadPage() {
 
             // Create mapping
             const profileMap = new Map<number, string>();
-            profiles.forEach(p => {
+            profiles.forEach((p: { id: string; employee_id: number | null }) => {
                 if (p.employee_id) profileMap.set(p.employee_id, p.id);
             });
 
@@ -428,8 +428,8 @@ export default function AttendanceUploadPage() {
             {/* Upload Result */}
             {uploadResult && (
                 <div className={`glass-panel p-4 rounded-xl border-l-4 ${uploadResult.success
-                        ? 'border-emerald-500 bg-emerald-500/10'
-                        : 'border-amber-500 bg-amber-500/10'
+                    ? 'border-emerald-500 bg-emerald-500/10'
+                    : 'border-amber-500 bg-amber-500/10'
                     }`}>
                     <div className="flex items-center gap-3">
                         {uploadResult.success ? (
