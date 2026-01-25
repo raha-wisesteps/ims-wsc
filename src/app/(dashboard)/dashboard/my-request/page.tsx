@@ -1,0 +1,469 @@
+"use client";
+
+import { useState, useEffect } from "react";
+import Link from "next/link";
+import { Plus, Clock, CheckCircle, XCircle, AlertCircle, ChevronRight, Calendar, Home, Thermometer, GraduationCap, DollarSign, Users, Package, Loader2, RefreshCw, Briefcase } from "lucide-react";
+import { createClient } from "@/lib/supabase/client";
+import { useAuth } from "@/contexts/AuthContext";
+
+// Request type definitions with icons and colors
+const REQUEST_TYPES = [
+    // Top Row
+    { id: "flexible-work", label: "WFH/WFA", icon: Home, color: "bg-gradient-to-br from-purple-500 to-violet-500", href: "/dashboard/my-request/flexible-work", row: 1 },
+    { id: "leave", label: "Izin/Cuti", icon: Calendar, color: "bg-emerald-500", href: "/dashboard/my-request/leave", row: 1 },
+    { id: "overtime", label: "Lembur", icon: Clock, color: "bg-orange-500", href: "/dashboard/my-request/overtime", row: 1 },
+    // Bottom Row
+    { id: "training", label: "Training", icon: GraduationCap, color: "bg-indigo-500", href: "/dashboard/my-request/training", row: 2 },
+    { id: "reimburse", label: "Reimburse", icon: DollarSign, color: "bg-teal-500", href: "/dashboard/my-request/reimburse", row: 2 },
+    { id: "asset", label: "Asset", icon: Package, color: "bg-blue-500", href: "/dashboard/my-request/asset", row: 2 },
+    { id: "one-on-one", label: "1-on-1", icon: Users, color: "bg-pink-500", href: "/dashboard/my-request/one-on-one", row: 2 },
+];
+
+// Leave type config for display
+const LEAVE_TYPE_CONFIG: Record<string, { label: string; icon: string; color: string }> = {
+    wfh: { label: "WFH", icon: "🏠", color: "bg-purple-500" },
+    wfa: { label: "WFA", icon: "📍", color: "bg-violet-500" },
+    annual_leave: { label: "Cuti Tahunan", icon: "🌴", color: "bg-emerald-500" },
+    sick_leave: { label: "Sakit", icon: "🤒", color: "bg-rose-500" },
+    other_permission: { label: "Izin Lainnya", icon: "📋", color: "bg-gray-500" },
+    self_marriage: { label: "Pernikahan", icon: "💍", color: "bg-pink-500" },
+    paternity: { label: "Istri Melahirkan", icon: "👶", color: "bg-blue-400" },
+    family_death: { label: "Duka", icon: "🕯️", color: "bg-gray-600" },
+    overtime: { label: "Lembur", icon: "⏰", color: "bg-orange-500" },
+    training: { label: "Training", icon: "🎓", color: "bg-indigo-500" },
+    asset: { label: "Asset", icon: "💼", color: "bg-blue-500" },
+    reimburse: { label: "Reimburse", icon: "💰", color: "bg-teal-500" },
+    meeting: { label: "1-on-1", icon: "👤", color: "bg-pink-500" },
+    business_trip: { label: "Dinas", icon: "💼", color: "bg-amber-500" },
+};
+
+// Status configuration
+const STATUS_CONFIG = {
+    pending: { label: "Pending", icon: AlertCircle, color: "text-amber-500", bg: "bg-amber-500/10" },
+    approved: { label: "Approved", icon: CheckCircle, color: "text-emerald-500", bg: "bg-emerald-500/10" },
+    rejected: { label: "Rejected", icon: XCircle, color: "text-rose-500", bg: "bg-rose-500/10" },
+};
+
+interface LeaveRequest {
+    id: string;
+    leave_type: string;
+    start_date: string;
+    end_date: string;
+    reason: string;
+    status: string;
+    created_at: string;
+    total_hours?: number;
+}
+
+export default function MyRequestPage() {
+    const { user, profile, leaveQuota } = useAuth();
+    const supabase = createClient();
+    const isIntern = profile?.job_type === 'intern';
+
+    const [requests, setRequests] = useState<LeaveRequest[]>([]);
+    const [isLoading, setIsLoading] = useState(true);
+    const [selectedFilter, setSelectedFilter] = useState<string>("all");
+    const [activeSlide, setActiveSlide] = useState(0);
+
+    // Fetch user's requests
+    const fetchRequests = async () => {
+        if (!user) return;
+
+        setIsLoading(true);
+        try {
+            const { data, error } = await supabase
+                .from("leave_requests")
+                .select("id, leave_type, start_date, end_date, reason, status, created_at, total_hours")
+                .eq("profile_id", user.id)
+                .order("created_at", { ascending: false });
+
+            if (error) {
+                console.error("Fetch error:", error);
+                return;
+            }
+
+            setRequests(data || []);
+        } catch (err) {
+            console.error("Error:", err);
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    useEffect(() => {
+        if (user) {
+            fetchRequests();
+        }
+    }, [user]);
+
+    // Filter requests
+    const filteredRequests = selectedFilter === "all"
+        ? requests
+        : requests.filter(r => r.status === selectedFilter);
+
+    // Stats
+    const stats = {
+        pending: requests.filter(r => r.status === "pending").length,
+        approved: requests.filter(r => r.status === "approved").length,
+        rejected: requests.filter(r => r.status === "rejected").length,
+    };
+
+    // Helper: Format date
+    const formatDate = (dateStr: string) => {
+        return new Date(dateStr).toLocaleDateString("id-ID", { day: "numeric", month: "short" });
+    };
+
+    return (
+        <div className="flex flex-col h-full overflow-auto">
+            {/* Page Header */}
+            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
+                <div>
+                    <div className="flex items-center gap-2 text-sm text-[var(--text-muted)] mb-1">
+                        <Link href="/dashboard" className="hover:text-[#3f545f] dark:hover:text-[#e8c559]">Dashboard</Link>
+                        <span>/</span>
+                        <span className="text-[var(--text-primary)]">My Request</span>
+                    </div>
+                    <div className="flex items-center gap-3">
+                        <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-[#3f545f] to-[#5f788e] dark:from-[#e8c559] dark:to-[#dcb33e] flex items-center justify-center text-2xl text-white dark:text-[#171611] shadow-lg">
+                            📋
+                        </div>
+                        <div>
+                            <h2 className="text-3xl font-bold tracking-tight text-[var(--text-primary)]">My Request</h2>
+                            <p className="text-[var(--text-secondary)] text-sm">Kelola semua pengajuan Anda</p>
+                        </div>
+                    </div>
+                </div>
+                <button
+                    onClick={fetchRequests}
+                    disabled={isLoading}
+                    className="px-4 py-2 rounded-lg bg-[var(--glass-bg)] hover:bg-[var(--glass-border)] border border-[var(--glass-border)] text-[var(--text-secondary)] transition-colors flex items-center gap-2"
+                >
+                    <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
+                    Refresh
+                </button>
+            </div>
+
+            {/* Quota Summary Cards */}
+            <div className="glass-panel rounded-xl p-5 mb-6">
+                <h3 className="font-semibold text-[var(--text-primary)] mb-4 flex items-center gap-2">
+                    📊 Ringkasan Kuota
+                </h3>
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                    {/* WFH Weekly */}
+                    <div className="p-4 rounded-xl bg-purple-500/10 border border-purple-500/20">
+                        <p className="text-xs text-[var(--text-muted)] mb-1">WFH Minggu Ini</p>
+                        <p className="text-2xl font-bold text-purple-600 dark:text-purple-400">
+                            {leaveQuota?.wfh_weekly_used || 0} / {leaveQuota?.wfh_weekly_limit || 1}
+                        </p>
+                        <p className="text-xs text-[var(--text-muted)] mt-1">
+                            Sisa: {(leaveQuota?.wfh_weekly_limit || 1) - (leaveQuota?.wfh_weekly_used || 0)}
+                        </p>
+                    </div>
+
+                    {/* WFA Annual - Hide for interns */}
+                    {!isIntern && (
+                        <div className="p-4 rounded-xl bg-sky-500/10 border border-sky-500/20">
+                            <p className="text-xs text-[var(--text-muted)] mb-1">WFA Tahun Ini</p>
+                            <p className="text-2xl font-bold text-sky-600 dark:text-sky-400">
+                                {leaveQuota?.wfa_used || 0} / {leaveQuota?.wfa_total || 30}
+                            </p>
+                            <p className="text-xs text-[var(--text-muted)] mt-1">
+                                Sisa: {(leaveQuota?.wfa_total || 30) - (leaveQuota?.wfa_used || 0)} hari
+                            </p>
+                        </div>
+                    )}
+
+                    {/* Cuti Tahunan - Hide for interns */}
+                    {!isIntern && (
+                        <div className="p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/20">
+                            <p className="text-xs text-[var(--text-muted)] mb-1">Cuti Tahunan</p>
+                            <p className="text-2xl font-bold text-emerald-600 dark:text-emerald-400">
+                                {leaveQuota?.annual_leave_used || 0} / {leaveQuota?.annual_leave_total || 18}
+                            </p>
+                            <p className="text-xs text-[var(--text-muted)] mt-1">
+                                Sisa: {(leaveQuota?.annual_leave_total || 18) - (leaveQuota?.annual_leave_used || 0)} hari
+                            </p>
+                        </div>
+                    )}
+
+                    {/* Request Stats */}
+                    <div className="p-4 rounded-xl bg-amber-500/10 border border-amber-500/20">
+                        <p className="text-xs text-[var(--text-muted)] mb-1">Pending Approval</p>
+                        <p className="text-2xl font-bold text-amber-600 dark:text-amber-400">
+                            {stats.pending}
+                        </p>
+                        <p className="text-xs text-[var(--text-muted)] mt-1">
+                            Total: {requests.length} request
+                        </p>
+                    </div>
+                </div>
+            </div>
+
+            {/* Request Categories Carousel */}
+            <div className="glass-panel rounded-xl p-5 mb-6">
+                <h3 className="font-semibold text-[var(--text-primary)] mb-4 flex items-center gap-2">
+                    <Plus className="w-5 h-5" />
+                    Buat Pengajuan Baru
+                </h3>
+
+                {/* Carousel Navigation */}
+                <div className="flex gap-2 mb-4 overflow-x-auto pb-2">
+                    <button
+                        onClick={() => setActiveSlide(0)}
+                        className={`px-4 py-2 rounded-lg text-sm font-medium transition-all whitespace-nowrap ${activeSlide === 0
+                            ? "bg-purple-500 text-white"
+                            : "bg-[var(--glass-bg)] text-[var(--text-secondary)] hover:bg-[var(--glass-border)]"
+                            }`}
+                    >
+                        📋 Izin & Absensi
+                    </button>
+                    <button
+                        onClick={() => setActiveSlide(1)}
+                        className={`px-4 py-2 rounded-lg text-sm font-medium transition-all whitespace-nowrap ${activeSlide === 1
+                            ? "bg-amber-500 text-white"
+                            : "bg-[var(--glass-bg)] text-[var(--text-secondary)] hover:bg-[var(--glass-border)]"
+                            }`}
+                    >
+                        🚀 Tugas & Lembur
+                    </button>
+                    <button
+                        onClick={() => setActiveSlide(2)}
+                        className={`px-4 py-2 rounded-lg text-sm font-medium transition-all whitespace-nowrap ${activeSlide === 2
+                            ? "bg-blue-500 text-white"
+                            : "bg-[var(--glass-bg)] text-[var(--text-secondary)] hover:bg-[var(--glass-border)]"
+                            }`}
+                    >
+                        📁 Fasilitas & Pengembangan
+                    </button>
+                </div>
+
+                {/* Slide Content */}
+                <div className="relative overflow-hidden min-h-[200px]">
+                    {/* Slide 1: Izin & Absensi */}
+                    {activeSlide === 0 && (
+                        <div className="animate-fadeIn">
+                            <div className="grid grid-cols-3 gap-4">
+                                <Link href="/dashboard/my-request/flexible-work">
+                                    <div className="flex flex-col items-center justify-center gap-3 p-6 h-full rounded-xl bg-[var(--surface-color)] hover:bg-[var(--glass-border)] border border-[var(--glass-border)] hover:border-purple-500/50 transition-all cursor-pointer group">
+                                        <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-purple-500 to-violet-500 flex items-center justify-center text-white shadow-lg shadow-purple-500/20 group-hover:scale-110 transition-transform">
+                                            <Home className="w-8 h-8 text-white stroke-white stroke-[1.5]" style={{ color: 'white' }} />
+                                        </div>
+                                        <span className="text-base font-semibold text-[var(--text-primary)]">
+                                            {isIntern ? "WFH" : "WFH/WFA"}
+                                        </span>
+                                    </div>
+                                </Link>
+                                <Link href="/dashboard/my-request/leave">
+                                    <div className="flex flex-col items-center justify-center gap-3 p-6 h-full rounded-xl bg-[var(--surface-color)] hover:bg-[var(--glass-border)] border border-[var(--glass-border)] hover:border-emerald-500/50 transition-all cursor-pointer group">
+                                        <div className="w-16 h-16 rounded-2xl bg-emerald-500 flex items-center justify-center text-white group-hover:scale-110 transition-transform shadow-lg shadow-emerald-500/20">
+                                            <Calendar className="w-8 h-8 text-white stroke-[1.5]" />
+                                        </div>
+                                        <span className="text-base font-semibold text-[var(--text-primary)]">
+                                            {isIntern ? "Izin" : "Izin/Cuti"}
+                                        </span>
+                                    </div>
+                                </Link>
+                                <Link href="/dashboard/my-request/sakit">
+                                    <div className="flex flex-col items-center justify-center gap-3 p-6 h-full rounded-xl bg-[var(--surface-color)] hover:bg-[var(--glass-border)] border border-[var(--glass-border)] hover:border-rose-500/50 transition-all cursor-pointer group">
+                                        <div className="w-16 h-16 rounded-2xl bg-rose-500 flex items-center justify-center text-white group-hover:scale-110 transition-transform shadow-lg shadow-rose-500/20">
+                                            <Thermometer className="w-8 h-8 text-white stroke-[1.5]" />
+                                        </div>
+                                        <span className="text-base font-semibold text-[var(--text-primary)]">Lapor Sakit</span>
+                                    </div>
+                                </Link>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Slide 2: Tugas & Lembur */}
+                    {activeSlide === 1 && (
+                        <div className="animate-fadeIn">
+                            <div className="grid grid-cols-2 gap-4">
+                                <Link href="/dashboard/my-request/overtime">
+                                    <div className="flex flex-col items-center justify-center gap-3 p-6 h-full rounded-xl bg-[var(--surface-color)] hover:bg-[var(--glass-border)] border border-[var(--glass-border)] hover:border-orange-500/50 transition-all cursor-pointer group">
+                                        <div className="w-16 h-16 rounded-2xl bg-orange-500 flex items-center justify-center text-white group-hover:scale-110 transition-transform shadow-lg shadow-orange-500/20">
+                                            <Clock className="w-8 h-8 text-white stroke-[1.5]" />
+                                        </div>
+                                        <div className="text-center">
+                                            <span className="block text-base font-semibold text-[var(--text-primary)]">Lembur</span>
+                                            <span className="text-sm text-[var(--text-muted)]">Per jam</span>
+                                        </div>
+                                    </div>
+                                </Link>
+                                <Link href="/dashboard/my-request/business-trip">
+                                    <div className="flex flex-col items-center justify-center gap-3 p-6 h-full rounded-xl bg-[var(--surface-color)] hover:bg-[var(--glass-border)] border border-[var(--glass-border)] hover:border-amber-500/50 transition-all cursor-pointer group">
+                                        <div className="w-16 h-16 rounded-2xl bg-amber-500 flex items-center justify-center text-white group-hover:scale-110 transition-transform shadow-lg shadow-amber-500/20">
+                                            <Briefcase className="w-8 h-8 text-white stroke-[1.5]" />
+                                        </div>
+                                        <div className="text-center">
+                                            <span className="block text-base font-semibold text-[var(--text-primary)]">Perjalanan Dinas</span>
+                                            <span className="text-sm text-[var(--text-muted)]">Per hari</span>
+                                        </div>
+                                    </div>
+                                </Link>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Slide 3: Fasilitas & Pengembangan */}
+                    {activeSlide === 2 && (
+                        <div className="animate-fadeIn">
+                            <div className="grid grid-cols-4 gap-4">
+                                <Link href="/dashboard/my-request/training">
+                                    <div className="flex flex-col items-center justify-center gap-3 p-6 h-full rounded-xl bg-[var(--surface-color)] hover:bg-[var(--glass-border)] border border-[var(--glass-border)] hover:border-indigo-500/50 transition-all cursor-pointer group">
+                                        <div className="w-16 h-16 rounded-2xl bg-indigo-500 flex items-center justify-center text-white group-hover:scale-110 transition-transform shadow-lg shadow-indigo-500/20">
+                                            <GraduationCap className="w-8 h-8 text-white stroke-[1.5]" />
+                                        </div>
+                                        <span className="text-base font-semibold text-[var(--text-primary)]">Training</span>
+                                    </div>
+                                </Link>
+                                <Link href="/dashboard/my-request/reimburse">
+                                    <div className="flex flex-col items-center justify-center gap-3 p-6 h-full rounded-xl bg-[var(--surface-color)] hover:bg-[var(--glass-border)] border border-[var(--glass-border)] hover:border-teal-500/50 transition-all cursor-pointer group">
+                                        <div className="w-16 h-16 rounded-2xl bg-teal-500 flex items-center justify-center text-white group-hover:scale-110 transition-transform shadow-lg shadow-teal-500/20">
+                                            <DollarSign className="w-8 h-8 text-white stroke-[1.5]" />
+                                        </div>
+                                        <span className="text-base font-semibold text-[var(--text-primary)]">Reimburse</span>
+                                    </div>
+                                </Link>
+                                <Link href="/dashboard/my-request/asset">
+                                    <div className="flex flex-col items-center justify-center gap-3 p-6 h-full rounded-xl bg-[var(--surface-color)] hover:bg-[var(--glass-border)] border border-[var(--glass-border)] hover:border-blue-500/50 transition-all cursor-pointer group">
+                                        <div className="w-16 h-16 rounded-2xl bg-blue-500 flex items-center justify-center text-white group-hover:scale-110 transition-transform shadow-lg shadow-blue-500/20">
+                                            <Package className="w-8 h-8 text-white stroke-[1.5]" />
+                                        </div>
+                                        <span className="text-base font-semibold text-[var(--text-primary)]">Asset</span>
+                                    </div>
+                                </Link>
+                                <Link href="/dashboard/my-request/one-on-one">
+                                    <div className="flex flex-col items-center justify-center gap-3 p-6 h-full rounded-xl bg-[var(--surface-color)] hover:bg-[var(--glass-border)] border border-[var(--glass-border)] hover:border-pink-500/50 transition-all cursor-pointer group">
+                                        <div className="w-16 h-16 rounded-2xl bg-pink-500 flex items-center justify-center text-white group-hover:scale-110 transition-transform shadow-lg shadow-pink-500/20">
+                                            <Users className="w-8 h-8 text-white stroke-[1.5]" />
+                                        </div>
+                                        <span className="text-base font-semibold text-[var(--text-primary)]">1-on-1</span>
+                                    </div>
+                                </Link>
+                            </div>
+                        </div>
+                    )}
+                </div>
+
+                {/* Carousel Dots */}
+                <div className="flex justify-center gap-2 mt-4">
+                    {[0, 1, 2].map((i) => (
+                        <button
+                            key={i}
+                            onClick={() => setActiveSlide(i)}
+                            className={`w-2 h-2 rounded-full transition-all ${activeSlide === i
+                                ? "bg-[#e8c559] w-6"
+                                : "bg-gray-400/30 hover:bg-gray-400/50"
+                                }`}
+                        />
+                    ))}
+                </div>
+            </div>
+
+            {/* Status Filter Tabs */}
+            <div className="flex gap-2 mb-4 overflow-x-auto pb-2">
+                <button
+                    onClick={() => setSelectedFilter("all")}
+                    className={`px-4 py-2 rounded-lg text-sm font-medium transition-all whitespace-nowrap ${selectedFilter === "all"
+                        ? "bg-[#3f545f] dark:bg-[#e8c559] text-white dark:text-[#171611]"
+                        : "bg-[var(--glass-bg)] text-[var(--text-secondary)] hover:bg-[var(--glass-border)]"
+                        }`}
+                >
+                    Semua ({requests.length})
+                </button>
+                <button
+                    onClick={() => setSelectedFilter("pending")}
+                    className={`px-4 py-2 rounded-lg text-sm font-medium transition-all whitespace-nowrap flex items-center gap-2 ${selectedFilter === "pending"
+                        ? "bg-amber-500 text-white"
+                        : "bg-[var(--glass-bg)] text-[var(--text-secondary)] hover:bg-[var(--glass-border)]"
+                        }`}
+                >
+                    <AlertCircle className="w-4 h-4" />
+                    Pending ({stats.pending})
+                </button>
+                <button
+                    onClick={() => setSelectedFilter("approved")}
+                    className={`px-4 py-2 rounded-lg text-sm font-medium transition-all whitespace-nowrap flex items-center gap-2 ${selectedFilter === "approved"
+                        ? "bg-emerald-500 text-white"
+                        : "bg-[var(--glass-bg)] text-[var(--text-secondary)] hover:bg-[var(--glass-border)]"
+                        }`}
+                >
+                    <CheckCircle className="w-4 h-4" />
+                    Approved ({stats.approved})
+                </button>
+                <button
+                    onClick={() => setSelectedFilter("rejected")}
+                    className={`px-4 py-2 rounded-lg text-sm font-medium transition-all whitespace-nowrap flex items-center gap-2 ${selectedFilter === "rejected"
+                        ? "bg-rose-500 text-white"
+                        : "bg-[var(--glass-bg)] text-[var(--text-secondary)] hover:bg-[var(--glass-border)]"
+                        }`}
+                >
+                    <XCircle className="w-4 h-4" />
+                    Rejected ({stats.rejected})
+                </button>
+            </div>
+
+            {/* Request History List */}
+            <div className="glass-panel rounded-xl overflow-hidden flex-1">
+                <div className="p-4 border-b border-[var(--glass-border)] flex items-center justify-between">
+                    <h3 className="font-semibold text-[var(--text-primary)]">
+                        📜 Riwayat Pengajuan ({filteredRequests.length})
+                    </h3>
+                </div>
+
+                <div className="divide-y divide-[var(--glass-border)] max-h-[500px] overflow-y-auto">
+                    {isLoading ? (
+                        <div className="p-8 text-center text-[var(--text-muted)]">
+                            <Loader2 className="w-8 h-8 animate-spin mx-auto mb-2" />
+                            <p>Memuat data...</p>
+                        </div>
+                    ) : filteredRequests.length === 0 ? (
+                        <div className="p-8 text-center text-[var(--text-muted)]">
+                            <p className="text-4xl mb-2">📭</p>
+                            <p>Tidak ada pengajuan</p>
+                        </div>
+                    ) : (
+                        filteredRequests.map((request) => {
+                            const typeConfig = LEAVE_TYPE_CONFIG[request.leave_type] || { label: request.leave_type, icon: "📋", color: "bg-gray-500" };
+                            const statusConfig = STATUS_CONFIG[request.status as keyof typeof STATUS_CONFIG] || STATUS_CONFIG.pending;
+                            const StatusIcon = statusConfig.icon;
+
+                            return (
+                                <div
+                                    key={request.id}
+                                    className="p-4 hover:bg-black/5 dark:hover:bg-white/5 transition-colors flex items-center gap-4"
+                                >
+                                    {/* Type Icon */}
+                                    <div className={`w-12 h-12 rounded-xl ${typeConfig.color} flex items-center justify-center text-xl text-white flex-shrink-0`}>
+                                        {typeConfig.icon}
+                                    </div>
+
+                                    {/* Content */}
+                                    <div className="flex-1 min-w-0">
+                                        <div className="flex items-center gap-2 mb-1">
+                                            <p className="font-medium text-[var(--text-primary)]">{typeConfig.label}</p>
+                                            <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${statusConfig.bg} ${statusConfig.color} flex items-center gap-1`}>
+                                                <StatusIcon className="w-3 h-3" />
+                                                {statusConfig.label}
+                                            </span>
+                                        </div>
+                                        <p className="text-sm text-[var(--text-secondary)] truncate">{request.reason}</p>
+                                        <div className="flex items-center gap-3 text-xs text-[var(--text-muted)] mt-1">
+                                            <span>📅 {formatDate(request.start_date)}{request.start_date !== request.end_date && ` - ${formatDate(request.end_date)}`}</span>
+                                            {request.total_hours && <span>⏰ {request.total_hours} jam</span>}
+                                            <span className="opacity-60">• Diajukan {formatDate(request.created_at)}</span>
+                                        </div>
+                                    </div>
+
+                                    {/* Arrow */}
+                                    <ChevronRight className="w-5 h-5 text-[var(--text-muted)] flex-shrink-0" />
+                                </div>
+                            );
+                        })
+                    )}
+                </div>
+            </div>
+        </div>
+    );
+}

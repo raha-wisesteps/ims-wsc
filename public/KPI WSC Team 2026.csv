@@ -1,0 +1,78 @@
+Unnamed: 0,Unnamed: 1,Unnamed: 2,Unnamed: 3,Unnamed: 4,Unnamed: 5,Unnamed: 6,Unnamed: 7,Unnamed: 8,Unnamed: 9,Unnamed: 10,Unnamed: 11,Unnamed: 12,Unnamed: 13,Unnamed: 14,Unnamed: 15,Unnamed: 16,Unnamed: 17,Unnamed: 18
+,,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,KPI,,,,,,,
+,,Core Value dan Indikator,Tipe,Method,Acuan SOP,Poor,Need Improvement,Good,Very Good,Excellent,Analyst I - II (Staff),,Analyst III - Consultant III (Supervisor),,Sales Executive I - III (Staff),,Business Development I - III,
+,,,,,,1,2,3,4,5,Bobot,Keterangan,Bobot, Keterangan,Bobot,KPI,Bobot,KPI
+,,PASSION FOR KNOWLEDGE,,,,,,,,,0.4,,0.3,,0.2,,0.2,
+,,"Penulisan Blog / News 
+Mengukur konsistensi dan kontribusi individu/tim dalam menghasilkan artikel berkualitas",Kuantitatif,Website / IG / Linkedin,,< 50% target,50% – < 75% target,75% – < 100% target,100% – < 150% target,≥ 150% target,0.1,1 artikel / bulan / orang,0.1,1 artikel / 2 bulan / orang,0,,0,
+,,Mempelajari Knowledge / Skill Baru ,Kuantitatif,IMS,,Tidak ada sama sekali,1 Sharing Session / 6 bulan,2 Sharing Session / 6 bulan,3 Sharing Session / 6 bulan,4 Sharing Session / 6 bulan,0.15,,0.1,,0.05,,0.05,
+,,"Kehadiran Pelatihan Internal
+Kehadiran dalam pelatihan internal atau sharing session",Kuantitatif,IMS,,<= 20% Kehadiran,<= 40%,<=60%,<=80,<=100%,0.15,,0.1,,0.15,,0.15,
+,,PASSION FOR PEOPLE AND ENVIRONMENT,,,,1,2,3,4,5,0.3,,0.2,,0.2,,0.2,
+,,"Keselamatan dan Kesehatan Kerja
+Menaati peraturan keselamatan, kerapihan, dan kesehatan",Kualitatif,Supervisor Review,,Tempat kerja kotor dan peraturan tentang keselamatan kerapihan & kesehatan diabaikan,"Diperingati berulang-ulang tentang keselamatan, kerapihan, dan kebersihan, terjadi lebih dari satu kali kesalahan","Kadang mendapat peringatan tentang keselamatan, kebersihan, dan kerapihan","Tempat kerja bersih, rapih, dan aman","Bekerja dengan tertib dan aman, menjaga peralatan dan kebersihan kantor dengan baik.",0.1,,0.05,,0.05,,0.05,
+,,"Team Work
+Kemauan bekerja sama dalam tim",Kualitatif,Peer Review,,"Kerjasama
+Kemauan bekerja sama ","Kurang membantu, berdalih, tidak mengambil peran",Terbatas dalam memberikan bantuan,Mau membantu,Memegang peranan dalam tim,0.1,,0.05,,0.05,,0.05,
+,,"Sustainability Initiatives
+Sikap Aksi nyata dalam berkontribusi dalam menjaga lingkungan dan kegiatan sosial",Kualitatif,Supervisor Review,,Tidak peduli sama sekali,Sulit diajak untuk berkontribusi,Bekerja sama dengan baik,Peduli dan mudah diajak bekerja sama,Selalu antusias dan aktif,0.1,,0.1,,0.1,,0.1,
+,,PASSION FOR SERVICE,,,,1,2,3,4,5,0.2,,0.2,,0.2,,0.2,
+,,Responsive dan Solutif terhadap Kebutuhan Klien ,Kuantitatif,"Form evaluasi kepuasan klien
+
+Catatan komunikasi proyek (email, WA, notulen)
+
+Evaluasi Project Manager / Director ",,"Respon sangat lambat atau tidak ada respon.
+
+Tidak memberikan solusi yang jelas.
+
+Tidak menunjukkan ownership.
+
+Menyebabkan ketidakpuasan atau komplain klien.","Respon lambat (> 2 hari kerja).
+
+Solusi kurang tepat atau tidak menyelesaikan akar masalah.
+
+Perlu diingatkan berulang kali oleh klien atau internal.
+
+Mulai berdampak pada kepercayaan klien.","Respon cukup cepat (≤ 1 hari kerja).
+
+Solusi ada, namun masih perlu penyempurnaan.
+
+Proaktif terbatas, cenderung reaktif.
+
+Klien tidak terganggu, namun belum impressed.","Respon cepat (≤ 4 jam).
+
+Solusi relevan dan membantu penyelesaian isu klien.
+
+Menunjukkan ownership yang kuat.
+
+Komunikasi jelas dan profesional.","Respon sangat cepat (≤ 1 jam).
+
+Solusi jelas, tepat sasaran, dan langsung bisa dieksekusi.
+
+Sangat proaktif, sering mengantisipasi kebutuhan klien sebelum diminta.
+
+Klien menyatakan sangat puas dan merasa “diurus”.",0.05,,0.05,,0.05,,0.05,
+,,"Kualitas Kerja
+Pencapaian standar kualitas dan harapan client",Kualitatif,"Supervisor Review, Peer Review",,"Ceroboh, jarang memenuhi standar",Kadang-kadang masih perlu perbaikan,Memenuhi apa yang diharapkan,Hasil kerja memuaskan,Hasil kerja sangat memuaskan,0.05,,0.05,,0.05,,0.05,
+,,"Rata-rata Indeks Kepuasaan Klien
+Mengukur kualitas layanan, hasil kerja, dan pengalaman klien terhadap Wise Steps Consulting",Kuantitatif,Client Evaluation Form ,,"< 2,80","2,80 – < 3,40","3,40 – < 4,00","4,00 – < 4,60","≥ 4,60",0.05,,0.05,,0.05,,0.05,
+,,"Penampilan
+Rapi, bersih, wangi dan menggunakan atribut kantor saat bertemu pihak external",Kualitatif,Supervisor Review,,Secara umum penampilan kurang,Kadang-kadang dibawah standar penampilan,Penampilan cukup,Penampilan baik sesuai standar,Penampilan sangat baik dan sesuai standar,0.05,,0.05,,0.05,,0.05,
+,,PASSION FOR BUSINESS,,,,1,2,3,4,5,0.1,,0.15,,0.4,,0.35,
+,,"Sales Target 
+Mengukur kemampuan mencapai target pendapatan proyek (Pencapaian Target (%) = Realisasi Nilai Kontrak​ / Target Penjualan ×100%)",Kuantitatif,IMS,,< 60%,60% – < 80%,80% – < 100%,100% – < 120%,≥ 120%,0,,0,,0.25,Disepakati Bersama,0.25,Disepakati Bersama
+,,"New Database / New Prospect
+Mengukur kemampuan menghasilkan prospek baru yang relevan dan dapat ditindaklanjuti (Pencapaian Prospek (%)=Jumlah Prospek Valid Aktual​ / Target Prospek ×100%",Kuantitatif,IMS,,< 60%,60% – < 80%,80% – < 100%,100% – < 120%,≥ 120%,0,,0,,0.1,5 New Database Entry / Week,0.05,3 New Database Entry / Week
+,,"Proposal Conversion Rate
+Mengukur efektivitas proposal dalam memenangkan proyek
+(Conversion Rate=Jumlah Proposal Disubmit / Jumlah Proposal Menjadi Proyek ​×100%)",Kuantitatif,IMS,,"< 15% (Tidak efektif, perlu evaluasi menyeluruh)","15% – < 30% (Conversion rendah, perlu perbaikan pendekatan)","30% – < 45% (Kinerja wajar, masih ada ruang peningkatan)","45% – < 60% (Tingkat keberhasilan tinggi, strategi penawaran tepat)","≥ 60% (Sangat efektif, kualitas proposal dan positioning sangat kuat)",0.05,,0.1,,0,,0,
+,,"Kehadiran & Kedisiplinan Waktu
+Tingkat kehadiran dan keterlambatan
+(Jumlah Hari Terlambat / Total Kehadiran x 100%) - Diluar cuti, izin, dan dinas",Kuantitatif,Fingerspot ,,>20%,>10% – ≤20%,>5% – ≤10%,>2% – ≤5%,0 – ≤2%,0.05,,0.05,,0.05,,0.05,
+,,LEADERSHIP AND SUPERVISORY SKILLS,,,,,,,,,0,,0.15,,0,,0.05,
+,,"Kemampuan Kepemimpinan dan Managerial
+Penilaian didasarkan pada People Development, Project Management, Direction & Decision Making, Execution & Accountability
+& Role Model & Culture",Kualitatif,Supervisor Review & Team Review,,"Tidak membina tim, Tidak memberi arah yang jelas, Tidak bertanggung jawab, Menjadi contoh buruk","Jarang membina, feedback minim, Arah sering berubah / membingungkan, Target sering meleset, Perilaku kurang konsisten","Membina sesekali, masih reaktif, Arah cukup jelas, perlu klarifikasi, Target sebagian tercapai, Netral, tidak negatif","Rutin membina, feedback jelas, Arah jelas, keputusan umumnya tepat, Target tercapai, minor issue, Umumnya memberi contoh baik","Aktif membina, tim berkembang pesat, Arah sangat jelas, keputusan tepat & cepat, Target tercapai konsisten, sangat accountable, Menjadi teladan kuat bagi tim",0,,0.15,,0,,0.05,
+,,,,,,,,,,Total,0.9999999999999999,,1,0,1,0,1,
