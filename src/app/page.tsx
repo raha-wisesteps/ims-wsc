@@ -1,3 +1,6 @@
+"use client";
+
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import {
@@ -7,10 +10,10 @@ import {
   BookOpen,
   BarChart3,
   Building2,
-  Leaf,
   Shield,
   ArrowRight,
-  Check
+  Check,
+  ExternalLink
 } from "lucide-react";
 
 const features = [
@@ -45,11 +48,6 @@ const features = [
     description: "Manajemen prospek, project, dan business development"
   },
   {
-    icon: Leaf,
-    title: "Sustainability",
-    description: "ESG reporting, carbon tracking, dan environmental compliance"
-  },
-  {
     icon: Shield,
     title: "Assignment Board",
     description: "Project management dengan Kanban board dan task tracking"
@@ -59,208 +57,241 @@ const features = [
 const stats = [
   { value: "100%", label: "Cloud-Based" },
   { value: "24/7", label: "Available" },
-  { value: "Secure", label: "Data Protected" },
-  { value: "Mobile", label: "Responsive" }
+  { value: "🔒", label: "Protected" },
+  { value: "📱", label: "Mobile Ready" }
 ];
 
 export default function LandingPage() {
+  const [scrolled, setScrolled] = useState(false);
+
+  // Handle scroll effect for header
+  useEffect(() => {
+    const handleScroll = () => {
+      setScrolled(window.scrollY > 50);
+    };
+    window.addEventListener("scroll", handleScroll);
+    return () => window.removeEventListener("scroll", handleScroll);
+  }, []);
+
   return (
-    <div className="min-h-screen bg-[#0d1117] text-white overflow-x-hidden">
+    <div className="min-h-screen bg-slate-50 text-slate-800 overflow-x-hidden font-sans">
+      {/* Navigation - Scroll Aware */}
+      <nav className={`fixed top-0 left-0 right-0 z-50 transition-all duration-300 ${scrolled ? "bg-white py-4 shadow-md" : "bg-transparent py-6"}`}>
+        <div className="max-w-7xl mx-auto px-6 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            {/* Logo SVG - Double size (w-48 instead of w-32) */}
+            <div className="relative w-48 h-14 transition-all duration-300">
+              <Image
+                src="/logo_fix.svg"
+                alt="WiseSteps Logo"
+                fill
+                className={`object-contain transition-all duration-300 ${scrolled ? "" : "brightness-0 invert"}`}
+              />
+            </div>
+          </div>
+          <Link
+            href="/login"
+            className={`px-6 py-2.5 rounded-full font-bold text-sm transition-all shadow-lg ${scrolled
+              ? "bg-[#e8c559] text-slate-900 hover:bg-[#dcb33e]"
+              : "bg-white text-slate-900 hover:bg-slate-100"
+              }`}
+          >
+            Masuk Platform
+          </Link>
+        </div>
+      </nav>
+
       {/* Hero Section */}
-      <section className="relative min-h-screen flex items-center justify-center">
-        {/* Background Image */}
+      <section className="relative h-screen flex items-center justify-center">
         <div className="absolute inset-0 z-0">
           <Image
             src="/pukpik-aB46yUmsMp0-unsplash.jpg"
-            alt="IMS Background"
+            alt="Gunung Bromo"
             fill
             className="object-cover"
             priority
           />
-          {/* Gradient Overlay */}
-          <div className="absolute inset-0 bg-gradient-to-b from-[#0d1117]/80 via-[#0d1117]/60 to-[#0d1117]" />
+          <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/10 to-black/30" />
         </div>
 
-        {/* Content */}
-        <div className="relative z-10 max-w-6xl mx-auto px-6 py-20 text-center">
-          {/* Badge */}
-          <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white/10 backdrop-blur-sm border border-white/20 mb-8">
-            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-            <span className="text-sm text-white/80">Enterprise Management Platform</span>
-          </div>
+        <div className="relative z-10 max-w-5xl mx-auto px-6 text-center text-white mt-10">
 
-          {/* Main Heading */}
-          <h1 className="text-5xl md:text-7xl font-bold mb-6 leading-tight">
-            <span className="bg-gradient-to-r from-[#e8c559] via-[#f0d878] to-[#e8c559] bg-clip-text text-transparent">
-              Internal Management
-            </span>
-            <br />
-            <span className="text-white">System</span>
+
+          <h1 className="text-5xl md:text-7xl font-bold mb-8 leading-tight tracking-tight drop-shadow-lg">
+            Internal Management<br />
+            <span className="text-[#e8c559]">System</span>
           </h1>
 
-          <p className="text-xl md:text-2xl text-white/70 max-w-3xl mx-auto mb-10 leading-relaxed">
-            Platform terintegrasi untuk mengelola SDM, operasional, dan bisnis development
-            dalam satu ekosistem yang powerful dan mudah digunakan.
+          <p className="text-xl md:text-2xl text-white/90 max-w-3xl mx-auto mb-12 leading-relaxed font-light drop-shadow-md">
+            Satu platform terintegrasi untuk seluruh operasional perusahaan.
+            Efektif, efisien, dan transparan.
           </p>
 
-          {/* CTA Buttons */}
-          <div className="flex flex-col sm:flex-row gap-4 justify-center items-center">
+          <div className="flex flex-col sm:flex-row gap-5 justify-center items-center">
             <Link
               href="/login"
-              className="group px-8 py-4 rounded-xl bg-gradient-to-r from-[#e8c559] to-[#dcb33e] text-[#171611] font-bold text-lg shadow-lg shadow-[#e8c559]/25 hover:shadow-xl hover:shadow-[#e8c559]/40 transition-all flex items-center gap-2"
+              className="group px-8 py-4 rounded-full bg-[#e8c559] text-slate-900 font-bold text-lg hover:bg-[#dcb33e] transition-all flex items-center gap-2 shadow-[0_0_20px_rgba(232,197,89,0.3)] hover:shadow-[0_0_30px_rgba(232,197,89,0.5)] hover:-translate-y-1"
             >
-              Masuk ke Platform
+              Mulai Sekarang
               <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
             </Link>
             <a
               href="#features"
-              className="px-8 py-4 rounded-xl border border-white/30 text-white font-medium text-lg hover:bg-white/10 transition-all"
+              className="px-8 py-4 rounded-full bg-white/10 backdrop-blur-md border border-white/30 text-white font-semibold text-lg hover:bg-white/20 transition-all"
             >
-              Lihat Fitur
+              Pelajari Fitur
             </a>
-          </div>
-
-          {/* Stats */}
-          <div className="mt-20 grid grid-cols-2 md:grid-cols-4 gap-6 md:gap-12">
-            {stats.map((stat, idx) => (
-              <div key={idx} className="text-center">
-                <div className="text-3xl md:text-4xl font-bold text-[#e8c559] mb-1">{stat.value}</div>
-                <div className="text-sm text-white/60">{stat.label}</div>
-              </div>
-            ))}
           </div>
         </div>
 
-        {/* Scroll Indicator */}
-        <div className="absolute bottom-8 left-1/2 -translate-x-1/2 animate-bounce">
+        <div className="absolute bottom-10 left-1/2 -translate-x-1/2 animate-bounce text-white/50">
           <div className="w-6 h-10 rounded-full border-2 border-white/30 flex items-start justify-center p-2">
-            <div className="w-1 h-2 bg-white/60 rounded-full animate-pulse" />
+            <div className="w-1 h-2 bg-white rounded-full animate-pulse" />
           </div>
         </div>
       </section>
 
       {/* Features Section */}
-      <section id="features" className="py-24 px-6">
-        <div className="max-w-6xl mx-auto">
-          {/* Section Header */}
-          <div className="text-center mb-16">
-            <h2 className="text-3xl md:text-4xl font-bold mb-4">
-              Fitur <span className="text-[#e8c559]">Lengkap</span> untuk Perusahaan Modern
+      <section id="features" className="py-28 px-6 bg-white">
+        <div className="max-w-7xl mx-auto">
+          <div className="text-center mb-20">
+            <h2 className="text-3xl md:text-5xl font-bold mb-6 text-slate-900">
+              Fitur Komprehensif
             </h2>
-            <p className="text-white/60 max-w-2xl mx-auto">
-              Dari pengelolaan SDM hingga sustainability reporting,
-              semua dalam satu platform yang terintegrasi.
+            <p className="text-slate-500 text-lg max-w-2xl mx-auto">
+              Dirancang untuk memenuhi kebutuhan manajemen modern.
             </p>
           </div>
 
-          {/* Features Grid */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
             {features.map((feature, idx) => (
               <div
                 key={idx}
-                className="group p-6 rounded-2xl bg-white/5 border border-white/10 hover:border-[#e8c559]/50 hover:bg-white/10 transition-all duration-300"
+                className="group p-8 rounded-3xl bg-slate-50 hover:bg-white border border-slate-100 hover:border-slate-200 hover:shadow-2xl hover:shadow-slate-200/50 transition-all duration-300"
               >
-                <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-[#e8c559]/20 to-[#e8c559]/5 flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
-                  <feature.icon className="w-6 h-6 text-[#e8c559]" />
+                <div className="w-14 h-14 rounded-2xl bg-white border border-slate-100 flex items-center justify-center mb-6 shadow-sm group-hover:scale-110 group-hover:rotate-3 transition-transform duration-300">
+                  <feature.icon className="w-7 h-7 text-[#3f545f]" />
                 </div>
-                <h3 className="text-lg font-bold text-white mb-2">{feature.title}</h3>
-                <p className="text-sm text-white/60 leading-relaxed">{feature.description}</p>
+                <h3 className="text-xl font-bold text-slate-900 mb-3">{feature.title}</h3>
+                <p className="text-slate-500 leading-relaxed">{feature.description}</p>
               </div>
             ))}
           </div>
         </div>
       </section>
 
-      {/* Benefits Section */}
-      <section className="py-24 px-6 bg-gradient-to-b from-transparent via-[#e8c559]/5 to-transparent">
-        <div className="max-w-6xl mx-auto">
-          <div className="grid md:grid-cols-2 gap-12 items-center">
-            {/* Left Content */}
+      {/* Why Choose IMS - Parallax Background */}
+      <section className="relative py-32 flex items-center bg-fixed bg-center bg-cover" style={{ backgroundImage: "url('/jason-cooper-XEhchWQuWyM-unsplash.jpg')" }}>
+        {/* Dark Overlay */}
+        <div className="absolute inset-0 bg-black/60" />
+
+        <div className="relative z-10 max-w-7xl mx-auto px-6 w-full">
+          <div className="grid md:grid-cols-2 gap-16 items-center">
             <div>
-              <h2 className="text-3xl md:text-4xl font-bold mb-6">
-                Mengapa Memilih <span className="text-[#e8c559]">IMS</span>?
+              <span className="text-[#e8c559] font-bold tracking-wider uppercase mb-4 block">Keunggulan Platform</span>
+              <h2 className="text-4xl md:text-6xl font-bold text-white mb-8 leading-tight">
+                Mengapa Memilih<br />IMS?
               </h2>
-              <p className="text-white/60 mb-8 leading-relaxed">
-                Dikembangkan khusus untuk kebutuhan perusahaan Indonesia dengan
-                memperhatikan regulasi lokal dan best practice internasional.
+              <p className="text-white/80 text-lg mb-10 leading-relaxed">
+                Solusi yang tidak hanya mencatat, tetapi memberikan wawasan untuk pengambilan keputusan yang lebih baik.
               </p>
 
-              <ul className="space-y-4">
+              <div className="flex flex-col gap-4">
+                {/* Removed "Sistem Keamanan Berlapis" as requested */}
                 {[
-                  "Antarmuka dalam Bahasa Indonesia",
-                  "Terintegrasi dengan mesin fingerprint",
-                  "Mendukung mobile browser",
-                  "Laporan ESG sesuai standar",
-                  "Keamanan data enterprise-grade"
-                ].map((benefit, idx) => (
-                  <li key={idx} className="flex items-center gap-3">
-                    <div className="w-6 h-6 rounded-full bg-emerald-500/20 flex items-center justify-center flex-shrink-0">
-                      <Check className="w-4 h-4 text-emerald-500" />
+                  "Integrasi Data Real-time",
+                  "Aksesibilitas Mobile & Web",
+                  "Monitoring KPI Transparan"
+                ].map((item, idx) => (
+                  <div key={idx} className="flex items-center gap-4 p-4 rounded-xl bg-white/10 backdrop-blur-md border border-white/10 hover:bg-white/20 transition-colors">
+                    <div className="w-8 h-8 rounded-full bg-[#e8c559] flex items-center justify-center flex-shrink-0 text-slate-900">
+                      <Check className="w-5 h-5" />
                     </div>
-                    <span className="text-white/80">{benefit}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-
-            {/* Right Visual */}
-            <div className="relative">
-              <div className="aspect-square rounded-3xl bg-gradient-to-br from-[#e8c559]/20 via-[#e8c559]/10 to-transparent p-8 border border-[#e8c559]/20">
-                <div className="w-full h-full rounded-2xl bg-[#0d1117] border border-white/10 flex items-center justify-center overflow-hidden">
-                  <div className="text-center p-8">
-                    <div className="text-6xl mb-4">🏢</div>
-                    <div className="text-2xl font-bold text-[#e8c559] mb-2">IMS</div>
-                    <div className="text-sm text-white/60">Internal Management System</div>
+                    <span className="text-white font-medium text-lg">{item}</span>
                   </div>
-                </div>
+                ))}
               </div>
-              {/* Decorative Elements */}
-              <div className="absolute -top-4 -right-4 w-24 h-24 bg-[#e8c559]/20 rounded-full blur-3xl" />
-              <div className="absolute -bottom-4 -left-4 w-32 h-32 bg-emerald-500/20 rounded-full blur-3xl" />
+            </div>
+
+            {/* Right side stats/visual */}
+            <div className="hidden md:grid grid-cols-2 gap-6">
+              {stats.map((stat, idx) => (
+                <div key={idx} className="bg-white/10 backdrop-blur-xl border border-white/20 p-8 rounded-3xl text-center hover:transform hover:-translate-y-2 transition-transform duration-300">
+                  <div className="text-4xl font-bold text-white mb-2">{stat.value}</div>
+                  <div className="text-white/60 text-sm tracking-widest uppercase">{stat.label}</div>
+                </div>
+              ))}
             </div>
           </div>
         </div>
       </section>
 
-      {/* CTA Section */}
-      <section className="py-24 px-6">
-        <div className="max-w-4xl mx-auto text-center">
-          <div className="p-12 rounded-3xl bg-gradient-to-br from-[#1a1f26] to-[#0d1117] border border-white/10 relative overflow-hidden">
-            {/* Background Glow */}
-            <div className="absolute top-0 left-1/2 -translate-x-1/2 w-96 h-96 bg-[#e8c559]/10 rounded-full blur-3xl" />
+      {/* GSTC / Other Products Section */}
+      <section className="py-32 bg-white text-slate-800">
+        <div className="max-w-7xl mx-auto px-6">
+          <div className="grid md:grid-cols-2 gap-16 items-center">
 
-            <div className="relative z-10">
-              <h2 className="text-3xl md:text-4xl font-bold mb-4">
-                Siap Tingkatkan Produktivitas Tim?
+            {/* Left Side: Content */}
+            <div className="order-2 md:order-1">
+              {/* Removed "Ekosistem WiseSteps" text as requested */}
+              <h2 className="text-4xl md:text-5xl font-bold mb-6 text-slate-900">
+                Lihat Produk Kami Lainnya
               </h2>
-              <p className="text-white/60 mb-8 max-w-2xl mx-auto">
-                Akses platform sekarang dan rasakan kemudahan mengelola
-                seluruh aspek operasional perusahaan dalam satu tempat.
+              <p className="text-slate-500 text-lg mb-8 leading-relaxed">
+                Temukan solusi digital lainnya yang kami kembangkan untuk mendukung keberlanjutan industri pariwisata dan efisiensi bisnis Anda.
               </p>
-              <Link
-                href="/login"
-                className="inline-flex items-center gap-2 px-8 py-4 rounded-xl bg-gradient-to-r from-[#e8c559] to-[#dcb33e] text-[#171611] font-bold text-lg shadow-lg shadow-[#e8c559]/25 hover:shadow-xl hover:shadow-[#e8c559]/40 transition-all"
-              >
-                Masuk Sekarang
-                <ArrowRight className="w-5 h-5" />
-              </Link>
+
+              <div className="p-8 rounded-3xl bg-slate-50 border border-slate-100 transition-all hover:shadow-lg group">
+                <h3 className="text-2xl font-bold text-slate-900 mb-3 flex items-center gap-2">
+                  GSTC Certificate Assistant
+                </h3>
+                <p className="text-slate-500 mb-8 max-w-lg">
+                  Asisten cerdas berbasis AI untuk memandu proses sertifikasi GSTC bagi konsultan dan klien dengan mudah dan efisien.
+                </p>
+                <a
+                  href="https://gstc.wisestepsconsulting.web.id/"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-2 px-8 py-4 rounded-xl bg-[#e8c559] text-slate-900 font-bold hover:bg-[#dcb33e] hover:-translate-y-1 shadow-lg shadow-[#e8c559]/20 transition-all"
+                >
+                  Kunjungi Website
+                  <ExternalLink className="w-5 h-5" />
+                </a>
+              </div>
+            </div>
+
+            {/* Right Side: Image Visual */}
+            <div className="order-1 md:order-2 relative h-[500px] w-full rounded-3xl overflow-hidden shadow-2xl">
+              <Image
+                src="/marvin-meyer-SYTO3xs06fU-unsplash.jpg"
+                alt="GSTC Collaboration"
+                fill
+                className="object-cover hover:scale-105 transition-transform duration-700"
+              />
+              {/* Decorative Frame */}
+              <div className="absolute inset-0 border-[12px] border-white/20 m-6 rounded-2xl pointer-events-none" />
             </div>
           </div>
         </div>
       </section>
 
-      {/* Footer */}
-      <footer className="py-8 px-6 border-t border-white/10">
-        <div className="max-w-6xl mx-auto flex flex-col md:flex-row items-center justify-between gap-4">
-          <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-[#e8c559] to-[#dcb33e] flex items-center justify-center">
-              <span className="text-[#171611] font-bold text-sm">IMS</span>
+      {/* Footer - Black Background */}
+      <footer className="py-12 px-6 bg-[#5f788e] text-white border-t border-slate-800">
+        <div className="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-6">
+          <div className="flex items-center gap-3">
+            <div className="relative w-60 h-16">
+              <Image
+                src="/logo_fix.svg"
+                alt="WiseSteps Logo"
+                fill
+                className="object-contain brightness-0 invert"
+              />
             </div>
-            <span className="text-white/60 text-sm">Internal Management System</span>
           </div>
-          <p className="text-white/40 text-sm">
-            © {new Date().getFullYear()} WiseSteps Consulting. All rights reserved.
-          </p>
+
+          <div className="text-white font-bold text-sm text-center md:text-right">
+            <p>© {new Date().getFullYear()} WiseSteps Consulting. All rights reserved.</p>
+          </div>
         </div>
       </footer>
     </div>
