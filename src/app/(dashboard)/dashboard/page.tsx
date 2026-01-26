@@ -707,8 +707,21 @@ export default function DashboardPage() {
         const isLate = now.getHours() > 8 || (now.getHours() === 8 && now.getMinutes() > 30);
 
         // Get today's date in YYYY-MM-DD format
-        const today = now.toISOString().split('T')[0];
-        const clockInTimestamp = now.toISOString();
+        const today = now.toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' }).split('T')[0];
+
+        // Construct Local ISO String (YYYY-MM-DDTHH:mm:ss.sss) for Asia/Jakarta
+        // We avoid toISOString() because it returns UTC.
+        // We want the literal time "06:00" to be sent as "2026-01-27T06:00:00"
+        const offsetDate = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Jakarta' }));
+        const year = offsetDate.getFullYear();
+        const month = String(offsetDate.getMonth() + 1).padStart(2, '0');
+        const day = String(offsetDate.getDate()).padStart(2, '0');
+        const hours = String(offsetDate.getHours()).padStart(2, '0');
+        const minutes = String(offsetDate.getMinutes()).padStart(2, '0');
+        const seconds = String(offsetDate.getSeconds()).padStart(2, '0');
+        const ms = String(offsetDate.getMilliseconds()).padStart(3, '0');
+
+        const clockInTimestamp = `${year}-${month}-${day}T${hours}:${minutes}:${seconds}.${ms}`;
 
         try {
             // Insert or update daily_checkins record
@@ -765,8 +778,19 @@ export default function DashboardPage() {
 
         const now = new Date();
         const clockOutTimeStr = now.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
-        const clockOutTimestamp = now.toISOString();
-        const today = now.toISOString().split('T')[0];
+
+        // Use standard consistent formatting for Local Time
+        const offsetDate = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Jakarta' }));
+        const year = offsetDate.getFullYear();
+        const month = String(offsetDate.getMonth() + 1).padStart(2, '0');
+        const day = String(offsetDate.getDate()).padStart(2, '0');
+        const hours = String(offsetDate.getHours()).padStart(2, '0');
+        const minutes = String(offsetDate.getMinutes()).padStart(2, '0');
+        const seconds = String(offsetDate.getSeconds()).padStart(2, '0');
+        const ms = String(offsetDate.getMilliseconds()).padStart(3, '0');
+
+        const clockOutTimestamp = `${year}-${month}-${day}T${hours}:${minutes}:${seconds}.${ms}`;
+        const today = `${year}-${month}-${day}`;
 
         try {
             // Update the daily_checkins record with clock out time
@@ -801,7 +825,8 @@ export default function DashboardPage() {
         const fetchTodayCheckinAndApprovals = async () => {
             if (!profile) return;
 
-            const today = new Date().toISOString().split('T')[0];
+            // Use Local Date (WIB) to match what we save in handleClockIn
+            const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' }).split('T')[0];
 
             try {
                 // 1. Fetch today's checkin record

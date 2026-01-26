@@ -41,6 +41,8 @@ const STATUS_COLORS: Record<string, { bg: string; text: string }> = {
     cuti: { bg: "bg-pink-500/10", text: "text-pink-500" },
     izin: { bg: "bg-orange-500/10", text: "text-orange-500" },
     field: { bg: "bg-blue-500/10", text: "text-blue-500" },
+    dinas: { bg: "bg-blue-500/10", text: "text-blue-500" },
+    lembur: { bg: "bg-orange-500/10", text: "text-orange-500" },
 };
 
 // Format time for display
@@ -82,10 +84,10 @@ export default function AttendanceHistoryPage() {
     const [startDate, setStartDate] = useState<string>(() => {
         const date = new Date();
         date.setMonth(date.getMonth() - 1);
-        return date.toISOString().split("T")[0];
+        return date.toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' }).split('T')[0];
     });
     const [endDate, setEndDate] = useState<string>(() => {
-        return new Date().toISOString().split("T")[0];
+        return new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' }).split('T')[0];
     });
     const [statusFilter, setStatusFilter] = useState<string>("all");
     const [searchQuery, setSearchQuery] = useState<string>("");
@@ -393,7 +395,16 @@ export default function AttendanceHistoryPage() {
                                 ) : (
                                     filteredRecords.map((record) => {
                                         const profile = record.profiles as unknown as Profile;
-                                        const statusColor = STATUS_COLORS[record.status] || { bg: "bg-gray-500/10", text: "text-gray-500" };
+                                        // Case-insensitive lookup
+                                        const statusKey = (record.status || "").toLowerCase();
+                                        // Map synonymous keys
+                                        let finalKey = statusKey;
+                                        if (statusKey === 'sakit') finalKey = 'sick';
+                                        if (statusKey === 'dinas') finalKey = 'dinas';
+                                        if (statusKey === 'lembur') finalKey = 'lembur';
+
+                                        const statusColor = STATUS_COLORS[finalKey] || { bg: "bg-gray-500/10", text: "text-gray-500" };
+
                                         return (
                                             <tr key={record.id} className="hover:bg-black/5 dark:hover:bg-white/5 transition-colors">
                                                 <td className="p-3 text-[var(--text-secondary)]">
