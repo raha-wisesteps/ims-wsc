@@ -79,10 +79,10 @@ const STATUS_CONFIG: Record<string, { label: string; icon: string; bgClass: stri
     leave: {
         label: "Cuti",
         icon: "✈️",
-        bgClass: "bg-sky-500/10",
-        textClass: "text-sky-600 dark:text-sky-400",
-        borderClass: "border-sky-500/20",
-        dotClass: "bg-sky-500"
+        bgClass: "bg-pink-500/10",
+        textClass: "text-pink-600 dark:text-pink-400",
+        borderClass: "border-pink-500/20",
+        dotClass: "bg-pink-500"
     },
     cuti: {
         label: "Cuti",
@@ -320,10 +320,15 @@ export default function WeeklyBoardPage() {
                 while (curr <= end) {
                     const dStr = curr.toISOString().split('T')[0];
                     // Map leave_type to StatusType
-                    let status: StatusType = 'leave';
+                    let status: StatusType = 'office'; // Default fallback temp
                     const type = l.leave_type?.toLowerCase() || 'annual';
+
                     if (type.includes('sakit') || type.includes('sick')) status = 'sick';
-                    if (type.includes('cuti') || type.includes('annual')) status = 'leave';
+                    else if (type.includes('cuti') || type.includes('annual') || type.includes('maternity')) status = 'cuti';
+                    else if (type.includes('izin') || type.includes('permission')) status = 'izin';
+                    else if (type.includes('dinas') || type.includes('trip')) status = 'dinas';
+                    else if (type.includes('wfh')) status = 'wfh';
+                    else if (type.includes('wfa')) status = 'wfa';
 
                     if (l.status === 'pending') status = 'pending';
 
@@ -355,13 +360,20 @@ export default function WeeklyBoardPage() {
             setRequestsMap(newMap);
 
             // Set Employees
-            const mapped = (profiles || []).map((p: any) => ({
-                id: p.id,
-                name: p.full_name,
-                role: p.job_title || p.role, // Use job_title if available logic
-                avatar: p.avatar_url,
-                isOnline: false // Realtime online status is complex, verify later or mock
-            }));
+            const mapped = (profiles || [])
+                .filter((p: any) => {
+                    // EXCLUDE HR: Check role string (case-insensitive) or is_hr flag
+                    const role = (p.role || '').toLowerCase();
+                    const isHR = role.includes('hr') || p.is_hr === true;
+                    return !isHR;
+                })
+                .map((p: any) => ({
+                    id: p.id,
+                    name: p.full_name,
+                    role: p.job_title || p.role,
+                    avatar: p.avatar_url,
+                    isOnline: false
+                }));
             setEmployees(mapped);
 
         } catch (e) {
