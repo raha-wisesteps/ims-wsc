@@ -9,6 +9,8 @@ import {
     Filter,
 } from "lucide-react";
 
+import { createClient } from "@/lib/supabase/client";
+
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import {
@@ -247,13 +249,136 @@ const StatusBadge = ({ status }: { status: StatusType | null | undefined }) => {
 };
 
 export default function WeeklyBoardPage() {
-    const [currentDate, setCurrentDate] = useState(new Date(2026, 0, 15)); // Start in Jan 2026 as per user context
+    const supabase = createClient();
+    const [currentDate, setCurrentDate] = useState(new Date());
     const [selectedDate, setSelectedDate] = useState<Date | null>(null);
     const [searchQuery, setSearchQuery] = useState("");
 
-    const filteredEmployees = mockEmployees.filter((emp) =>
+    // Data State
+    const [employees, setEmployees] = useState<any[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [requestsMap, setRequestsMap] = useState<Record<string, Record<string, StatusType>>>({});
+
+    // Filtered Employees
+    const filteredEmployees = employees.filter((emp) =>
         emp.name.toLowerCase().includes(searchQuery.toLowerCase())
     );
+
+    // Fetch Data
+    const fetchData = async () => {
+        setLoading(true);
+        try {
+            // 1. Fetch Employees
+            const { data: profiles, error: profileError } = await supabase
+                .from('profiles')
+                .select('id, full_name, role, job_type, job_level, is_active, avatar_url')
+                .eq('is_active', true)
+                .order('full_name');
+
+            if (profileError) throw profileError;
+
+            // 2. Fetch Requests (Leave & Others) for the current VIEW window? 
+            // For simplicity, we fetch *all* active requests or a wide range. 
+            // Ideally, filter by Range. Let's fetch current month +/- 1 month roughly.
+
+            // Start/End of current view (roughly)
+            const startStr = new Date(currentDate.getFullYear(), currentDate.getMonth() - 1, 1).toISOString();
+            const endStr = new Date(currentDate.getFullYear(), currentDate.getMonth() + 2, 1).toISOString();
+
+            // Leaves
+            const { data: leaves, error: leaveError } = await supabase
+                .from('leave_requests')
+                .select('*')
+                .or('status.eq.approved,status.eq.pending') // Show approved and pending
+                .gte('end_date', startStr) // Overlapping logic simpl
+                .lte('start_date', endStr);
+
+            // Other Requests (WFH etc)
+            const { data: others, error: otherError } = await supabase
+                .from('other_requests')
+                .select('*')
+                .or('status.eq.approved,status.eq.pending')
+                .gte('request_date', startStr)
+                .lte('request_date', endStr);
+
+            // Process Requests into a Lookup Map: { [userId]: { [dateStr]: 'status' } }
+            const newMap: Record<string, Record<string, StatusType>> = {};
+
+            // Helper to fill map
+            const setStatus = (uid: string, dateStr: string, status: StatusType) => {
+                if (!newMap[uid]) newMap[uid] = {};
+                // Priority logic: Leave > WFH > Office
+                // If already set, maybe overwrite or keep? 
+                // Let's assume Leave overwrites others.
+                newMap[uid][dateStr] = status;
+            };
+
+            // 1. Map Leaves (Range)
+            leaves?.forEach((l: any) => {
+                let curr = new Date(l.start_date);
+                const end = new Date(l.end_date);
+                while (curr <= end) {
+                    const dStr = curr.toISOString().split('T')[0];
+                    // Map leave_type to StatusType
+                    let status: StatusType = 'leave';
+                    const type = l.leave_type?.toLowerCase() || 'annual';
+                    if (type.includes('sakit') || type.includes('sick')) status = 'sick';
+                    if (type.includes('cuti') || type.includes('annual')) status = 'leave';
+
+                    if (l.status === 'pending') status = 'pending';
+
+                    setStatus(l.profile_id, dStr, status);
+                    curr.setDate(curr.getDate() + 1);
+                }
+            });
+
+            // 2. Map Others (Single Date usually)
+            others?.forEach((o: any) => {
+                const dStr = o.request_date; // string YYYY-MM-DD
+                let status: StatusType = 'office';
+                const type = o.request_type?.toLowerCase() || '';
+
+                if (type === 'wfh') status = 'wfh';
+                if (type === 'wfa') status = 'wfa';
+                if (type === 'overtime' || type === 'lembur') status = 'overtime';
+                if (type === 'dinas' || type === 'business_trip') status = 'dinas';
+
+                if (o.status === 'pending') status = 'pending';
+
+                // Only set if not already 'leave' or 'sick' (leaves take precedence)
+                const existing = newMap[o.profile_id]?.[dStr];
+                if (existing !== 'leave' && existing !== 'sick') {
+                    setStatus(o.profile_id, dStr, status);
+                }
+            });
+
+            setRequestsMap(newMap);
+
+            // Set Employees
+            const mapped = (profiles || []).map((p: any) => ({
+                id: p.id,
+                name: p.full_name,
+                role: p.job_title || p.role, // Use job_title if available logic
+                avatar: p.avatar_url,
+                isOnline: false // Realtime online status is complex, verify later or mock
+            }));
+            setEmployees(mapped);
+
+        } catch (e) {
+            console.error("Fetch Board Error:", e);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    // Load initial data
+    useState(() => {
+        fetchData();
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    });
+
+    // Refresh when changing months significantly? For now just fetch once or on mount.
+    // In production, we should refetch when currentDate changes month.
 
     // --- Navigation Handlers ---
 
@@ -302,6 +427,24 @@ export default function WeeklyBoardPage() {
             date.getFullYear() === today.getFullYear();
     };
 
+    // REAL STATUS GETTER
+    const getRealStatus = (empId: string, date: Date): StatusType | null => {
+        const dStr = date.toISOString().split('T')[0];
+        const holiday = getHolidayName(date);
+        const day = date.getDay();
+        const isWeekend = day === 0 || day === 6;
+
+        // 1. Check Requests Map
+        if (requestsMap[empId] && requestsMap[empId][dStr]) {
+            return requestsMap[empId][dStr];
+        }
+
+        // 2. Fallbacks
+        if (isWeekend || holiday) return null; // Off
+
+        return 'office'; // Default to Office
+    };
+
     return (
         <div className="flex flex-col h-[calc(100vh-100px)] space-y-4">
             {/* --- Header & Controls --- */}
@@ -310,8 +453,6 @@ export default function WeeklyBoardPage() {
                     <h1 className="text-3xl font-black tracking-tight text-foreground">Team Schedule</h1>
                     <p className="text-muted-foreground mt-1">Manage attendance, workload, and availability at a glance.</p>
                 </div>
-
-
             </div>
 
             {/* --- Filters & Search Row --- */}
@@ -383,8 +524,12 @@ export default function WeeklyBoardPage() {
                                     <TableRow key={emp.id} className="hover:bg-muted/5">
                                         <TableCell className="font-medium sticky left-0 z-10 bg-background border-r group p-0">
                                             <div className="flex items-center gap-3 p-4 h-full w-full hover:bg-muted/5 transition-colors">
-                                                <div className={`w-9 h-9 rounded-full flex items-center justify-center font-bold text-xs bg-muted border ${emp.isOnline ? 'ring-2 ring-emerald-500/30' : ''}`}>
-                                                    {emp.name.split(' ').map(n => n[0]).join('').slice(0, 2)}
+                                                <div className={`w-9 h-9 rounded-full flex items-center justify-center font-bold text-xs bg-muted border overflow-hidden`}>
+                                                    {emp.avatar ? (
+                                                        <img src={emp.avatar} alt={emp.name} className="w-full h-full object-cover" />
+                                                    ) : (
+                                                        emp.name.split(' ').map((n: string) => n[0]).join('').slice(0, 2)
+                                                    )}
                                                 </div>
                                                 <div className="flex flex-col">
                                                     <span className="font-semibold text-sm">{emp.name}</span>
@@ -397,7 +542,7 @@ export default function WeeklyBoardPage() {
                                             let i = 0;
                                             while (i < weekDays.length) {
                                                 const day = weekDays[i];
-                                                const status = getMockStatus(emp.id, day);
+                                                const status = getRealStatus(emp.id, day);
                                                 const isSpecial = status && status !== 'office' && status !== 'pending'; // Statuses to merge
 
                                                 let span = 1;
@@ -406,7 +551,7 @@ export default function WeeklyBoardPage() {
                                                 if (isSpecial) {
                                                     for (let j = i + 1; j < weekDays.length; j++) {
                                                         const nextDay = weekDays[j];
-                                                        const nextStatus = getMockStatus(emp.id, nextDay);
+                                                        const nextStatus = getRealStatus(emp.id, nextDay);
                                                         if (nextStatus === status) {
                                                             span++;
                                                         } else {
@@ -481,7 +626,7 @@ export default function WeeklyBoardPage() {
                             {(() => {
                                 const dayStatuses = filteredEmployees.map(e => ({
                                     ...e,
-                                    status: getMockStatus(e.id, selectedDate)
+                                    status: getRealStatus(e.id, selectedDate)
                                 }));
 
                                 const overtime = dayStatuses.filter(s => s.status === 'overtime');

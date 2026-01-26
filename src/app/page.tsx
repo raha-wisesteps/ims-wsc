@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useTheme } from "@/contexts/ThemeContext";
 import Link from "next/link";
 import Image from "next/image";
 import {
@@ -72,6 +73,12 @@ export default function LandingPage() {
     window.addEventListener("scroll", handleScroll);
     return () => window.removeEventListener("scroll", handleScroll);
   }, []);
+
+  const { setTheme } = useTheme();
+
+  useEffect(() => {
+    setTheme("dark");
+  }, [setTheme]);
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-800 overflow-x-hidden font-sans">

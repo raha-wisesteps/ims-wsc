@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useTheme } from "@/contexts/ThemeContext";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
@@ -22,6 +23,12 @@ export default function LoginForm({ error: initialError }: LoginFormProps) {
 
     // State for Contact Modal
     const [showContactModal, setShowContactModal] = useState(false);
+
+    const { setTheme } = useTheme();
+
+    useEffect(() => {
+        setTheme("dark");
+    }, [setTheme]);
 
     const supabase = createClient();
 

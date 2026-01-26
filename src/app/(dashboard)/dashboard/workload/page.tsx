@@ -33,13 +33,25 @@ interface Employee {
     items: WorkloadItem[];
 }
 
-const CAPACITY_CONFIG: Record<string, number> = {
-    "Intern": 8,
-    "Analyst L1": 10,
-    "Analyst L2": 10,
-    "Senior Analyst": 12,
-    "Consultant": 12,
-    "Manager": 12,
+const getCapacity = (level: string): number => {
+    // 0. C-Level
+    if (level.toUpperCase().includes("CEO")) return 14;
+
+    // 1. Interns (Global)
+    if (level.includes("Intern")) return 8;
+
+    // 2. Analyst / Consultant / Manager Track
+    if (level.includes("Analyst")) return 10;
+    if (level.includes("Consultant")) return 12;
+    if (level.includes("Manager") && !level.includes("Business")) return 14;
+
+    // 3. Bisdev Track
+    if (level.includes("Sales Executive")) return 10;
+    if (level.includes("Business Dev")) return 12;
+    if (level.includes("Business Manager")) return 14;
+
+    // Fallback
+    return 10;
 };
 
 // Updated Weights
@@ -86,7 +98,7 @@ export default function WorkloadPage() {
 
     // Permission Logic
     const { profile: currentUserProfile } = useAuth();
-    const canEdit = currentUserProfile?.job_type !== 'intern' && currentUserProfile?.job_level !== 'Intern';
+    const isIntern = currentUserProfile?.job_type === 'intern' || currentUserProfile?.job_level === 'Intern';
 
     // Fetch Data from Supabase
     const fetchData = async () => {
@@ -95,7 +107,7 @@ export default function WorkloadPage() {
             // 1. Fetch active profiles
             const { data: profiles, error: profileError } = await supabase
                 .from('profiles')
-                .select('id, full_name, role, job_type, job_level, avatar_url')
+                .select('id, full_name, role, job_type, job_level, avatar_url, is_hr')
                 .eq('is_active', true)
                 .order('full_name');
 
@@ -109,26 +121,39 @@ export default function WorkloadPage() {
             if (itemsError) throw itemsError;
 
             // 3. Map to Employee format
-            const mappedEmployees: Employee[] = (profiles || []).map((p: any) => {
-                const empItems = (items || []).filter((i: any) => i.profile_id === p.id).map((i: any) => ({
-                    ...i,
-                    color: CATEGORY_COLORS[i.category as Category] || 'bg-slate-500'
-                }));
+            // Define privileged roles (who can see HR)
+            const isPrivileged = currentUserProfile?.role === 'super_admin' ||
+                currentUserProfile?.role === 'ceo' ||
+                currentUserProfile?.role === 'hr' ||
+                currentUserProfile?.is_hr;
 
-                // Determine level from job_type/level or default
-                let level = p.job_level || "Analyst L1";
-                if (p.job_type === 'intern') level = "Intern";
-                // Normalize some legacy values if needed
+            const mappedEmployees: Employee[] = (profiles || [])
+                .filter((p: any) => {
+                    // Filter out HR if user is not privileged
+                    const isTargetHR = p.role === 'hr' || p.job_type === 'hr' || p.is_hr;
+                    if (isTargetHR && !isPrivileged) return false;
+                    return true;
+                })
+                .map((p: any) => {
+                    const empItems = (items || []).filter((i: any) => i.profile_id === p.id).map((i: any) => ({
+                        ...i,
+                        color: CATEGORY_COLORS[i.category as Category] || 'bg-slate-500'
+                    }));
 
-                return {
-                    id: p.id,
-                    name: p.full_name,
-                    role: p.role === 'employee' ? (p.job_type === 'intern' ? 'Intern' : 'Analyst') : p.role, // Simple fallback
-                    level: level,
-                    avatar: p.avatar_url ? p.avatar_url : p.full_name.split(' ').map((n: string) => n[0]).join('').slice(0, 2),
-                    items: empItems
-                };
-            });
+                    // Determine level from job_type/level or default
+                    let level = p.job_level || "Analyst L1";
+                    if (p.job_type === 'intern') level = "Intern";
+                    // Normalize some legacy values if needed
+
+                    return {
+                        id: p.id,
+                        name: p.full_name,
+                        role: p.role === 'employee' ? (p.job_type === 'intern' ? 'Intern' : 'Analyst') : p.role, // Simple fallback
+                        level: level,
+                        avatar: p.avatar_url ? p.avatar_url : p.full_name.split(' ').map((n: string) => n[0]).join('').slice(0, 2),
+                        items: empItems
+                    };
+                });
 
             setEmployees(mappedEmployees);
 
@@ -140,9 +165,10 @@ export default function WorkloadPage() {
     };
 
     useEffect(() => {
-        fetchData();
-        // Subscribe to changes? For now, just initial fetch.
-    }, []);
+        if (currentUserProfile) {
+            fetchData();
+        }
+    }, [currentUserProfile]);
 
     const handleOpenEdit = (empId: string) => {
         setSelectedEmployeeId(empId);
@@ -244,7 +270,7 @@ export default function WorkloadPage() {
                                     key={emp.id}
                                     employee={emp}
                                     onManage={() => handleOpenEdit(emp.id)}
-                                    canEdit={canEdit}
+                                    canEdit={!isIntern || currentUserProfile?.id === emp.id}
                                 />
                             ))}
                         </div>
@@ -265,6 +291,7 @@ export default function WorkloadPage() {
                                             key={emp.id}
                                             employee={emp}
                                             onManage={() => handleOpenEdit(emp.id)}
+                                            canEdit={!isIntern || currentUserProfile?.id === emp.id}
                                         />
                                     ))}
                                 </tbody>
@@ -288,8 +315,8 @@ export default function WorkloadPage() {
 
 // --- Components ---
 
-function EmployeeWorkloadRow({ employee, onManage }: { employee: Employee; onManage: () => void }) {
-    const maxCapacity = CAPACITY_CONFIG[employee.level] || 10;
+function EmployeeWorkloadRow({ employee, onManage, canEdit = false }: { employee: Employee; onManage: () => void; canEdit?: boolean }) {
+    const maxCapacity = getCapacity(employee.level);
     const totalSlots = employee.items.reduce((sum, item) => sum + item.slots, 0);
     const usagePercent = maxCapacity > 0 ? Math.min((totalSlots / maxCapacity) * 100, 100) : 0;
     const status = getStatus(totalSlots, maxCapacity);
@@ -341,18 +368,20 @@ function EmployeeWorkloadRow({ employee, onManage }: { employee: Employee; onMan
                 </span>
             </td>
             <td className="px-6 py-4 text-right">
-                <Button variant="ghost" size="icon" onClick={onManage} className="h-8 w-8 hover:text-amber-500 hover:bg-amber-500/10">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z" />
-                    </svg>
-                </Button>
+                {canEdit && (
+                    <Button variant="ghost" size="icon" onClick={onManage} className="h-8 w-8 hover:text-amber-500 hover:bg-amber-500/10">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z" />
+                        </svg>
+                    </Button>
+                )}
             </td>
         </tr>
     );
 }
 
 function EmployeeWorkloadCard({ employee, onManage, canEdit = false }: { employee: Employee; onManage: () => void; canEdit?: boolean }) {
-    const maxCapacity = CAPACITY_CONFIG[employee.level] || 10;
+    const maxCapacity = getCapacity(employee.level);
     const totalSlots = employee.items.reduce((sum, item) => sum + item.slots, 0);
     const usagePercent = maxCapacity > 0 ? Math.min((totalSlots / maxCapacity) * 100, 100) : 0;
     const status = getStatus(totalSlots, maxCapacity);
@@ -505,7 +534,7 @@ function WorkloadEditModal({ employee, onClose, onUpdate }: { employee: Employee
         }
     };
 
-    const maxCapacity = CAPACITY_CONFIG[employee.level] || 10;
+    const maxCapacity = getCapacity(employee.level);
     const currentSlots = employee.items.reduce((sum, item) => sum + item.slots, 0);
 
     return (

@@ -94,7 +94,7 @@ export default function Header({
 
     // Get user display info from profile or fallback
     const userName = profile?.full_name || "Loading...";
-    const userRole = profile?.job_title || "Tourism Analyst";
+    const userRole = profile?.job_title || "Employee";
     const userAvatar = profile?.avatar_url || undefined;
 
     const today = new Date();

@@ -19,6 +19,7 @@ export default function ProfilePage() {
         fullName: "",
         bio: "",
         birthDate: "",
+        jobTitle: "",
     });
 
     // Password state
@@ -42,6 +43,7 @@ export default function ProfilePage() {
                 fullName: profile.full_name || "",
                 bio: "",
                 birthDate: profile.birth_date || "",
+                jobTitle: profile.job_title || "",
             });
         }
     }, [profile]);
@@ -66,6 +68,7 @@ export default function ProfilePage() {
                     },
                     body: JSON.stringify({
                         full_name: formData.fullName,
+                        job_title: formData.jobTitle,
                         birth_date: formData.birthDate || null,
                         updated_at: new Date().toISOString()
                     })
@@ -313,7 +316,7 @@ export default function ProfilePage() {
                         </div>
 
                         <h2 className="text-xl font-bold text-white">{profile.full_name || "Unknown"}</h2>
-                        <p className="text-[#e8c559] font-medium">{getRoleDisplay()}</p>
+                        <p className="text-[#e8c559] font-medium">{profile.job_level || "-"}</p>
 
                         <div className="mt-6 w-full pt-6 border-t border-white/10 space-y-3">
                             <div className="flex items-center gap-3 text-left">
@@ -348,7 +351,7 @@ export default function ProfilePage() {
                                     <Shield className="w-4 h-4 text-[var(--primary)]" />
                                 </div>
                                 <div>
-                                    <p className="text-xs text-gray-500">Role</p>
+                                    <p className="text-xs text-gray-500">Status</p>
                                     <p className="text-sm text-white capitalize">{profile.role.replace("_", " ")}</p>
                                 </div>
                             </div>
@@ -448,9 +451,9 @@ export default function ProfilePage() {
                                 <label className="text-xs font-bold text-gray-500 uppercase tracking-wider">Job Title</label>
                                 <input
                                     type="text"
-                                    value={getRoleDisplay()}
-                                    readOnly
-                                    className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-gray-400 cursor-not-allowed"
+                                    value={formData.jobTitle}
+                                    onChange={(e) => setFormData({ ...formData, jobTitle: e.target.value })}
+                                    className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-[#e8c559]/50 transition-colors"
                                 />
                             </div>
 
@@ -548,7 +551,7 @@ export default function ProfilePage() {
 
                     <div className="flex justify-end gap-4 pt-4">
                         <button
-                            onClick={() => setFormData({ fullName: profile.full_name || "", bio: "", birthDate: profile.birth_date || "" })}
+                            onClick={() => setFormData({ fullName: profile.full_name || "", bio: "", birthDate: profile.birth_date || "", jobTitle: profile.job_title || "" })}
                             className="px-6 py-2.5 rounded-xl border border-white/10 text-gray-400 font-bold hover:bg-white/5 hover:text-white transition-all"
                         >
                             Reset

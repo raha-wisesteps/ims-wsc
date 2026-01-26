@@ -42,6 +42,24 @@ const DEPT_CONFIG: Record<string, { label: string; bgClass: string; textClass: s
     intern: { label: "Intern", bgClass: "bg-sky-500/10", textClass: "text-sky-400" },
 };
 
+const LEVEL_OPTIONS: Record<string, string[]> = {
+    analyst: [
+        "Intern",
+        "Analyst I", "Analyst II", "Analyst III",
+        "Consultant I", "Consultant II", "Consultant III",
+        "Manager I", "Manager II", "Manager III"
+    ],
+    bisdev: [
+        "Intern",
+        "Sales Executive I", "Sales Executive II", "Sales Executive III",
+        "Business Dev I", "Business Dev II", "Business Dev III",
+        "Business Manager I", "Business Manager II", "Business Manager III"
+    ],
+    sales: ["Intern"],
+    hr: ["Intern"],
+    intern: ["Intern"],
+};
+
 export default function UserManagementPage() {
     const supabase = createClient();
     const { profile: currentUser } = useAuth();
@@ -55,6 +73,8 @@ export default function UserManagementPage() {
 
     // Form state for editing
     const [formData, setFormData] = useState({
+        job_type: "analyst" as Department,
+        job_level: "",
         employee_type: "employee" as EmployeeType,
         is_office_manager: false,
         is_busdev: false,
@@ -87,6 +107,8 @@ export default function UserManagementPage() {
     const handleEdit = (user: User) => {
         setSelectedUser(user);
         setFormData({
+            job_type: user.job_type || "analyst",
+            job_level: user.job_level || "",
             employee_type: user.employee_type || "employee",
             is_office_manager: user.is_office_manager || false,
             is_busdev: user.is_busdev || false,
@@ -102,6 +124,8 @@ export default function UserManagementPage() {
         const { error } = await supabase
             .from('profiles')
             .update({
+                job_type: formData.job_type,
+                job_level: formData.job_level,
                 employee_type: formData.employee_type,
                 is_office_manager: formData.is_office_manager,
                 is_busdev: formData.is_busdev,
@@ -278,7 +302,7 @@ export default function UserManagementPage() {
                                         <td className="p-4 text-[var(--text-primary)] font-medium">{user.job_level || "-"}</td>
                                         <td className="p-4 text-gray-400 text-sm">{formatDate(user.join_date)}</td>
                                         <td className="p-4">
-                                            {canManage && (
+                                            {canManage && user.role !== 'ceo' && user.role !== 'super_admin' && (
                                                 <button
                                                     onClick={() => handleEdit(user)}
                                                     className="p-2 rounded-lg hover:bg-white/10 text-gray-400 hover:text-white transition-colors"
@@ -299,113 +323,164 @@ export default function UserManagementPage() {
             </div>
 
             {/* Edit User Modal */}
-            {selectedUser && (
-                <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-                    <div className="glass-panel rounded-2xl p-6 w-full max-w-md">
-                        <div className="flex items-center justify-between mb-6">
-                            <h2 className="text-xl font-bold text-[var(--text-primary)]">Edit Access: {selectedUser.full_name}</h2>
-                            <button
-                                onClick={() => setSelectedUser(null)}
-                                className="p-2 hover:bg-white/10 rounded-lg transition-colors"
-                            >
-                                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-gray-400" viewBox="0 0 24 24" fill="currentColor">
-                                    <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" />
-                                </svg>
-                            </button>
-                        </div>
-
-                        <div className="space-y-4">
-                            {/* Employee Type */}
-                            <div>
-                                <label className="block text-sm font-medium text-gray-400 mb-2">Employee Type</label>
-                                <select
-                                    value={formData.employee_type}
-                                    onChange={(e) => setFormData({ ...formData, employee_type: e.target.value as EmployeeType })}
-                                    className="w-full p-3 rounded-lg bg-black/30 border border-white/10 text-white focus:border-[#e8c559] focus:ring-1 focus:ring-[#e8c559] outline-none"
-                                >
-                                    <option value="employee">Office Employee</option>
-                                    <option value="remote_employee">Remote Employee</option>
-                                </select>
-                            </div>
-
-                            {/* Access Flags */}
-                            <div className="space-y-3">
-                                <p className="text-sm font-medium text-gray-400">Access Flags</p>
-
-                                <div className="flex items-center justify-between p-3 rounded-lg bg-white/5 border border-white/10">
-                                    <div>
-                                        <span className="block text-sm font-medium text-white">Office Manager</span>
-                                        <span className="text-xs text-gray-400">Access to /operational</span>
-                                    </div>
-                                    <input
-                                        type="checkbox"
-                                        checked={formData.is_office_manager}
-                                        onChange={(e) => setFormData({ ...formData, is_office_manager: e.target.checked })}
-                                        className="w-5 h-5 rounded border-gray-600 text-[#e8c559] focus:ring-[#e8c559] bg-black/30"
-                                    />
-                                </div>
-
-                                <div className="flex items-center justify-between p-3 rounded-lg bg-white/5 border border-white/10">
-                                    <div>
-                                        <span className="block text-sm font-medium text-white">Busdev Access</span>
-                                        <span className="text-xs text-gray-400">Access to CRM Database</span>
-                                    </div>
-                                    <input
-                                        type="checkbox"
-                                        checked={formData.is_busdev}
-                                        onChange={(e) => setFormData({ ...formData, is_busdev: e.target.checked })}
-                                        className="w-5 h-5 rounded border-gray-600 text-amber-500 focus:ring-amber-500 bg-black/30"
-                                    />
-                                </div>
-
-                                <div className="flex items-center justify-between p-3 rounded-lg bg-white/5 border border-white/10">
-                                    <div>
-                                        <span className="block text-sm font-medium text-white">HR Access</span>
-                                        <span className="text-xs text-gray-400">Limited HR page access</span>
-                                    </div>
-                                    <input
-                                        type="checkbox"
-                                        checked={formData.is_hr}
-                                        onChange={(e) => setFormData({ ...formData, is_hr: e.target.checked })}
-                                        className="w-5 h-5 rounded border-gray-600 text-purple-500 focus:ring-purple-500 bg-black/30"
-                                    />
-                                </div>
-
-                                <div className="flex items-center justify-between p-3 rounded-lg bg-white/5 border border-white/10">
-                                    <div>
-                                        <span className="block text-sm font-medium text-white">Gender: Female</span>
-                                        <span className="text-xs text-gray-400">Enable female-specific leaves (e.g. Maternity)</span>
-                                    </div>
-                                    <input
-                                        type="checkbox"
-                                        checked={formData.is_female}
-                                        onChange={(e) => setFormData({ ...formData, is_female: e.target.checked })}
-                                        className="w-5 h-5 rounded border-gray-600 text-pink-500 focus:ring-pink-500 bg-black/30"
-                                    />
-                                </div>
-                            </div>
-
-                            <div className="flex gap-3 pt-2">
+            {
+                selectedUser && (
+                    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+                        <div className="glass-panel rounded-2xl p-6 w-full max-w-md">
+                            <div className="flex items-center justify-between mb-6">
+                                <h2 className="text-xl font-bold text-[var(--text-primary)]">Edit Access: {selectedUser.full_name}</h2>
                                 <button
-                                    type="button"
                                     onClick={() => setSelectedUser(null)}
-                                    className="flex-1 py-3 rounded-lg border border-white/10 text-gray-400 hover:bg-white/5 font-medium transition-colors"
+                                    className="p-2 hover:bg-white/10 rounded-lg transition-colors"
                                 >
-                                    Cancel
+                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-gray-400" viewBox="0 0 24 24" fill="currentColor">
+                                        <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" />
+                                    </svg>
                                 </button>
-                                <button
-                                    onClick={handleSave}
-                                    disabled={saving}
-                                    className="flex-1 py-3 rounded-lg bg-[#e8c559] text-[#171611] font-bold hover:bg-[#ebd07a] transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
-                                >
-                                    {saving && <Loader2 className="w-4 h-4 animate-spin" />}
-                                    Save Changes
-                                </button>
+                            </div>
+
+                            <div className="space-y-4">
+                                {/* Department / Role (Job Type) - MOVED UP TO BE PROMINENT */}
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-400 mb-2">Department / Role</label>
+                                    <select
+                                        value={formData.job_type}
+                                        onChange={(e) => {
+                                            const newType = e.target.value as Department;
+                                            setFormData({
+                                                ...formData,
+                                                job_type: newType,
+                                                // Reset level if switching to a dept with options
+                                                job_level: LEVEL_OPTIONS[newType]?.[0] || ""
+                                            });
+                                        }}
+                                        className="w-full p-3 rounded-lg bg-black/30 border border-white/10 text-white focus:border-[#e8c559] focus:ring-1 focus:ring-[#e8c559] outline-none"
+                                    >
+                                        <option value="analyst">Analyst</option>
+                                        <option value="bisdev">Bisdev</option>
+                                        <option value="sales">Sales</option>
+                                        <option value="hr">HR</option>
+                                        <option value="intern">Intern</option>
+                                    </select>
+                                </div>
+
+                                {/* Job Level - Conditional */}
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-400 mb-2">Level / Position</label>
+                                    {LEVEL_OPTIONS[formData.job_type] ? (
+                                        <select
+                                            value={formData.job_level}
+                                            onChange={(e) => setFormData({ ...formData, job_level: e.target.value })}
+                                            className="w-full p-3 rounded-lg bg-black/30 border border-white/10 text-white focus:border-[#e8c559] focus:ring-1 focus:ring-[#e8c559] outline-none"
+                                        >
+                                            <option value="">Select Level...</option>
+                                            {LEVEL_OPTIONS[formData.job_type].map((opt) => (
+                                                <option key={opt} value={opt}>{opt}</option>
+                                            ))}
+                                        </select>
+                                    ) : (
+                                        <input
+                                            type="text"
+                                            value={formData.job_level}
+                                            onChange={(e) => setFormData({ ...formData, job_level: e.target.value })}
+                                            placeholder="Enter job level..."
+                                            className="w-full p-3 rounded-lg bg-black/30 border border-white/10 text-white focus:border-[#e8c559] focus:ring-1 focus:ring-[#e8c559] outline-none"
+                                        />
+                                    )}
+                                </div>
+
+                                {/* Employee Type */}
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-400 mb-2">Employee Type</label>
+                                    <select
+                                        value={formData.employee_type}
+                                        onChange={(e) => setFormData({ ...formData, employee_type: e.target.value as EmployeeType })}
+                                        className="w-full p-3 rounded-lg bg-black/30 border border-white/10 text-white focus:border-[#e8c559] focus:ring-1 focus:ring-[#e8c559] outline-none"
+                                    >
+                                        <option value="employee">Office Employee</option>
+                                        <option value="remote_employee">Remote Employee</option>
+                                    </select>
+                                </div>
+
+                                {/* Access Flags */}
+                                <div className="space-y-3">
+                                    <p className="text-sm font-medium text-gray-400">Access Flags</p>
+
+                                    <div className="flex items-center justify-between p-3 rounded-lg bg-white/5 border border-white/10">
+                                        <div>
+                                            <span className="block text-sm font-medium text-white">Office Manager</span>
+                                            <span className="text-xs text-gray-400">Access to /operational</span>
+                                        </div>
+                                        <input
+                                            type="checkbox"
+                                            checked={formData.is_office_manager}
+                                            onChange={(e) => setFormData({ ...formData, is_office_manager: e.target.checked })}
+                                            className="w-5 h-5 rounded border-gray-600 text-[#e8c559] focus:ring-[#e8c559] bg-black/30"
+                                        />
+                                    </div>
+
+                                    <div className="flex items-center justify-between p-3 rounded-lg bg-white/5 border border-white/10">
+                                        <div>
+                                            <span className="block text-sm font-medium text-white">Busdev Access</span>
+                                            <span className="text-xs text-gray-400">Access to CRM Database</span>
+                                        </div>
+                                        <input
+                                            type="checkbox"
+                                            checked={formData.is_busdev}
+                                            onChange={(e) => setFormData({ ...formData, is_busdev: e.target.checked })}
+                                            className="w-5 h-5 rounded border-gray-600 text-amber-500 focus:ring-amber-500 bg-black/30"
+                                        />
+                                    </div>
+
+                                    <div className="flex items-center justify-between p-3 rounded-lg bg-white/5 border border-white/10">
+                                        <div>
+                                            <span className="block text-sm font-medium text-white">HR Access</span>
+                                            <span className="text-xs text-gray-400">Limited HR page access</span>
+                                        </div>
+                                        <input
+                                            type="checkbox"
+                                            checked={formData.is_hr}
+                                            onChange={(e) => setFormData({ ...formData, is_hr: e.target.checked })}
+                                            className="w-5 h-5 rounded border-gray-600 text-purple-500 focus:ring-purple-500 bg-black/30"
+                                        />
+                                    </div>
+
+                                    <div className="flex items-center justify-between p-3 rounded-lg bg-white/5 border border-white/10">
+                                        <div>
+                                            <span className="block text-sm font-medium text-white">Gender: Female</span>
+                                            <span className="text-xs text-gray-400">Enable female-specific leaves (e.g. Maternity)</span>
+                                        </div>
+                                        <input
+                                            type="checkbox"
+                                            checked={formData.is_female}
+                                            onChange={(e) => setFormData({ ...formData, is_female: e.target.checked })}
+                                            className="w-5 h-5 rounded border-gray-600 text-pink-500 focus:ring-pink-500 bg-black/30"
+                                        />
+                                    </div>
+                                </div>
+
+                                <div className="flex gap-3 pt-2">
+                                    <button
+                                        type="button"
+                                        onClick={() => setSelectedUser(null)}
+                                        className="flex-1 py-3 rounded-lg border border-white/10 text-gray-400 hover:bg-white/5 font-medium transition-colors"
+                                    >
+                                        Cancel
+                                    </button>
+                                    <button
+                                        onClick={handleSave}
+                                        disabled={saving}
+                                        className="flex-1 py-3 rounded-lg bg-[#e8c559] text-[#171611] font-bold hover:bg-[#ebd07a] transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+                                    >
+                                        {saving && <Loader2 className="w-4 h-4 animate-spin" />}
+                                        Save Changes
+                                    </button>
+                                </div>
                             </div>
                         </div>
                     </div>
-                </div>
-            )}
-        </div>
+                )
+            }
+        </div >
     );
 }

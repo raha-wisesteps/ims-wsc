@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useTheme } from "@/contexts/ThemeContext";
 import Sidebar from "@/components/layout/Sidebar";
 import Header from "@/components/layout/Header";
 import { AuthProvider } from "@/contexts/AuthContext";
@@ -15,6 +16,12 @@ export default function DashboardClientLayout({
     const handleSidebarToggle = () => {
         setSidebarCollapsed(!sidebarCollapsed);
     };
+
+    const { setTheme } = useTheme();
+
+    useEffect(() => {
+        setTheme("light");
+    }, [setTheme]);
 
     return (
         <AuthProvider>

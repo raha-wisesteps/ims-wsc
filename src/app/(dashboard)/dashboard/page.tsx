@@ -603,6 +603,7 @@ export default function DashboardPage() {
     const [showUpdatePlanModal, setShowUpdatePlanModal] = useState(false);
     const [showChangeStatusModal, setShowChangeStatusModal] = useState(false);
     const [showCheckinModal, setShowCheckinModal] = useState(false);
+    const [showClockOutModal, setShowClockOutModal] = useState(false);
     const [newTaskText, setNewTaskText] = useState("");
     const [newTaskProject, setNewTaskProject] = useState("General");
     const [newTaskPriority, setNewTaskPriority] = useState<TaskPriority>("medium");
@@ -752,8 +753,14 @@ export default function DashboardPage() {
         setShowClockInFeedback(true);
     };
 
-    // Handle Clock Out - NOW WITH DATABASE PERSISTENCE
-    const handleClockOut = async () => {
+    // Handle Clock Out Trigger
+    const handleClockOut = () => {
+        setShowClockOutModal(true);
+    };
+
+    // Execute Clock Out - NOW WITH DATABASE PERSISTENCE
+    const executeClockOut = async () => {
+        setShowClockOutModal(false);
         if (!profile) return;
 
         const now = new Date();
@@ -2535,6 +2542,41 @@ export default function DashboardPage() {
                                             <span className="text-lg">📝</span> Izin
                                         </button>
                                     </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                )
+            }
+
+            {/* Clock Out Confirmation Modal */}
+            {
+                showClockOutModal && (
+                    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+                        <div className="bg-card border border-border rounded-2xl p-6 w-full max-w-sm shadow-2xl relative animate-in fade-in zoom-in-95 duration-200">
+                            <div className="text-center">
+                                <div className="w-16 h-16 bg-rose-500/10 text-rose-500 rounded-full flex items-center justify-center mx-auto mb-4">
+                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8" viewBox="0 0 24 24" fill="currentColor">
+                                        <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z" />
+                                    </svg>
+                                </div>
+                                <h3 className="text-xl font-bold text-[var(--text-primary)] mb-2">Konfirmasi Clock Out</h3>
+                                <p className="text-[var(--text-secondary)] text-sm mb-6">
+                                    Apakah anda yakin ingin mengakhiri sesi kerja hari ini? Pastikan semua tugas sudah selesai.
+                                </p>
+                                <div className="flex gap-3">
+                                    <button
+                                        onClick={() => setShowClockOutModal(false)}
+                                        className="flex-1 py-3 rounded-xl border border-[var(--glass-border)] text-[var(--text-secondary)] hover:bg-black/5 dark:hover:bg-white/5 font-bold transition-colors"
+                                    >
+                                        Batal
+                                    </button>
+                                    <button
+                                        onClick={executeClockOut}
+                                        className="flex-1 py-3 rounded-xl bg-rose-500 hover:bg-rose-600 text-white font-bold transition-colors shadow-lg"
+                                    >
+                                        Ya, Clock Out
+                                    </button>
                                 </div>
                             </div>
                         </div>
