@@ -1254,7 +1254,7 @@ export default function DashboardPage() {
                         <div
                             className="absolute inset-0 bg-cover bg-center z-0 transition-transform duration-700 group-hover:scale-105"
                             style={{
-                                backgroundImage: `var(--hero-image)`,
+                                backgroundImage: `url('${profile?.url_hero || '/pukpik-aB46yUmsMp0-unsplash.jpg'}')`,
                             }}
                         />
                         {/* Dark Overlay for text readability - using brand dark colors */}
@@ -1448,27 +1448,117 @@ export default function DashboardPage() {
                                     </div>
 
                                     {/* Right: Quick Access Grid */}
-                                    <div className="grid grid-cols-3 gap-3 h-full">
-                                        <Link href="/dashboard/my-request" className="group flex flex-col items-center justify-center gap-2 p-2 rounded-xl backdrop-blur-md transition-all hover:scale-105 active:scale-95 border bg-amber-500/10 border-amber-500/20 hover:bg-amber-500/20 dark:bg-white/5 dark:border-white/10 dark:hover:bg-white/10">
-                                            <div className="w-8 h-8 rounded-lg bg-indigo-500/20 flex items-center justify-center group-hover:bg-indigo-500/30 transition-colors">
-                                                <FileText className="h-4 w-4 text-indigo-300" />
-                                            </div>
-                                            <span className="text-[10px] font-bold text-white uppercase tracking-wider text-center">My Request</span>
-                                        </Link>
+                                    <div className="flex flex-col gap-3 h-full">
+                                        <div className="grid grid-cols-3 gap-3 flex-1">
+                                            <Link href="/dashboard/my-request" className="group flex flex-col items-center justify-center gap-2 p-2 rounded-xl backdrop-blur-md transition-all hover:scale-105 active:scale-95 border bg-amber-500/10 border-amber-500/20 hover:bg-amber-500/20 dark:bg-white/5 dark:border-white/10 dark:hover:bg-white/10">
+                                                <div className="w-8 h-8 rounded-lg bg-indigo-500/20 flex items-center justify-center group-hover:bg-indigo-500/30 transition-colors">
+                                                    <FileText className="h-4 w-4 text-indigo-300" />
+                                                </div>
+                                                <span className="text-[10px] font-bold text-white uppercase tracking-wider text-center">My Request</span>
+                                            </Link>
 
-                                        <Link href="/dashboard/projects" className="group flex flex-col items-center justify-center gap-2 p-2 rounded-xl backdrop-blur-md transition-all hover:scale-105 active:scale-95 border bg-amber-500/10 border-amber-500/20 hover:bg-amber-500/20 dark:bg-white/5 dark:border-white/10 dark:hover:bg-white/10">
-                                            <div className="w-8 h-8 rounded-lg bg-emerald-500/20 flex items-center justify-center group-hover:bg-emerald-500/30 transition-colors">
-                                                <Briefcase className="h-4 w-4 text-emerald-300" />
-                                            </div>
-                                            <span className="text-[10px] font-bold text-white uppercase tracking-wider text-center">Assignments</span>
-                                        </Link>
+                                            <Link href="/dashboard/projects" className="group flex flex-col items-center justify-center gap-2 p-2 rounded-xl backdrop-blur-md transition-all hover:scale-105 active:scale-95 border bg-amber-500/10 border-amber-500/20 hover:bg-amber-500/20 dark:bg-white/5 dark:border-white/10 dark:hover:bg-white/10">
+                                                <div className="w-8 h-8 rounded-lg bg-emerald-500/20 flex items-center justify-center group-hover:bg-emerald-500/30 transition-colors">
+                                                    <Briefcase className="h-4 w-4 text-emerald-300" />
+                                                </div>
+                                                <span className="text-[10px] font-bold text-white uppercase tracking-wider text-center">Assignments</span>
+                                            </Link>
 
-                                        <Link href="/dashboard/board" className="group flex flex-col items-center justify-center gap-2 p-2 rounded-xl backdrop-blur-md transition-all hover:scale-105 active:scale-95 border bg-amber-500/10 border-amber-500/20 hover:bg-amber-500/20 dark:bg-white/5 dark:border-white/10 dark:hover:bg-white/10">
-                                            <div className="w-8 h-8 rounded-lg bg-amber-500/20 flex items-center justify-center group-hover:bg-amber-500/30 transition-colors">
-                                                <Calendar className="h-4 w-4 text-amber-300" />
-                                            </div>
-                                            <span className="text-[10px] font-bold text-white uppercase tracking-wider text-center">Team Schedule</span>
-                                        </Link>
+                                            <Link href="/dashboard/board" className="group flex flex-col items-center justify-center gap-2 p-2 rounded-xl backdrop-blur-md transition-all hover:scale-105 active:scale-95 border bg-amber-500/10 border-amber-500/20 hover:bg-amber-500/20 dark:bg-white/5 dark:border-white/10 dark:hover:bg-white/10">
+                                                <div className="w-8 h-8 rounded-lg bg-amber-500/20 flex items-center justify-center group-hover:bg-amber-500/30 transition-colors">
+                                                    <Calendar className="h-4 w-4 text-amber-300" />
+                                                </div>
+                                                <span className="text-[10px] font-bold text-white uppercase tracking-wider text-center">Team Schedule</span>
+                                            </Link>
+                                        </div>
+
+                                        {/* Jira Quick Link */}
+                                        <div className="flex justify-end gap-2">
+                                            {/* WSG Website Link */}
+                                            <a
+                                                href="https://wisestepsconsulting.id/"
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                                className="flex items-center gap-2 px-3 py-2 rounded-xl bg-white/10 backdrop-blur-md border border-white/20 hover:bg-white/20 transition-all duration-300 group shadow-lg"
+                                                title="Wise Steps Consulting"
+                                            >
+                                                <Image
+                                                    src="/WSG_Masterfiles_Logo-02-1024x264 (1).png"
+                                                    alt="WSG Website"
+                                                    width={80}
+                                                    height={24}
+                                                    className="h-5 w-auto brightness-0 invert group-hover:scale-105 transition-transform"
+                                                />
+                                            </a>
+
+                                            {/* WSG Logo 05 Quick Link */}
+                                            <a
+                                                href="https://meet.google.com/jut-vbss-vep"
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                                className="flex items-center gap-2 px-3 py-2 rounded-xl bg-white/10 backdrop-blur-md border border-white/20 hover:bg-white/20 transition-all duration-300 group shadow-lg"
+                                                title="WSG Meet"
+                                            >
+                                                <Image
+                                                    src="/WSG_Masterfiles_Logo-05-1024x767.png"
+                                                    alt="WSG Meet"
+                                                    width={30}
+                                                    height={24}
+                                                    className="h-5 w-auto brightness-0 invert group-hover:scale-105 transition-transform"
+                                                />
+                                            </a>
+
+                                            {/* Google Meet Quick Link */}
+                                            <a
+                                                href="https://meet.google.com/dxv-mkbt-nqm"
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                                className="flex items-center gap-2 px-3 py-2 rounded-xl bg-white/10 backdrop-blur-md border border-white/20 hover:bg-white/20 transition-all duration-300 group shadow-lg"
+                                                title="Open Google Meet"
+                                            >
+                                                <Image
+                                                    src="/Google_Meet_text_logo_(2020).svg"
+                                                    alt="Google Meet"
+                                                    width={60}
+                                                    height={24}
+                                                    className="h-5 w-auto brightness-0 invert group-hover:scale-105 transition-transform"
+                                                />
+                                            </a>
+
+                                            {/* Google Drive Quick Link */}
+                                            <a
+                                                href="https://drive.google.com/drive/folders/1qdNyMYgQBmlVnC09xwaNDBkLhXYC_g9Q?usp=sharing"
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                                className="flex items-center gap-2 px-3 py-2 rounded-xl bg-white/10 backdrop-blur-md border border-white/20 hover:bg-white/20 transition-all duration-300 group shadow-lg"
+                                                title="Open Google Drive"
+                                            >
+                                                <Image
+                                                    src="/Google_Drive_icon_(2020).svg"
+                                                    alt="Google Drive"
+                                                    width={24}
+                                                    height={24}
+                                                    className="h-5 w-auto brightness-0 invert group-hover:scale-105 transition-transform"
+                                                />
+                                            </a>
+
+                                            {/* Jira Quick Link */}
+                                            <a
+                                                href="https://wisestepsconsulting.atlassian.net/"
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                                className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white/10 backdrop-blur-md border border-white/20 hover:bg-white/20 transition-all duration-300 group shadow-lg"
+                                                title="Open Jira"
+                                            >
+                                                <Image
+                                                    src="/Jira_Logo.svg"
+                                                    alt="Jira"
+                                                    width={60}
+                                                    height={24}
+                                                    className="h-5 w-auto brightness-0 invert group-hover:scale-105 transition-transform"
+                                                />
+                                            </a>
+                                        </div>
                                     </div>
                                 </div>
 
@@ -1532,23 +1622,6 @@ export default function DashboardPage() {
                                         )}
                                     </div>
                                 </div>
-
-                                {/* Jira Quick Link */}
-                                <a
-                                    href="https://wisestepsconsulting.atlassian.net/"
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="absolute bottom-4 right-4 flex items-center gap-2 px-4 py-2 rounded-xl bg-white/10 backdrop-blur-md border border-white/20 hover:bg-white/20 transition-all duration-300 group shadow-lg"
-                                    title="Open Jira"
-                                >
-                                    <Image
-                                        src="/Jira_Logo.svg"
-                                        alt="Jira"
-                                        width={60}
-                                        height={24}
-                                        className="h-5 w-auto brightness-0 invert group-hover:scale-105 transition-transform"
-                                    />
-                                </a>
                             </div>
                         </div>
                     </div>

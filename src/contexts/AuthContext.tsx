@@ -30,6 +30,7 @@ export interface Profile {
     employee_type: "employee" | "remote_employee";
     is_female: boolean;
     job_title: string | null;
+    url_hero: string | null;
 }
 
 export interface LeaveQuota {

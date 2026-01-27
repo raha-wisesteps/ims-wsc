@@ -36,6 +36,14 @@ export default function ProfilePage() {
     const [showCropper, setShowCropper] = useState(false);
     const [isUploading, setIsUploading] = useState(false);
 
+    // Hero Image State
+    const [heroImageSrc, setHeroImageSrc] = useState<string | null>(null);
+    const [heroCrop, setHeroCrop] = useState({ x: 0, y: 0 });
+    const [heroZoom, setHeroZoom] = useState(1);
+    const [heroCroppedAreaPixels, setHeroCroppedAreaPixels] = useState<any>(null);
+    const [showHeroCropper, setShowHeroCropper] = useState(false);
+    const [isHeroUploading, setIsHeroUploading] = useState(false);
+
     // Sync form with profile data
     useEffect(() => {
         if (profile) {
@@ -222,6 +230,151 @@ export default function ProfilePage() {
             setMessage({ type: "error", text: "Failed to change password. Please try again." });
         } finally {
             setIsChangingPassword(false);
+        }
+    };
+
+    // Hero Image Functions
+    const onHeroCropComplete = (croppedArea: any, croppedAreaPixels: any) => {
+        setHeroCroppedAreaPixels(croppedAreaPixels);
+    };
+
+    const handleHeroFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+        if (e.target.files && e.target.files.length > 0) {
+            const file = e.target.files[0];
+            if (file.size > 5 * 1024 * 1024) { // 5MB limit for Hero
+                setMessage({ type: "error", text: "File size must be less than 5MB" });
+                return;
+            }
+            const reader = new FileReader();
+            reader.addEventListener("load", () => {
+                setHeroImageSrc(reader.result?.toString() || "");
+                setShowHeroCropper(true);
+                setHeroZoom(1);
+            });
+            reader.readAsDataURL(file);
+            e.target.value = '';
+        }
+    };
+
+    const performHeroUpload = async (fileKey: Blob) => {
+        if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
+            console.error("Missing Supabase env vars");
+            return;
+        }
+
+        const file = new File([fileKey], "hero.jpg", { type: "image/jpeg" });
+        setIsHeroUploading(true);
+        setMessage(null);
+
+        try {
+            const fileName = `hero-${profile?.id}-${Math.random()}.jpg`;
+            const filePath = `${fileName}`;
+            const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+            const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+            const uploadResponse = await fetch(
+                `${supabaseUrl}/storage/v1/object/avatars/${filePath}`,
+                {
+                    method: 'POST',
+                    headers: {
+                        'apikey': supabaseKey,
+                        'Authorization': `Bearer ${session?.access_token || supabaseKey}`,
+                        'Content-Type': file.type,
+                        'x-upsert': 'true'
+                    },
+                    body: file
+                }
+            );
+
+            if (!uploadResponse.ok) {
+                const errorText = await uploadResponse.text();
+                throw new Error(`Upload failed: ${uploadResponse.status} ${errorText}`);
+            }
+
+            const publicUrl = `${supabaseUrl}/storage/v1/object/public/avatars/${filePath}`;
+
+            const updateResponse = await fetch(
+                `${supabaseUrl}/rest/v1/profiles?id=eq.${profile?.id}`,
+                {
+                    method: 'PATCH',
+                    headers: {
+                        'apikey': supabaseKey,
+                        'Authorization': `Bearer ${session?.access_token || supabaseKey}`,
+                        'Content-Type': 'application/json',
+                        'Prefer': 'return=minimal'
+                    },
+                    body: JSON.stringify({
+                        url_hero: publicUrl,
+                        updated_at: new Date().toISOString()
+                    })
+                }
+            );
+
+            if (!updateResponse.ok) {
+                throw new Error(`Profile update failed: ${updateResponse.status}`);
+            }
+
+            await refreshProfile();
+            setMessage({ type: "success", text: "Hero image updated successfully!" });
+        } catch (error: any) {
+            console.error("Error uploading hero image:", error);
+            setMessage({ type: "error", text: error.message || "Failed to upload hero image" });
+        } finally {
+            setIsHeroUploading(false);
+            setShowHeroCropper(false);
+            setHeroImageSrc(null);
+        }
+    };
+
+    const handleSaveHeroCroppedImage = async () => {
+        if (!heroImageSrc || !heroCroppedAreaPixels) return;
+        try {
+            const croppedImage = await getCroppedImg(heroImageSrc, heroCroppedAreaPixels);
+            if (croppedImage) {
+                await performHeroUpload(croppedImage);
+            }
+        } catch (e) {
+            console.error(e);
+            setMessage({ type: "error", text: "Failed to crop image" });
+        }
+    };
+
+    const handleResetHero = async () => {
+        if (!profile) return;
+        setIsHeroUploading(true);
+        setMessage(null);
+        try {
+            const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+            const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+            const updateResponse = await fetch(
+                `${supabaseUrl}/rest/v1/profiles?id=eq.${profile.id}`,
+                {
+                    method: 'PATCH',
+                    headers: {
+                        'apikey': supabaseKey!,
+                        'Authorization': `Bearer ${session?.access_token || supabaseKey}`,
+                        'Content-Type': 'application/json',
+                        'Prefer': 'return=minimal'
+                    },
+                    body: JSON.stringify({
+                        url_hero: null,
+                        updated_at: new Date().toISOString()
+                    })
+                }
+            );
+
+            if (!updateResponse.ok) {
+                throw new Error(`Reset failed: ${updateResponse.status}`);
+            }
+
+            await refreshProfile();
+            setMessage({ type: "success", text: "Hero image reset to default!" });
+        } catch (err) {
+            console.error("Error resetting hero:", err);
+            setMessage({ type: "error", text: "Failed to reset hero image." });
+        } finally {
+            setIsHeroUploading(false);
         }
     };
 
@@ -428,6 +581,75 @@ export default function ProfilePage() {
                     </div>
                 )}
 
+                {showHeroCropper && heroImageSrc && (
+                    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+                        <div className="bg-background rounded-2xl w-full max-w-2xl overflow-hidden shadow-2xl border border-white/10">
+                            <div className="p-4 border-b border-white/10 flex items-center justify-between">
+                                <h3 className="font-bold text-foreground">Adjust Hero Image</h3>
+                                <button
+                                    onClick={() => { setShowHeroCropper(false); setHeroImageSrc(null); }}
+                                    className="p-1 hover:bg-white/10 rounded-full transition-colors"
+                                >
+                                    <X className="w-5 h-5" />
+                                </button>
+                            </div>
+
+                            <div className="relative w-full h-[300px] bg-black">
+                                <Cropper
+                                    image={heroImageSrc}
+                                    crop={heroCrop}
+                                    zoom={heroZoom}
+                                    aspect={3 / 1}
+                                    onCropChange={setHeroCrop}
+                                    onCropComplete={onHeroCropComplete}
+                                    onZoomChange={setHeroZoom}
+                                />
+                            </div>
+
+                            <div className="p-6 space-y-6">
+                                <div className="space-y-2">
+                                    <div className="flex justify-between text-xs text-muted-foreground uppercase font-bold tracking-wider">
+                                        <span>Zoom</span>
+                                        <span>{Math.round(heroZoom * 100)}%</span>
+                                    </div>
+                                    <input
+                                        type="range"
+                                        min={1}
+                                        max={3}
+                                        step={0.1}
+                                        value={heroZoom}
+                                        onChange={(e) => setHeroZoom(Number(e.target.value))}
+                                        className="w-full h-2 bg-secondary rounded-lg appearance-none cursor-pointer accent-[var(--primary)]"
+                                    />
+                                </div>
+
+                                <div className="flex gap-3">
+                                    <button
+                                        onClick={() => { setShowHeroCropper(false); setHeroImageSrc(null); }}
+                                        className="flex-1 py-2.5 rounded-xl border border-input hover:bg-accent hover:text-accent-foreground font-medium transition-colors"
+                                    >
+                                        Cancel
+                                    </button>
+                                    <button
+                                        onClick={handleSaveHeroCroppedImage}
+                                        disabled={isHeroUploading}
+                                        className="flex-1 py-2.5 rounded-xl bg-[var(--primary)] text-[var(--primary-foreground)] hover:brightness-110 font-bold transition-all flex items-center justify-center gap-2"
+                                    >
+                                        {isHeroUploading ? (
+                                            <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                                        ) : (
+                                            <>
+                                                <Check className="w-4 h-4" />
+                                                Save Hero
+                                            </>
+                                        )}
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
                 <div className="lg:col-span-2 space-y-6">
                     <div className="glass-panel p-8 rounded-2xl border border-white/10">
                         <div className="flex items-center gap-3 mb-6">
@@ -547,6 +769,60 @@ export default function ProfilePage() {
                         {passwordData.newPassword && passwordData.confirmPassword && passwordData.newPassword !== passwordData.confirmPassword && (
                             <p className="text-red-400 text-sm mt-2">Passwords do not match</p>
                         )}
+                    </div>
+
+                    {/* Hero Image Section */}
+                    <div className="glass-panel p-8 rounded-2xl border border-[var(--glass-border)]">
+                        <div className="flex items-center gap-3 mb-6">
+                            <div className="p-2 bg-indigo-500/10 rounded-lg">
+                                <div className="w-5 h-5 flex items-center justify-center text-indigo-500 font-bold">H</div>
+                            </div>
+                            <h3 className="text-lg font-bold text-[var(--text-primary)]">Hero Image (Dashboard)</h3>
+                        </div>
+
+                        <div className="space-y-4">
+                            <p className="text-sm text-[var(--text-secondary)]">
+                                Customize the background image of your dashboard's first slide. Recommended size: 1200x400px.
+                            </p>
+
+                            <div className="relative group w-full h-32 rounded-xl overflow-hidden border border-[var(--glass-border)] bg-black/20">
+                                <div
+                                    className="absolute inset-0 bg-cover bg-center"
+                                    style={{
+                                        backgroundImage: `url('${profile.url_hero || '/pukpik-aB46yUmsMp0-unsplash.jpg'}')`,
+                                    }}
+                                />
+                                <div className="absolute inset-0 bg-black/40 group-hover:bg-black/20 transition-colors" />
+
+                                <div className="absolute inset-0 flex items-center justify-center gap-3">
+                                    <label
+                                        htmlFor="hero-upload"
+                                        className="cursor-pointer px-4 py-2 rounded-lg bg-white/10 hover:bg-white/20 backdrop-blur-md border border-white/20 text-white font-medium text-sm transition-all flex items-center gap-2"
+                                    >
+                                        <Camera className="w-4 h-4" />
+                                        Change Image
+                                    </label>
+                                    <input
+                                        type="file"
+                                        id="hero-upload"
+                                        accept="image/*"
+                                        onChange={handleHeroFileSelect}
+                                        className="hidden"
+                                        disabled={isHeroUploading}
+                                    />
+
+                                    {profile.url_hero && (
+                                        <button
+                                            onClick={handleResetHero}
+                                            disabled={isHeroUploading}
+                                            className="px-4 py-2 rounded-lg bg-rose-500/80 hover:bg-rose-600/80 backdrop-blur-md text-white font-medium text-sm transition-all"
+                                        >
+                                            Reset
+                                        </button>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
                     </div>
 
                     <div className="flex justify-end gap-4 pt-4">
