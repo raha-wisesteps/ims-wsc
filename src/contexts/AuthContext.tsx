@@ -31,6 +31,7 @@ export interface Profile {
     is_female: boolean;
     job_title: string | null;
     url_hero: string | null;
+    is_intern: boolean;
 }
 
 export interface LeaveQuota {

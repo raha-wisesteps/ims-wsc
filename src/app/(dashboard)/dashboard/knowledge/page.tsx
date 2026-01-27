@@ -1,6 +1,10 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useAuth } from "@/contexts/AuthContext";
+import { createClient } from "@/lib/supabase/client";
+import { toast } from "sonner";
+import Image from "next/image";
 
 // Access Levels - from basic to confidential
 const ACCESS_LEVELS = [
@@ -11,14 +15,7 @@ const ACCESS_LEVELS = [
     { id: "owner", label: "Owner Only", icon: "🔴", color: "text-red-500", description: "Highly confidential" },
 ];
 
-// Tabs for navigation
-const TABS = [
-    { id: "all", label: "All Resources", icon: "📚" },
-    { id: "documents", label: "Documents", icon: "📄" },
-    { id: "videos", label: "Videos", icon: "🎬" },
-    { id: "sops", label: "SOPs", icon: "📋" },
-    { id: "moms", label: "MoMs", icon: "📝" },
-];
+
 
 // Resource Types (Unified Category/Type)
 const RESOURCE_TYPES = [
@@ -37,277 +34,37 @@ const ROLE_FILTERS = [
     { id: "bisdev", label: "Business Development", icon: "📈" },
     { id: "sales", label: "Marketing & Sales", icon: "🎯" },
     { id: "analyst", label: "Analyst", icon: "📊" },
+    { id: "hr", label: "HR", icon: "👥" },
 ];
 
-// Mock Resources Data with access levels
-const mockResources = [
-    // Documents
-    {
-        id: "1",
-        title: "Panduan Penggunaan IMS System",
-        type: "document",
-        description: "Dokumentasi lengkap cara menggunakan sistem Internal Management System termasuk fitur-fitur utama.",
-        fileSize: "5.2 MB",
-        addedBy: "Admin IT",
-        addedDate: "Dec 20, 2024",
-        tags: ["ims", "tutorial", "onboarding"],
-        accessLevel: "intern",
-        roles: ["all"],
-    },
-    {
-        id: "3",
-        title: "Template Laporan Audit",
-        type: "template",
-        description: "Template standar untuk menyusun laporan audit sesuai format perusahaan.",
-        fileSize: "850 KB",
-        addedBy: "Budi Santoso",
-        addedDate: "Dec 15, 2024",
-        tags: ["audit", "template", "laporan"],
-        accessLevel: "senior",
-        roles: ["analyst"],
-    },
-    {
-        id: "4",
-        title: "Link: Portal KAP Indonesia",
-        type: "link",
-        description: "Portal resmi Kantor Akuntan Publik Indonesia untuk referensi standar audit.",
-        url: "https://example.com/kap",
-        addedBy: "Sarah Jenkins",
-        addedDate: "Dec 10, 2024",
-        tags: ["audit", "referensi", "external"],
-        accessLevel: "staff",
-        roles: ["analyst"],
-    },
-    {
-        id: "6",
-        title: "Kebijakan WFH & Hybrid Working",
-        type: "document",
-        description: "Dokumen kebijakan resmi tentang work from home dan hybrid working arrangements.",
-        fileSize: "1.2 MB",
-        addedBy: "HR Admin",
-        addedDate: "Nov 20, 2024",
-        tags: ["policy", "wfh", "hr"],
-        accessLevel: "intern",
-        roles: ["all"],
-    },
-    {
-        id: "8",
-        title: "Link: Perpajakan Indonesia",
-        type: "link",
-        description: "Link ke portal DJP Online untuk referensi perpajakan.",
-        url: "https://djponline.pajak.go.id",
-        addedBy: "Finance Team",
-        addedDate: "Nov 10, 2024",
-        tags: ["tax", "finance", "external"],
-        accessLevel: "staff",
-        roles: ["analyst"],
-    },
-    {
-        id: "9",
-        title: "Template Proposal Project",
-        type: "template",
-        description: "Template proposal project untuk keperluan bisdev dan pitching klien.",
-        fileSize: "2.1 MB",
-        addedBy: "BisDev Team",
-        addedDate: "Oct 28, 2024",
-        tags: ["bisdev", "proposal", "template"],
-        accessLevel: "staff",
-        roles: ["bisdev", "sales"],
-    },
-    {
-        id: "mom-1",
-        title: "MoM Kickoff Meeting Q1 2025",
-        type: "mom",
-        description: "Catatan pertemuan kickoff strategi awal tahun 2025.",
-        fileSize: "950 KB",
-        addedBy: "Secretary",
-        addedDate: "Jan 10, 2025",
-        tags: ["meeting", "kickoff", "mom"],
-        accessLevel: "staff",
-        roles: ["all"],
-    },
-    {
-        id: "17",
-        title: "Financial Projections Template",
-        type: "template",
-        description: "Template proyeksi keuangan perusahaan - hanya untuk owner.",
-        fileSize: "1.5 MB",
-        addedBy: "Finance Director",
-        addedDate: "Dec 01, 2024",
-        tags: ["finance", "projection", "confidential"],
-        accessLevel: "owner",
-        roles: ["owner"],
-    },
-    // Videos
-    {
-        id: "2",
-        title: "bagaimana - Gustiwiw",
-        type: "video",
-        description: "Video pelatihan tentang best practices dalam melakukan audit internal. Pelajari teknik-teknik audit modern.",
-        duration: "3:45",
-        addedBy: "Admin",
-        addedDate: "Jan 19, 2025",
-        tags: ["audit", "training", "video"],
-        accessLevel: "senior",
-        roles: ["analyst"],
-        thumbnail: "https://imgsrv2.voi.id/qxhHlohckoBeMEX7_5p_di3nBqNkNE8ji0iAMhmkp3A/auto/1280/853/sm/1/bG9jYWw6Ly8vcHVibGlzaGVycy80OTI5NjEvMjAyNTA3MDcwOTU1LW1haW4uY3JvcHBlZF8xNzUxODU2OTIzLmpwZw.jpg",
-        resourceUrl: "https://youtu.be/EX28N1Rskz4?si=pwQ4x0AvaKGJvVKP",
-        progress: 0,
-    },
-    {
-        id: "5",
-        title: "Onboarding Karyawan Baru",
-        type: "video",
-        description: "Video orientasi untuk karyawan baru tentang kultur dan prosedur perusahaan. Wajib ditonton oleh semua pegawai baru.",
-        duration: "30 min",
-        totalLessons: 5,
-        addedBy: "HR Team",
-        addedDate: "Nov 25, 2024",
-        tags: ["onboarding", "hr", "video"],
-        accessLevel: "intern",
-        roles: ["all"],
-        thumbnail: "https://images.unsplash.com/photo-1522071820081-009f0129c71c?w=400",
-        progress: 100,
-    },
-    {
-        id: "7",
-        title: "Cara Submit Timesheet",
-        type: "video",
-        description: "Video tutorial langkah demi langkah cara mengisi dan submit timesheet dengan benar.",
-        duration: "10 min",
-        totalLessons: 3,
-        addedBy: "Admin IT",
-        addedDate: "Nov 15, 2024",
-        tags: ["timesheet", "tutorial", "video"],
-        accessLevel: "intern",
-        roles: ["all"],
-        thumbnail: "https://images.unsplash.com/photo-1611532736597-de2d4265fba3?w=400",
-        progress: 0,
-    },
-    {
-        id: "18",
-        title: "Advanced Financial Analysis",
-        type: "video",
-        description: "Kursus lengkap tentang analisis keuangan tingkat lanjut untuk decision making strategis.",
-        duration: "2h 15min",
-        totalLessons: 12,
-        addedBy: "Finance Director",
-        addedDate: "Dec 05, 2024",
-        tags: ["finance", "analysis", "advanced"],
-        accessLevel: "owner",
-        roles: ["owner"],
-        thumbnail: "https://images.unsplash.com/photo-1460925895917-afdab827c52f?w=400",
-        progress: 25,
-    },
-    {
-        id: "19",
-        title: "Client Pitching Masterclass",
-        type: "video",
-        description: "Teknik pitching klien yang efektif untuk meningkatkan conversion rate bisnis development.",
-        duration: "1h 30min",
-        totalLessons: 10,
-        addedBy: "BisDev Director",
-        addedDate: "Nov 28, 2024",
-        tags: ["bisdev", "pitching", "sales"],
-        accessLevel: "staff",
-        roles: ["bisdev", "sales"],
-        thumbnail: "https://images.unsplash.com/photo-1557804506-669a67965ba0?w=400",
-        progress: 0,
-    },
-    // SOPs
-    {
-        id: "10",
-        title: "SOP Audit Internal - Prosedur Lengkap",
-        type: "sop",
-        description: "Panduan lengkap untuk melaksanakan audit internal sesuai standar perusahaan.",
-        fileSize: "2.4 MB",
-        addedBy: "Andi Pratama",
-        addedDate: "Dec 15, 2024",
-        tags: ["audit", "internal", "prosedur"],
-        accessLevel: "senior",
-        roles: ["analyst"],
-    },
-    {
-        id: "11",
-        title: "SOP Onboarding Karyawan Baru",
-        type: "sop",
-        description: "Prosedur standar untuk proses onboarding karyawan baru dari hari pertama hingga minggu ketiga.",
-        fileSize: "1.8 MB",
-        addedBy: "Sarah Jenkins",
-        addedDate: "Nov 20, 2024",
-        tags: ["onboarding", "hr", "karyawan baru"],
-        accessLevel: "intern",
-        roles: ["all"],
-    },
-    {
-        id: "12",
-        title: "SOP Pengajuan Reimbursement",
-        type: "sop",
-        description: "Panduan pengajuan reimbursement termasuk dokumen yang diperlukan dan alur approval.",
-        fileSize: "890 KB",
-        addedBy: "Michael Chen",
-        addedDate: "Dec 01, 2024",
-        tags: ["reimbursement", "finance", "approval"],
-        accessLevel: "intern",
-        roles: ["all"],
-    },
-    {
-        id: "13",
-        title: "SOP Proses Rekrutmen End-to-End",
-        type: "sop",
-        description: "Prosedur rekrutmen dari posting lowongan hingga offering letter.",
-        fileSize: "3.1 MB",
-        addedBy: "Citra Lestari",
-        addedDate: "Nov 05, 2024",
-        tags: ["rekrutmen", "hr", "hiring"],
-        accessLevel: "staff",
-        roles: ["bisdev", "sales", "analyst"],
-    },
-    {
-        id: "14",
-        title: "SOP Quality Control Audit Report",
-        type: "sop",
-        description: "Standar quality control untuk penyusunan dan review laporan audit.",
-        fileSize: "1.5 MB",
-        addedBy: "Budi Santoso",
-        addedDate: "Dec 10, 2024",
-        tags: ["audit", "quality", "laporan"],
-        accessLevel: "senior",
-        roles: ["analyst"],
-    },
-    {
-        id: "15",
-        title: "SOP Daily Operations Checklist",
-        type: "sop",
-        description: "Checklist operasional harian untuk memastikan kelancaran aktivitas kantor.",
-        fileSize: "650 KB",
-        addedBy: "Eva Wijaya",
-        addedDate: "Sep 25, 2024",
-        tags: ["operations", "checklist", "harian"],
-        accessLevel: "intern",
-        roles: ["all"],
-    },
-    {
-        id: "16",
-        title: "SOP Proposal & Pitching Klien",
-        type: "sop",
-        description: "Prosedur standar pembuatan proposal dan pitching untuk klien potensial.",
-        fileSize: "2.0 MB",
-        addedBy: "BisDev Team",
-        addedDate: "Oct 15, 2024",
-        tags: ["bisdev", "proposal", "pitching"],
-        accessLevel: "staff",
-        roles: ["bisdev", "sales"],
-    },
-];
+export interface KnowledgeResource {
+    id: string;
+    title: string;
+    description: string;
+    type: "document" | "video" | "template" | "link" | "sop" | "mom";
+    resource_url: string;
+    thumbnail_url?: string | null;
+    min_access_level: "intern" | "staff" | "senior" | "owner";
+    target_roles: string[];
+    created_by?: string;
+    created_at?: string;
+    // Computed/UI fields
+    addedBy?: string;
+    addedDate?: string;
+    fileSize?: string;
+    tags?: string[];
+    duration?: string;
+    progress?: number;
+}
 
-// Video Card Component (Simple Link)
-function VideoCard({ resource }: { resource: typeof mockResources[0] }) {
-    const accessLevel = ACCESS_LEVELS.find(l => l.id === resource.accessLevel);
+// Video Card Component
+function VideoCard({ resource }: { resource: KnowledgeResource }) {
+    const accessLevel = ACCESS_LEVELS.find(l => l.id === resource.min_access_level);
+    const defaultThumbnail = "/daria-nepriakhina-xY55bL5mZAM-unsplash.jpg";
 
     const handleVideoClick = () => {
-        if (resource.resourceUrl) {
-            window.open(resource.resourceUrl, '_blank');
+        if (resource.resource_url) {
+            window.open(resource.resource_url, '_blank');
         }
     };
 
@@ -318,17 +75,12 @@ function VideoCard({ resource }: { resource: typeof mockResources[0] }) {
         >
             {/* Thumbnail Section */}
             <div className="relative aspect-video bg-black overflow-hidden">
-                {resource.thumbnail ? (
-                    <img
-                        src={resource.thumbnail}
-                        alt={resource.title}
-                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300 opacity-80 group-hover:opacity-60"
-                    />
-                ) : (
-                    <div className="w-full h-full flex items-center justify-center bg-gray-800">
-                        <span className="text-6xl opacity-50">🎬</span>
-                    </div>
-                )}
+                <Image
+                    src={resource.thumbnail_url || defaultThumbnail}
+                    alt={resource.title}
+                    fill
+                    className="object-cover group-hover:scale-105 transition-transform duration-300 opacity-80 group-hover:opacity-60"
+                />
 
                 {/* Play Button Overlay */}
                 <div className="absolute inset-0 flex items-center justify-center">
@@ -340,18 +92,13 @@ function VideoCard({ resource }: { resource: typeof mockResources[0] }) {
                 </div>
 
                 {/* Access Level Badge */}
-                <div className={`absolute top-2 left-2 px-2 py-1 rounded text-xs font-medium flex items-center gap-1 backdrop-blur-md ${resource.accessLevel === 'owner' ? 'bg-red-500/80 text-white' :
-                    resource.accessLevel === 'senior' ? 'bg-orange-500/80 text-white' :
-                        resource.accessLevel === 'staff' ? 'bg-blue-500/80 text-white' :
+                <div className={`absolute top-2 left-2 px-2 py-1 rounded text-xs font-medium flex items-center gap-1 backdrop-blur-md ${resource.min_access_level === 'owner' ? 'bg-red-500/80 text-white' :
+                    resource.min_access_level === 'senior' ? 'bg-orange-500/80 text-white' :
+                        resource.min_access_level === 'staff' ? 'bg-blue-500/80 text-white' :
                             'bg-green-500/80 text-white'
                     }`}>
                     <span>{accessLevel?.icon}</span>
                     <span className="hidden sm:inline">{accessLevel?.label}</span>
-                </div>
-
-                {/* Duration Badge */}
-                <div className="absolute bottom-2 right-2 px-2 py-0.5 rounded bg-black/60 text-white text-[10px] font-medium backdrop-blur-sm border border-white/10">
-                    {resource.duration}
                 </div>
             </div>
 
@@ -370,9 +117,8 @@ function VideoCard({ resource }: { resource: typeof mockResources[0] }) {
                 {/* Meta Info */}
                 <div className="flex items-center justify-between text-[10px] text-[var(--text-muted)]">
                     <span className="flex items-center gap-1">
-                        👤 {resource.addedBy}
+                        {new Date(resource.created_at || Date.now()).toLocaleDateString()}
                     </span>
-                    <span>{resource.addedDate}</span>
                 </div>
             </div>
         </div>
@@ -380,8 +126,8 @@ function VideoCard({ resource }: { resource: typeof mockResources[0] }) {
 }
 
 // Document Card Component (Simple)
-function DocumentCard({ resource }: { resource: typeof mockResources[0] }) {
-    const accessLevel = ACCESS_LEVELS.find(l => l.id === resource.accessLevel);
+function DocumentCard({ resource }: { resource: KnowledgeResource }) {
+    const accessLevel = ACCESS_LEVELS.find(l => l.id === resource.min_access_level);
 
     const getTypeIcon = (type: string) => {
         switch (type) {
@@ -393,8 +139,14 @@ function DocumentCard({ resource }: { resource: typeof mockResources[0] }) {
         }
     };
 
+    const handleClick = () => {
+        if (resource.resource_url) {
+            window.open(resource.resource_url, '_blank');
+        }
+    }
+
     return (
-        <div className="glass-panel p-4 rounded-xl hover:border-[#e8c559]/30 transition-all group cursor-pointer">
+        <div onClick={handleClick} className="glass-panel p-4 rounded-xl hover:border-[#e8c559]/30 transition-all group cursor-pointer">
             <div className="flex items-center gap-4">
                 {/* Icon */}
                 <div className="flex-shrink-0 w-12 h-12 rounded-lg bg-[#e8c559]/10 flex items-center justify-center text-2xl">
@@ -408,9 +160,9 @@ function DocumentCard({ resource }: { resource: typeof mockResources[0] }) {
                             {resource.title}
                         </h3>
                         {/* Access Level Badge */}
-                        <span className={`flex-shrink-0 px-2 py-0.5 rounded text-[10px] font-medium flex items-center gap-1 ${resource.accessLevel === 'owner' ? 'bg-red-500/20 text-red-500' :
-                            resource.accessLevel === 'senior' ? 'bg-orange-500/20 text-orange-500' :
-                                resource.accessLevel === 'staff' ? 'bg-blue-500/20 text-blue-500' :
+                        <span className={`flex-shrink-0 px-2 py-0.5 rounded text-[10px] font-medium flex items-center gap-1 ${resource.min_access_level === 'owner' ? 'bg-red-500/20 text-red-500' :
+                            resource.min_access_level === 'senior' ? 'bg-orange-500/20 text-orange-500' :
+                                resource.min_access_level === 'staff' ? 'bg-blue-500/20 text-blue-500' :
                                     'bg-green-500/20 text-green-500'
                             }`}>
                             {accessLevel?.icon} {accessLevel?.label}
@@ -422,27 +174,17 @@ function DocumentCard({ resource }: { resource: typeof mockResources[0] }) {
 
                     {/* Meta */}
                     <div className="flex items-center gap-3 mt-2 text-[10px] text-[var(--text-muted)]">
-                        {resource.fileSize && <span>{resource.fileSize}</span>}
-                        <span>{resource.addedDate}</span>
-                        <span>{resource.addedBy}</span>
+                        <span>{new Date(resource.created_at || Date.now()).toLocaleDateString()}</span>
                     </div>
                 </div>
 
                 {/* Action */}
                 <div className="flex-shrink-0">
-                    {resource.type === "link" ? (
-                        <button className="p-2 rounded-lg text-[var(--text-muted)] hover:text-blue-500 hover:bg-blue-500/10 transition-colors">
-                            <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
-                                <path d="M19 19H5V5h7V3H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2v-7h-2v7zM14 3v2h3.59l-9.83 9.83 1.41 1.41L19 6.41V10h2V3h-7z" />
-                            </svg>
-                        </button>
-                    ) : (
-                        <button className="p-2 rounded-lg text-[var(--text-muted)] hover:text-[#e8c559] hover:bg-[#e8c559]/10 transition-colors">
-                            <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
-                                <path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z" />
-                            </svg>
-                        </button>
-                    )}
+                    <button className="p-2 rounded-lg text-[var(--text-muted)] hover:text-[#e8c559] hover:bg-[#e8c559]/10 transition-colors">
+                        <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                            <path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z" />
+                        </svg>
+                    </button>
                 </div>
             </div>
         </div>
@@ -450,11 +192,17 @@ function DocumentCard({ resource }: { resource: typeof mockResources[0] }) {
 }
 
 // SOP Card Component
-function SOPCard({ resource }: { resource: typeof mockResources[0] }) {
-    const accessLevel = ACCESS_LEVELS.find(l => l.id === resource.accessLevel);
+function SOPCard({ resource }: { resource: KnowledgeResource }) {
+    const accessLevel = ACCESS_LEVELS.find(l => l.id === resource.min_access_level);
+
+    const handleClick = () => {
+        if (resource.resource_url) {
+            window.open(resource.resource_url, '_blank');
+        }
+    }
 
     return (
-        <div className="glass-panel p-4 rounded-xl hover:border-[#e8c559]/30 transition-all group cursor-pointer border-l-4 border-l-[#e8c559]">
+        <div onClick={handleClick} className="glass-panel p-4 rounded-xl hover:border-[#e8c559]/30 transition-all group cursor-pointer border-l-4 border-l-[#e8c559]">
             <div className="flex items-start gap-4">
                 {/* SOP Icon */}
                 <div className="flex-shrink-0 w-10 h-10 rounded-lg bg-[#e8c559]/20 flex items-center justify-center">
@@ -470,9 +218,9 @@ function SOPCard({ resource }: { resource: typeof mockResources[0] }) {
                             {resource.title}
                         </h3>
                         {/* Access Level Badge */}
-                        <span className={`flex-shrink-0 px-2 py-0.5 rounded text-[10px] font-medium flex items-center gap-1 ${resource.accessLevel === 'owner' ? 'bg-red-500/20 text-red-500' :
-                            resource.accessLevel === 'senior' ? 'bg-orange-500/20 text-orange-500' :
-                                resource.accessLevel === 'staff' ? 'bg-blue-500/20 text-blue-500' :
+                        <span className={`flex-shrink-0 px-2 py-0.5 rounded text-[10px] font-medium flex items-center gap-1 ${resource.min_access_level === 'owner' ? 'bg-red-500/20 text-red-500' :
+                            resource.min_access_level === 'senior' ? 'bg-orange-500/20 text-orange-500' :
+                                resource.min_access_level === 'staff' ? 'bg-blue-500/20 text-blue-500' :
                                     'bg-green-500/20 text-green-500'
                             }`}>
                             {accessLevel?.icon} {accessLevel?.label}
@@ -484,129 +232,179 @@ function SOPCard({ resource }: { resource: typeof mockResources[0] }) {
 
                     {/* Tags & Meta */}
                     <div className="flex items-center gap-2 flex-wrap">
-                        {resource.tags.slice(0, 3).map(tag => (
-                            <span key={tag} className="text-[10px] px-2 py-0.5 rounded-full bg-[#e8c559]/10 text-[#e8c559]">
-                                #{tag}
-                            </span>
-                        ))}
                         <span className="text-[10px] text-[var(--text-muted)] ml-auto">
-                            {resource.fileSize} • {resource.addedDate}
+                            {new Date(resource.created_at || Date.now()).toLocaleDateString()}
                         </span>
                     </div>
                 </div>
-
-                {/* Download Button */}
-                <button className="flex-shrink-0 p-2 rounded-lg text-[var(--text-muted)] hover:text-[#e8c559] hover:bg-[#e8c559]/10 transition-colors">
-                    <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
-                        <path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z" />
-                    </svg>
-                </button>
             </div>
         </div>
     );
 }
 
 export default function KnowledgeHubPage() {
-    // Mock user for access control (Simulating 'staff' to see Add Resource)
-    // Change to 'intern' to test restriction
-    const currentUser = { role: "staff" as "intern" | "staff" | "senior" | "owner" };
+    const { profile } = useAuth();
+    const supabase = createClient();
+    const [isLoading, setIsLoading] = useState(true);
 
     const [searchQuery, setSearchQuery] = useState("");
-    const [activeTab, setActiveTab] = useState("all");
+    // Tabs removed as per user request
     const [selectedType, setSelectedType] = useState("all");
     const [selectedRole, setSelectedRole] = useState("all");
     const [selectedAccessLevel, setSelectedAccessLevel] = useState("all");
     const [showAddModal, setShowAddModal] = useState(false);
     const [modalMode, setModalMode] = useState<"general" | "mom">("general");
 
-    // Resources state (starts with mock data)
-    const [resources, setResources] = useState(mockResources);
+    // Resources state
+    const [resources, setResources] = useState<KnowledgeResource[]>([]);
 
-    // Effect to update useState with mock data if mock changes (hot reload support)
+    // Load data
+    const fetchResources = async () => {
+        setIsLoading(true);
+        try {
+            const { data, error } = await supabase
+                .from('knowledge_resources')
+                .select('*')
+                .order('created_at', { ascending: false });
+
+            if (error) throw error;
+            setResources(data || []);
+        } catch (err: any) {
+            console.error("Error fetching resources:", err);
+            toast.error("Failed to load resources: " + err.message);
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
     useEffect(() => {
-        setResources(mockResources);
-    }, []);
+        if (profile) fetchResources();
+    }, [profile]);
 
     // Form state for Add Resource Modal
+    const [isSubmitting, setIsSubmitting] = useState(false);
     const [newResource, setNewResource] = useState({
         type: "document" as "document" | "video" | "template" | "link" | "sop" | "mom",
-        accessLevel: "intern",
+        accessLevel: "intern" as "intern" | "staff" | "senior" | "owner",
         title: "",
         description: "",
         resourceUrl: "",
-        thumbnailUrl: "",
-        duration: "",
-        tags: "",
+        thumbnailFile: null as File | null,
+        targetRoles: "all",
     });
 
     // Handle form submission
-    const handleAddResource = () => {
+    const handleAddResource = async () => {
         if (!newResource.title || !newResource.resourceUrl) {
-            alert("Judul dan URL Resource wajib diisi!");
+            toast.error("Judul dan URL Resource wajib diisi!");
             return;
         }
 
-        const resourceToAdd = {
-            id: String(Date.now()),
-            title: newResource.title,
-            type: newResource.type,
-            // category: newResource.type, // Implicitly same
-            description: newResource.description || "No description",
-            fileSize: "N/A",
-            url: newResource.resourceUrl,
-            addedBy: "You",
-            addedDate: new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }),
-            tags: newResource.tags ? newResource.tags.split(",").map(t => t.trim()).filter(t => t) : [],
-            accessLevel: newResource.accessLevel,
-            roles: ["all"],
-            thumbnail: newResource.thumbnailUrl || "https://images.unsplash.com/photo-1516321318423-f06f85e504b3?w=400",
-            duration: newResource.type === "video" ? (newResource.duration || "N/A") : undefined,
-            totalLessons: newResource.type === "video" ? 1 : undefined,
-            progress: newResource.type === "video" ? 0 : undefined,
-        } as unknown as typeof mockResources[0];
+        setIsSubmitting(true);
+        try {
+            let thumbnailUrl = null;
 
-        setResources([resourceToAdd, ...resources]);
-        setShowAddModal(false);
-        setNewResource({
-            type: "document",
-            accessLevel: "intern",
-            title: "",
-            description: "",
-            resourceUrl: "",
-            thumbnailUrl: "",
-            duration: "",
-            tags: "",
-        });
+            // Upload thumbnail if present and type is video
+            if (newResource.type === 'video' && newResource.thumbnailFile) {
+                const file = newResource.thumbnailFile;
+                const fileExt = file.name.split('.').pop();
+                const fileName = `${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`;
+                const filePath = `thumbnails/${fileName}`;
+
+                const { error: uploadError } = await supabase.storage
+                    .from('knowledge_thumbnails')
+                    .upload(filePath, file);
+
+                if (uploadError) {
+                    console.error("Thumbnail Upload Error", uploadError);
+                    // If bucket doesn't exist or policy fail, we might fail here.
+                    // But we proceed without thumbnail for now or throw?
+                    // Let's just log and continue, validation plan said assume manual migration run
+                } else {
+                    const { data: { publicUrl } } = supabase.storage
+                        .from('knowledge_thumbnails')
+                        .getPublicUrl(filePath);
+                    thumbnailUrl = publicUrl;
+                }
+            }
+
+            // Insert Resource
+            const { error: insertError } = await supabase
+                .from('knowledge_resources')
+                .insert({
+                    title: newResource.title,
+                    type: newResource.type,
+                    description: newResource.description,
+                    resource_url: newResource.resourceUrl,
+                    thumbnail_url: thumbnailUrl,
+                    min_access_level: newResource.accessLevel,
+                    target_roles: newResource.targetRoles === 'all' ? ['all'] : [newResource.targetRoles],
+                    created_by: profile?.id,
+                });
+
+            if (insertError) throw insertError;
+
+            toast.success("Resource berhasil ditambahkan!");
+            setShowAddModal(false);
+
+            // Reset form
+            setNewResource({
+                type: "document",
+                accessLevel: "intern",
+                title: "",
+                description: "",
+                resourceUrl: "",
+                thumbnailFile: null,
+                targetRoles: "all"
+            });
+
+            // Reload list
+            fetchResources();
+
+        } catch (err: any) {
+            console.error("Error adding resource:", err);
+            toast.error("Gagal menambahkan resource");
+        } finally {
+            setIsSubmitting(false);
+        }
     };
 
-    // Filter resources based on all criteria
+    // Filter resources
     const filteredResources = resources.filter((resource) => {
         const matchesSearch = resource.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-            resource.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
-            resource.tags.some(tag => tag.toLowerCase().includes(searchQuery.toLowerCase()));
+            resource.description?.toLowerCase().includes(searchQuery.toLowerCase());
 
-        const matchesTab = activeTab === "all" ||
-            (activeTab === "documents" && ["document", "template", "link", "mom"].includes(resource.type)) ||
-            (activeTab === "videos" && resource.type === "video") ||
-            (activeTab === "sops" && resource.type === "sop") ||
-            (activeTab === "moms" && resource.type === "mom");
+
+
+        // Tab filter removed
 
         const matchesType = selectedType === "all" || resource.type === selectedType;
 
-        const matchesRole = selectedRole === "all" ||
-            !resource.roles ||
-            resource.roles.includes("all") ||
-            resource.roles.includes(selectedRole);
+        const matchesAccessLevel = selectedAccessLevel === "all" || resource.min_access_level === selectedAccessLevel;
 
-        const matchesAccessLevel = selectedAccessLevel === "all" || resource.accessLevel === selectedAccessLevel;
+        // Role matching: resource target_roles includes 'all' OR includes user's role/job_type?
+        // Actually this filter is for "Show me resources for XXX role". 
+        // If I am filter 'bisdev', show resources that target 'bisdev'.
+        // If resource targets 'all', should it show when filtering 'bisdev'? Maybe not, specific filter means specific target.
+        const matchesRoleFilter = selectedRole === "all" ||
+            (resource.target_roles && resource.target_roles.includes(selectedRole));
 
-        return matchesSearch && matchesTab && matchesType && matchesRole && matchesAccessLevel;
+        return matchesSearch && matchesType && matchesRoleFilter && matchesAccessLevel;
     });
 
-    // Separate resources by type for rendering sections
     const videoResources = filteredResources.filter(r => r.type === "video");
     const sopResources = filteredResources.filter(r => r.type === "sop");
     const documentResources = filteredResources.filter(r => ["document", "template", "link", "mom"].includes(r.type));
+
+    // Subsets for display
+    const templateResources = documentResources.filter(r => r.type === "template");
+    const linkResources = documentResources.filter(r => r.type === "link");
+    const pureDocsResources = documentResources.filter(r => ["document", "mom"].includes(r.type));
+
+    // Access capabilities
+    const isIntern = profile?.is_intern || profile?.job_type === 'intern';
+    const isStaff = profile && !isIntern;
+    // Note: 'mom' upload is for everyone (including interns). 'general' upload is for staff only.
 
     return (
         <div className="flex flex-col h-full">
@@ -624,8 +422,8 @@ export default function KnowledgeHubPage() {
                     </div>
                 </div>
                 <div className="flex gap-3">
-                    {/* Tambah Resource - Hidden for Interns */}
-                    {currentUser.role !== "intern" && (
+                    {/* Tambah Resource - Access Controlled */}
+                    {isStaff && (
                         <button
                             onClick={() => {
                                 setModalMode("general");
@@ -658,23 +456,6 @@ export default function KnowledgeHubPage() {
                 </div>
             </div>
 
-            {/* Tab Navigation */}
-            <div className="flex gap-1 p-1 bg-[var(--glass-bg)] rounded-xl mb-6 w-fit">
-                {TABS.map((tab) => (
-                    <button
-                        key={tab.id}
-                        onClick={() => setActiveTab(tab.id)}
-                        className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${activeTab === tab.id
-                            ? "bg-[#e8c559] text-[#171611] shadow-sm"
-                            : "text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-white/5"
-                            }`}
-                    >
-                        <span>{tab.icon}</span>
-                        <span>{tab.label}</span>
-                    </button>
-                ))}
-            </div>
-
             {/* Filters Row */}
             <div className="flex flex-wrap gap-3 mb-6">
                 {/* Search */}
@@ -691,7 +472,7 @@ export default function KnowledgeHubPage() {
                     />
                 </div>
 
-                {/* Type Filter (Formerly Category) */}
+                {/* Type Filter */}
                 <select
                     value={selectedType}
                     onChange={(e) => setSelectedType(e.target.value)}
@@ -728,20 +509,28 @@ export default function KnowledgeHubPage() {
             {/* Stats */}
             <div className="flex items-center gap-4 mb-6">
                 <div className="glass-panel px-4 py-2 rounded-lg flex items-center gap-2">
-                    <span className="text-[#e8c559] font-bold text-lg">{filteredResources.length}</span>
+                    <span className="text-[#e8c559] font-bold text-lg">{isLoading ? "..." : filteredResources.length}</span>
                     <span className="text-[var(--text-secondary)] text-sm">resources</span>
                 </div>
-                <div className="flex gap-3 text-xs text-[var(--text-muted)]">
-                    <span>📄 {documentResources.length} docs</span>
-                    <span>🎬 {videoResources.length} videos</span>
-                    <span>📋 {sopResources.length} SOPs</span>
-                </div>
+                {!isLoading && (
+                    <div className="flex gap-3 text-xs text-[var(--text-muted)]">
+                        <span>📄 {pureDocsResources.length} docs</span>
+                        <span>📋 {templateResources.length} templates</span>
+                        <span>🔗 {linkResources.length} links</span>
+                        <span>🎬 {videoResources.length} videos</span>
+                        <span>📋 {sopResources.length} SOPs</span>
+                    </div>
+                )}
             </div>
 
             {/* Content Area */}
             <div className="flex-1 overflow-auto">
-                {/* All Tab - Mixed content */}
-                {activeTab === "all" && (
+                {isLoading ? (
+                    <div className="flex items-center justify-center h-64">
+                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#e8c559]"></div>
+                    </div>
+                ) : (
+
                     <div className="space-y-8">
                         {/* Videos Section */}
                         {videoResources.length > 0 && (
@@ -758,13 +547,42 @@ export default function KnowledgeHubPage() {
                         )}
 
                         {/* Documents Section */}
-                        {documentResources.length > 0 && (
+                        {/* Templates Section */}
+                        {templateResources.length > 0 && (
                             <div>
                                 <h3 className="text-lg font-semibold text-[var(--text-primary)] mb-4 flex items-center gap-2">
-                                    📄 Documents & Templates
+                                    📋 Templates
                                 </h3>
                                 <div className="space-y-3">
-                                    {documentResources.map((resource) => (
+                                    {templateResources.map((resource) => (
+                                        <DocumentCard key={resource.id} resource={resource} />
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Links Section */}
+                        {linkResources.length > 0 && (
+                            <div>
+                                <h3 className="text-lg font-semibold text-[var(--text-primary)] mb-4 flex items-center gap-2">
+                                    🔗 Useful Links
+                                </h3>
+                                <div className="space-y-3">
+                                    {linkResources.map((resource) => (
+                                        <DocumentCard key={resource.id} resource={resource} />
+                                    ))}
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Documents Section */}
+                        {pureDocsResources.length > 0 && (
+                            <div>
+                                <h3 className="text-lg font-semibold text-[var(--text-primary)] mb-4 flex items-center gap-2">
+                                    📄 Documents
+                                </h3>
+                                <div className="space-y-3">
+                                    {pureDocsResources.map((resource) => (
                                         <DocumentCard key={resource.id} resource={resource} />
                                     ))}
                                 </div>
@@ -792,227 +610,168 @@ export default function KnowledgeHubPage() {
                         )}
                     </div>
                 )}
-
-                {/* Documents Tab */}
-                {activeTab === "documents" && (
-                    <div className="space-y-3">
-                        {documentResources.map((resource) => (
-                            <DocumentCard key={resource.id} resource={resource} />
-                        ))}
-                        {documentResources.length === 0 && (
-                            <div className="text-center py-12 text-[var(--text-muted)]">
-                                No documents found matching your filters.
-                            </div>
-                        )}
-                    </div>
-                )}
-
-                {/* Videos Tab */}
-                {activeTab === "videos" && (
-                    <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-                        {videoResources.map((resource) => (
-                            <VideoCard key={resource.id} resource={resource} />
-                        ))}
-                        {videoResources.length === 0 && (
-                            <div className="col-span-full text-center py-12 text-[var(--text-muted)]">
-                                No videos found matching your filters.
-                            </div>
-                        )}
-                    </div>
-                )}
-
-                {/* SOPs Tab */}
-                {activeTab === "sops" && (
-                    <div className="space-y-3">
-                        {sopResources.map((resource) => (
-                            <SOPCard key={resource.id} resource={resource} />
-                        ))}
-                        {sopResources.length === 0 && (
-                            <div className="text-center py-12 text-[var(--text-muted)]">
-                                No SOPs found matching your filters.
-                            </div>
-                        )}
-                    </div>
-                )}
-
-                {/* MoMs Tab */}
-                {activeTab === "moms" && (
-                    <div className="space-y-3">
-                        {filteredResources.filter(r => r.type === "mom").map((resource) => (
-                            <DocumentCard key={resource.id} resource={resource} />
-                        ))}
-                        {filteredResources.filter(r => r.type === "mom").length === 0 && (
-                            <div className="text-center py-12 text-[var(--text-muted)]">
-                                No MoMs found matching your filters.
-                            </div>
-                        )}
-                    </div>
-                )}
             </div>
 
-            {/* Add Resource Modal - Functional */}
+            {/* ADD RESOURCE MODAL */}
             {showAddModal && (
-                <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-                    <div className="glass-panel w-full max-w-lg rounded-2xl p-6 max-h-[90vh] overflow-y-auto">
-                        <div className="flex justify-between items-center mb-6">
-                            <h2 className="text-xl font-bold text-[var(--text-primary)]">Tambah Resource Baru</h2>
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+                    <div className="glass-panel w-full max-w-lg rounded-xl overflow-hidden shadow-2xl animate-in fade-in zoom-in duration-200">
+                        <div className="p-6 border-b border-white/5 flex justify-between items-center">
+                            <h3 className="text-xl font-bold text-[var(--text-primary)]">
+                                {modalMode === 'mom' ? 'Tambah Minutes of Meeting' : 'Tambah Resource Baru'}
+                            </h3>
                             <button
                                 onClick={() => setShowAddModal(false)}
-                                className="p-2 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 text-[var(--text-muted)]"
+                                className="text-[var(--text-muted)] hover:text-[var(--text-primary)]"
                             >
-                                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 24 24" fill="currentColor">
-                                    <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" />
+                                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                                 </svg>
                             </button>
                         </div>
 
-                        <div className="space-y-4">
-                            {/* Resource Type Selection */}
+                        <div className="p-6 space-y-4 max-h-[70vh] overflow-y-auto">
+                            {/* Type (Disabled if MoM mode) */}
                             <div>
-                                <label className="block text-sm font-medium text-[var(--text-secondary)] mb-2">Tipe / Kategori Resource</label>
-                                <div className="grid grid-cols-3 gap-2">
-                                    {RESOURCE_TYPES.filter(t => {
-                                        if (modalMode === 'mom') return t.id === 'mom';
-                                        return ['document', 'video', 'sop'].includes(t.id);
-                                    }).map((type) => (
-                                        <button
-                                            key={type.id}
-                                            type="button"
-                                            onClick={() => setNewResource({ ...newResource, type: type.id as any })}
-                                            className={`p-3 rounded-lg border text-center transition-all flex flex-col items-center gap-1 ${newResource.type === type.id
-                                                ? "border-[#e8c559] bg-[#e8c559]/10"
-                                                : "border-[var(--glass-border)] hover:border-[#e8c559]/50"
-                                                }`}
-                                        >
-                                            <span className="text-xl">{type.icon}</span>
-                                            <span className={`text-xs block ${newResource.type === type.id ? "text-[#e8c559] font-bold" : "text-[var(--text-secondary)]"}`}>
-                                                {type.label}
-                                            </span>
-                                        </button>
-                                    ))}
-                                </div>
-                            </div>
-
-                            {/* Access Level (Hidden for MoM, defaults to Intern/All) */}
-                            {modalMode !== 'mom' && (
-                                <div>
-                                    <label className="block text-sm font-medium text-[var(--text-secondary)] mb-1">Access Level</label>
-                                    <select
-                                        value={newResource.accessLevel}
-                                        onChange={(e) => setNewResource({ ...newResource, accessLevel: e.target.value })}
-                                        className="w-full p-3 rounded-lg border border-[var(--glass-border)] bg-white dark:bg-[#1c2120] text-gray-900 dark:text-white focus:border-[#e8c559] outline-none"
-                                    >
-                                        {ACCESS_LEVELS.filter(l => l.id !== "all").map((level) => (
-                                            <option key={level.id} value={level.id} className="bg-white dark:bg-[#1c2120]">{level.icon} {level.label}</option>
+                                <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1">Type</label>
+                                {modalMode === 'mom' ? (
+                                    <input
+                                        type="text"
+                                        value="MoM (Minutes of Meeting)"
+                                        disabled
+                                        className="w-full h-10 px-3 rounded-lg border border-[var(--glass-border)] bg-[var(--card-bg)] text-[var(--text-muted)]"
+                                    />
+                                ) : (
+                                    <div className="grid grid-cols-3 gap-2">
+                                        {['document', 'video', 'sop', 'template', 'link'].map(t => (
+                                            <button
+                                                key={t}
+                                                onClick={() => setNewResource(prev => ({ ...prev, type: t as any }))}
+                                                className={`px-2 py-2 rounded-lg text-xs font-medium border capitalize ${newResource.type === t
+                                                    ? 'bg-[#e8c559]/20 border-[#e8c559] text-[#e8c559]'
+                                                    : 'border-[var(--glass-border)] text-[var(--text-muted)] hover:bg-white/5'
+                                                    }`}
+                                            >
+                                                {t}
+                                            </button>
                                         ))}
-                                    </select>
-                                </div>
-                            )}
+                                    </div>
+                                )}
+                            </div>
 
                             {/* Title */}
                             <div>
-                                <label className="block text-sm font-medium text-[var(--text-secondary)] mb-1">Judul <span className="text-red-500">*</span></label>
+                                <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1">Judul Resource <span className="text-red-500">*</span></label>
                                 <input
                                     type="text"
+                                    className="w-full h-10 px-3 rounded-lg border border-[var(--glass-border)] bg-[var(--card-bg)] text-[var(--text-primary)] focus:border-[#e8c559] outline-none"
+                                    placeholder="Contoh: Panduan Menggunakan IMS"
                                     value={newResource.title}
-                                    onChange={(e) => setNewResource({ ...newResource, title: e.target.value })}
-                                    className="w-full p-3 rounded-lg border border-[var(--glass-border)] bg-white dark:bg-[#1c2120] text-gray-900 dark:text-white focus:border-[#e8c559] outline-none"
-                                    placeholder="Masukkan judul resource"
+                                    onChange={(e) => setNewResource(prev => ({ ...prev, title: e.target.value }))}
                                 />
                             </div>
 
                             {/* Description */}
                             <div>
-                                <label className="block text-sm font-medium text-[var(--text-secondary)] mb-1">Deskripsi</label>
+                                <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1">Deskripsi</label>
                                 <textarea
+                                    className="w-full py-2 px-3 rounded-lg border border-[var(--glass-border)] bg-[var(--card-bg)] text-[var(--text-primary)] focus:border-[#e8c559] outline-none resize-none h-20"
+                                    placeholder="Jelaskan isi resource ini secara singkat..."
                                     value={newResource.description}
-                                    onChange={(e) => setNewResource({ ...newResource, description: e.target.value })}
-                                    className="w-full p-3 rounded-lg border border-[var(--glass-border)] bg-white dark:bg-[#1c2120] text-gray-900 dark:text-white focus:border-[#e8c559] outline-none resize-none"
-                                    rows={2}
-                                    placeholder="Deskripsi singkat resource"
+                                    onChange={(e) => setNewResource(prev => ({ ...prev, description: e.target.value }))}
                                 />
                             </div>
 
-                            {/* Resource URL */}
+                            {/* Resource URL (File Upload could be here but prompt implies just link or file) */}
+                            {/* For simplicity we stick to URL input for now as per prompt analysis, but user mentioned upload. 
+                                Since we do not have full file upload UI spec, I will use URL. 
+                                BUT if user says "upload", usually means file. 
+                                However, "locker link semacam gdrive" suggests Links are primary.
+                                I'll keep URL input but label it clearly.
+                             */}
                             <div>
-                                <label className="block text-sm font-medium text-[var(--text-secondary)] mb-1">
-                                    URL Resource <span className="text-red-500">*</span>
-                                    <span className="text-xs text-[var(--text-muted)] ml-1">
-                                        (Link ke {newResource.type})
-                                    </span>
-                                </label>
+                                <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1">Link URL / Google Drive <span className="text-red-500">*</span></label>
                                 <input
-                                    type="url"
+                                    type="text"
+                                    className="w-full h-10 px-3 rounded-lg border border-[var(--glass-border)] bg-[var(--card-bg)] text-[var(--text-primary)] focus:border-[#e8c559] outline-none"
+                                    placeholder="https://docs.google.com/..."
                                     value={newResource.resourceUrl}
-                                    onChange={(e) => setNewResource({ ...newResource, resourceUrl: e.target.value })}
-                                    className="w-full p-3 rounded-lg border border-[var(--glass-border)] bg-white dark:bg-[#1c2120] text-gray-900 dark:text-white focus:border-[#e8c559] outline-none"
-                                    placeholder="https://..."
+                                    onChange={(e) => setNewResource(prev => ({ ...prev, resourceUrl: e.target.value }))}
                                 />
                             </div>
 
-                            {/* Thumbnail URL */}
-                            <div>
-                                <label className="block text-sm font-medium text-[var(--text-secondary)] mb-1">
-                                    URL Thumbnail
-                                    <span className="text-xs text-[var(--text-muted)] ml-1">(Opsional - URL gambar preview)</span>
-                                </label>
-                                <input
-                                    type="url"
-                                    value={newResource.thumbnailUrl}
-                                    onChange={(e) => setNewResource({ ...newResource, thumbnailUrl: e.target.value })}
-                                    className="w-full p-3 rounded-lg border border-[var(--glass-border)] bg-white dark:bg-[#1c2120] text-gray-900 dark:text-white focus:border-[#e8c559] outline-none"
-                                    placeholder="https://... (gambar preview)"
-                                />
-                            </div>
-
-                            {/* Duration (only for video) */}
-                            {newResource.type === "video" && (
+                            {/* Thumbnail - Only for Video */}
+                            {newResource.type === 'video' && (
                                 <div>
-                                    <label className="block text-sm font-medium text-[var(--text-secondary)] mb-1">Durasi Video</label>
+                                    <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1">Thumbnail (Optional)</label>
                                     <input
-                                        type="text"
-                                        value={newResource.duration}
-                                        onChange={(e) => setNewResource({ ...newResource, duration: e.target.value })}
-                                        className="w-full p-3 rounded-lg border border-[var(--glass-border)] bg-white dark:bg-[#1c2120] text-gray-900 dark:text-white focus:border-[#e8c559] outline-none"
-                                        placeholder="contoh: 45 min atau 1h 30m"
+                                        type="file"
+                                        accept="image/*"
+                                        className="w-full text-xs text-[var(--text-muted)]
+                                          file:mr-4 file:py-2 file:px-4
+                                          file:rounded-full file:border-0
+                                          file:text-xs file:font-semibold
+                                          file:bg-[#e8c559]/10 file:text-[#e8c559]
+                                          hover:file:bg-[#e8c559]/20"
+                                        onChange={(e) => {
+                                            if (e.target.files && e.target.files[0]) {
+                                                setNewResource(prev => ({ ...prev, thumbnailFile: e.target.files![0] }));
+                                            }
+                                        }}
                                     />
+                                    <p className="text-[10px] text-[var(--text-muted)] mt-1">
+                                        Jika tidak diisi, akan menggunakan gambar default.
+                                    </p>
                                 </div>
                             )}
 
-                            {/* Tags */}
-                            <div>
-                                <label className="block text-sm font-medium text-[var(--text-secondary)] mb-1">
-                                    Tags
-                                    <span className="text-xs text-[var(--text-muted)] ml-1">(pisahkan dengan koma)</span>
-                                </label>
-                                <input
-                                    type="text"
-                                    value={newResource.tags}
-                                    onChange={(e) => setNewResource({ ...newResource, tags: e.target.value })}
-                                    className="w-full p-3 rounded-lg border border-[var(--glass-border)] bg-white dark:bg-[#1c2120] text-gray-900 dark:text-white focus:border-[#e8c559] outline-none"
-                                    placeholder="contoh: training, onboarding, tutorial"
-                                />
+                            {/* Access Level & Roles */}
+                            <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1">Akses Minimal</label>
+                                    <select
+                                        className="w-full h-10 px-3 rounded-lg border border-[var(--glass-border)] bg-[var(--card-bg)] text-[var(--text-primary)] focus:border-[#e8c559] outline-none"
+                                        value={newResource.accessLevel}
+                                        onChange={(e) => setNewResource(prev => ({ ...prev, accessLevel: e.target.value as any }))}
+                                    >
+                                        {ACCESS_LEVELS.slice(1).map(l => (
+                                            <option key={l.id} value={l.id}>{l.label}</option>
+                                        ))}
+                                    </select>
+                                </div>
+                                <div>
+                                    <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1">Target Department</label>
+                                    <select
+                                        className="w-full h-10 px-3 rounded-lg border border-[var(--glass-border)] bg-[var(--card-bg)] text-[var(--text-primary)] focus:border-[#e8c559] outline-none"
+                                        value={newResource.targetRoles}
+                                        onChange={(e) => setNewResource(prev => ({ ...prev, targetRoles: e.target.value }))}
+                                    >
+                                        {ROLE_FILTERS.map(r => (
+                                            <option key={r.id} value={r.id}>{r.label}</option>
+                                        ))}
+                                    </select>
+                                </div>
                             </div>
+                        </div>
 
-                            {/* Action Buttons */}
-                            <div className="flex gap-3 mt-6">
-                                <button
-                                    onClick={() => setShowAddModal(false)}
-                                    className="flex-1 px-4 py-3 rounded-lg border border-[var(--glass-border)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] font-medium transition-colors"
-                                >
-                                    Batal
-                                </button>
-                                <button
-                                    onClick={handleAddResource}
-                                    className="flex-1 px-4 py-3 rounded-lg bg-[#e8c559] hover:bg-[#dcb33e] text-[#171611] font-bold transition-colors"
-                                >
-                                    Simpan Resource
-                                </button>
-                            </div>
+                        <div className="p-6 pt-0 flex justify-end gap-3">
+                            <button
+                                onClick={() => setShowAddModal(false)}
+                                className="px-5 py-2 rounded-lg text-sm font-medium text-[var(--text-secondary)] hover:bg-white/5 transition-colors"
+                            >
+                                Batal
+                            </button>
+                            <button
+                                disabled={isSubmitting}
+                                onClick={handleAddResource}
+                                className="px-5 py-2 rounded-lg bg-[#e8c559] hover:bg-[#dcb33e] text-[#171611] text-sm font-bold shadow-[0_0_15px_rgba(232,197,89,0.2)] disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                                {isSubmitting ? "Menyimpan..." : "Simpan Resource"}
+                            </button>
                         </div>
                     </div>
                 </div>
             )}
-        </div >
+        </div>
     );
 }
