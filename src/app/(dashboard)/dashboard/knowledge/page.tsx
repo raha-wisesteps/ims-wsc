@@ -58,7 +58,7 @@ export interface KnowledgeResource {
 }
 
 // Video Card Component
-function VideoCard({ resource }: { resource: KnowledgeResource }) {
+function VideoCard({ resource, canManage, onEdit, onDelete }: { resource: KnowledgeResource; canManage: boolean; onEdit: (r: KnowledgeResource) => void; onDelete: (id: string) => void }) {
     const accessLevel = ACCESS_LEVELS.find(l => l.id === resource.min_access_level);
     const defaultThumbnail = "/daria-nepriakhina-xY55bL5mZAM-unsplash.jpg";
 
@@ -108,6 +108,16 @@ function VideoCard({ resource }: { resource: KnowledgeResource }) {
                     <h3 className="font-semibold transition-colors line-clamp-2 text-[var(--text-primary)] group-hover:text-[#e8c559]">
                         {resource.title}
                     </h3>
+                    {canManage && (
+                        <div className="flex gap-1 shrink-0" onClick={e => e.stopPropagation()}>
+                            <button onClick={() => onEdit(resource)} className="p-1 hover:text-[#e8c559] text-[var(--text-muted)] transition-colors">
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
+                            </button>
+                            <button onClick={() => onDelete(resource.id)} className="p-1 hover:text-red-500 text-[var(--text-muted)] transition-colors">
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                            </button>
+                        </div>
+                    )}
                 </div>
 
                 <p className="text-xs text-[var(--text-secondary)] line-clamp-2 mb-3">
@@ -126,7 +136,7 @@ function VideoCard({ resource }: { resource: KnowledgeResource }) {
 }
 
 // Document Card Component (Simple)
-function DocumentCard({ resource }: { resource: KnowledgeResource }) {
+function DocumentCard({ resource, canManage, onEdit, onDelete }: { resource: KnowledgeResource; canManage: boolean; onEdit: (r: KnowledgeResource) => void; onDelete: (id: string) => void }) {
     const accessLevel = ACCESS_LEVELS.find(l => l.id === resource.min_access_level);
 
     const getTypeIcon = (type: string) => {
@@ -179,8 +189,19 @@ function DocumentCard({ resource }: { resource: KnowledgeResource }) {
                 </div>
 
                 {/* Action */}
-                <div className="flex-shrink-0">
-                    <button className="p-2 rounded-lg text-[var(--text-muted)] hover:text-[#e8c559] hover:bg-[#e8c559]/10 transition-colors">
+                <div className="flex-shrink-0 flex items-center gap-1" onClick={e => e.stopPropagation()}>
+                    {canManage && (
+                        <>
+                            <button onClick={() => onEdit(resource)} className="p-2 rounded-lg text-[var(--text-muted)] hover:text-[#e8c559] hover:bg-[#e8c559]/10 transition-colors">
+                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
+                            </button>
+                            <button onClick={() => onDelete(resource.id)} className="p-2 rounded-lg text-[var(--text-muted)] hover:text-red-500 hover:bg-red-500/10 transition-colors">
+                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                            </button>
+                        </>
+                    )}
+                    <button onClick={handleClick} className="p-2 rounded-lg text-[var(--text-muted)] hover:text-[#e8c559] hover:bg-[#e8c559]/10 transition-colors">
+                        {/* Download/Open Button */}
                         <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
                             <path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z" />
                         </svg>
@@ -192,7 +213,7 @@ function DocumentCard({ resource }: { resource: KnowledgeResource }) {
 }
 
 // SOP Card Component
-function SOPCard({ resource }: { resource: KnowledgeResource }) {
+function SOPCard({ resource, canManage, onEdit, onDelete }: { resource: KnowledgeResource; canManage: boolean; onEdit: (r: KnowledgeResource) => void; onDelete: (id: string) => void }) {
     const accessLevel = ACCESS_LEVELS.find(l => l.id === resource.min_access_level);
 
     const handleClick = () => {
@@ -236,6 +257,16 @@ function SOPCard({ resource }: { resource: KnowledgeResource }) {
                             {new Date(resource.created_at || Date.now()).toLocaleDateString()}
                         </span>
                     </div>
+                    {canManage && (
+                        <div className="flex gap-2 mt-2 justify-end" onClick={e => e.stopPropagation()}>
+                            <button onClick={() => onEdit(resource)} className="text-xs text-[var(--text-muted)] hover:text-[#e8c559] flex items-center gap-1">
+                                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg> Edit
+                            </button>
+                            <button onClick={() => onDelete(resource.id)} className="text-xs text-[var(--text-muted)] hover:text-red-500 flex items-center gap-1">
+                                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg> Delete
+                            </button>
+                        </div>
+                    )}
                 </div>
             </div>
         </div>
@@ -254,6 +285,7 @@ export default function KnowledgeHubPage() {
     const [selectedAccessLevel, setSelectedAccessLevel] = useState("all");
     const [showAddModal, setShowAddModal] = useState(false);
     const [modalMode, setModalMode] = useState<"general" | "mom">("general");
+    const [editingId, setEditingId] = useState<string | null>(null);
 
     // Resources state
     const [resources, setResources] = useState<KnowledgeResource[]>([]);
@@ -293,6 +325,47 @@ export default function KnowledgeHubPage() {
         targetRoles: "all",
     });
 
+    const resetForm = () => {
+        setNewResource({
+            type: "document",
+            accessLevel: "intern",
+            title: "",
+            description: "",
+            resourceUrl: "",
+            thumbnailFile: null,
+            targetRoles: "all"
+        });
+        setEditingId(null);
+    };
+
+    const handleEdit = (resource: KnowledgeResource) => {
+        setNewResource({
+            type: resource.type,
+            accessLevel: resource.min_access_level,
+            title: resource.title,
+            description: resource.description,
+            resourceUrl: resource.resource_url,
+            thumbnailFile: null,
+            targetRoles: resource.target_roles.includes('all') ? 'all' : resource.target_roles[0] || 'all'
+        });
+        setEditingId(resource.id);
+        setModalMode(resource.type === 'mom' ? 'mom' : 'general');
+        setShowAddModal(true);
+    };
+
+    const handleDelete = async (id: string) => {
+        if (!confirm("Apakah Anda yakin ingin menghapus resource ini?")) return;
+        try {
+            const { error } = await supabase.from('knowledge_resources').delete().eq('id', id);
+            if (error) throw error;
+            toast.success("Resource berhasil dihapus");
+            fetchResources();
+        } catch (err: any) {
+            console.error("Error deleting resource:", err);
+            toast.error("Gagal menghapus resource");
+        }
+    };
+
     // Handle form submission
     const handleAddResource = async () => {
         if (!newResource.title || !newResource.resourceUrl) {
@@ -328,35 +401,49 @@ export default function KnowledgeHubPage() {
                 }
             }
 
-            // Insert Resource
-            const { error: insertError } = await supabase
-                .from('knowledge_resources')
-                .insert({
+
+
+            if (editingId) {
+                // Update existing
+                const updateData: any = {
                     title: newResource.title,
                     type: newResource.type,
                     description: newResource.description,
                     resource_url: newResource.resourceUrl,
-                    thumbnail_url: thumbnailUrl,
                     min_access_level: newResource.accessLevel,
                     target_roles: newResource.targetRoles === 'all' ? ['all'] : [newResource.targetRoles],
-                    created_by: profile?.id,
-                });
+                };
+                if (thumbnailUrl) updateData.thumbnail_url = thumbnailUrl;
 
-            if (insertError) throw insertError;
+                const { error: updateError } = await supabase
+                    .from('knowledge_resources')
+                    .update(updateData)
+                    .eq('id', editingId);
 
-            toast.success("Resource berhasil ditambahkan!");
+                if (updateError) throw updateError;
+                toast.success("Resource berhasil diperbarui!");
+            } else {
+                // Insert Resource
+                const { error: insertError } = await supabase
+                    .from('knowledge_resources')
+                    .insert({
+                        title: newResource.title,
+                        type: newResource.type,
+                        description: newResource.description,
+                        resource_url: newResource.resourceUrl,
+                        thumbnail_url: thumbnailUrl,
+                        min_access_level: newResource.accessLevel,
+                        target_roles: newResource.targetRoles === 'all' ? ['all'] : [newResource.targetRoles],
+                        created_by: profile?.id,
+                    });
+
+                if (insertError) throw insertError;
+                toast.success("Resource berhasil ditambahkan!");
+            }
             setShowAddModal(false);
 
             // Reset form
-            setNewResource({
-                type: "document",
-                accessLevel: "intern",
-                title: "",
-                description: "",
-                resourceUrl: "",
-                thumbnailFile: null,
-                targetRoles: "all"
-            });
+            resetForm();
 
             // Reload list
             fetchResources();
@@ -404,6 +491,7 @@ export default function KnowledgeHubPage() {
     // Access capabilities
     const isIntern = profile?.is_intern || profile?.job_type === 'intern';
     const isStaff = profile && !isIntern;
+    const canManage = profile && (profile.role === 'ceo' || profile.role === 'super_admin' || profile.is_office_manager);
     // Note: 'mom' upload is for everyone (including interns). 'general' upload is for staff only.
 
     return (
@@ -427,6 +515,7 @@ export default function KnowledgeHubPage() {
                         <button
                             onClick={() => {
                                 setModalMode("general");
+                                resetForm();
                                 setNewResource(prev => ({ ...prev, type: 'document' }));
                                 setShowAddModal(true);
                             }}
@@ -443,6 +532,7 @@ export default function KnowledgeHubPage() {
                     <button
                         onClick={() => {
                             setModalMode("mom");
+                            resetForm();
                             setNewResource(prev => ({ ...prev, type: 'mom' }));
                             setShowAddModal(true);
                         }}
@@ -540,7 +630,7 @@ export default function KnowledgeHubPage() {
                                 </h3>
                                 <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
                                     {videoResources.map((resource) => (
-                                        <VideoCard key={resource.id} resource={resource} />
+                                        <VideoCard key={resource.id} resource={resource} canManage={!!canManage} onEdit={handleEdit} onDelete={handleDelete} />
                                     ))}
                                 </div>
                             </div>
@@ -555,7 +645,7 @@ export default function KnowledgeHubPage() {
                                 </h3>
                                 <div className="space-y-3">
                                     {templateResources.map((resource) => (
-                                        <DocumentCard key={resource.id} resource={resource} />
+                                        <DocumentCard key={resource.id} resource={resource} canManage={!!canManage} onEdit={handleEdit} onDelete={handleDelete} />
                                     ))}
                                 </div>
                             </div>
@@ -569,7 +659,7 @@ export default function KnowledgeHubPage() {
                                 </h3>
                                 <div className="space-y-3">
                                     {linkResources.map((resource) => (
-                                        <DocumentCard key={resource.id} resource={resource} />
+                                        <DocumentCard key={resource.id} resource={resource} canManage={!!canManage} onEdit={handleEdit} onDelete={handleDelete} />
                                     ))}
                                 </div>
                             </div>
@@ -583,7 +673,7 @@ export default function KnowledgeHubPage() {
                                 </h3>
                                 <div className="space-y-3">
                                     {pureDocsResources.map((resource) => (
-                                        <DocumentCard key={resource.id} resource={resource} />
+                                        <DocumentCard key={resource.id} resource={resource} canManage={!!canManage} onEdit={handleEdit} onDelete={handleDelete} />
                                     ))}
                                 </div>
                             </div>
@@ -597,7 +687,7 @@ export default function KnowledgeHubPage() {
                                 </h3>
                                 <div className="space-y-3">
                                     {sopResources.map((resource) => (
-                                        <SOPCard key={resource.id} resource={resource} />
+                                        <SOPCard key={resource.id} resource={resource} canManage={!!canManage} onEdit={handleEdit} onDelete={handleDelete} />
                                     ))}
                                 </div>
                             </div>
@@ -618,7 +708,7 @@ export default function KnowledgeHubPage() {
                     <div className="glass-panel w-full max-w-lg rounded-xl overflow-hidden shadow-2xl animate-in fade-in zoom-in duration-200">
                         <div className="p-6 border-b border-white/5 flex justify-between items-center">
                             <h3 className="text-xl font-bold text-[var(--text-primary)]">
-                                {modalMode === 'mom' ? 'Tambah Minutes of Meeting' : 'Tambah Resource Baru'}
+                                {editingId ? 'Edit Resource' : (modalMode === 'mom' ? 'Tambah Minutes of Meeting' : 'Tambah Resource Baru')}
                             </h3>
                             <button
                                 onClick={() => setShowAddModal(false)}
@@ -639,7 +729,7 @@ export default function KnowledgeHubPage() {
                                         type="text"
                                         value="MoM (Minutes of Meeting)"
                                         disabled
-                                        className="w-full h-10 px-3 rounded-lg border border-[var(--glass-border)] bg-[var(--card-bg)] text-[var(--text-muted)]"
+                                        className="w-full h-10 px-3 rounded-lg border border-[var(--glass-border)] bg-[var(--card-bg)] text-[var(--text-muted)] opacity-70"
                                     />
                                 ) : (
                                     <div className="grid grid-cols-3 gap-2">
@@ -766,7 +856,7 @@ export default function KnowledgeHubPage() {
                                 onClick={handleAddResource}
                                 className="px-5 py-2 rounded-lg bg-[#e8c559] hover:bg-[#dcb33e] text-[#171611] text-sm font-bold shadow-[0_0_15px_rgba(232,197,89,0.2)] disabled:opacity-50 disabled:cursor-not-allowed"
                             >
-                                {isSubmitting ? "Menyimpan..." : "Simpan Resource"}
+                                {isSubmitting ? "Menyimpan..." : (editingId ? "Update Resource" : "Simpan Resource")}
                             </button>
                         </div>
                     </div>
