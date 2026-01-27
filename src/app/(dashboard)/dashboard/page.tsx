@@ -9,8 +9,10 @@ import {
     Building2, Home, Plane, Building, Stethoscope, FileText, Clock, MapPin,
     LayoutDashboard, Briefcase, ChevronRight, Plus, Bell, Megaphone, Trash2, Pencil, Check, X,
     CloudRain, CloudDrizzle, CloudLightning, Snowflake, Cloud,
-    ArrowRight, BookOpen, Globe, Umbrella, ClipboardList, MessageSquare, LucideIcon
+    ArrowRight, BookOpen, Globe, Umbrella, ClipboardList, LucideIcon, MessageSquare
 } from "lucide-react";
+import StatusEditor from "./_components/StatusEditor";
+import TaskEditor from "./_components/TaskEditor";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -284,7 +286,18 @@ const getFeedbackMessage = (status: AttendanceStatus, isLate: boolean, isForceMa
 
 
 
+const LoadingDots = () => {
+    const [dots, setDots] = useState("");
 
+    useEffect(() => {
+        const interval = setInterval(() => {
+            setDots(prev => prev.length >= 3 ? "" : prev + ".");
+        }, 500);
+        return () => clearInterval(interval);
+    }, []);
+
+    return <span>{dots}</span>;
+};
 export default function DashboardPage() {
     const { profile, leaveQuota, extraLeave, isLoading: authLoading } = useAuth();
     const supabase = createClient();
@@ -336,6 +349,10 @@ export default function DashboardPage() {
     }, []);
 
     // Data Fetching for Team Activity & Daily Plan
+    // Team Status State
+    const [teamStatuses, setTeamStatuses] = useState<TeamMember[]>([]);
+    const [isLoadingTeamData, setIsLoadingTeamData] = useState(true);
+
     // Data Fetching for Team Activity & Daily Plan
     useEffect(() => {
         const fetchAllTeamData = async () => {
@@ -344,6 +361,7 @@ export default function DashboardPage() {
                 return;
             }
 
+            setIsLoadingTeamData(true);
             console.log("Fetching team data for profile:", profile.id);
 
             try {
@@ -428,17 +446,15 @@ export default function DashboardPage() {
 
             } catch (error) {
                 console.error("Error fetching team data:", error);
+            } finally {
+                setIsLoadingTeamData(false);
             }
         };
 
         fetchAllTeamData();
     }, [profile]);
 
-
     const isIntern = profile?.job_type === 'intern';
-
-    // Team Status State
-    const [teamStatuses, setTeamStatuses] = useState<TeamMember[]>([]);
 
     // Compute current user's status from teamStatuses
     const currentUserStatus = useMemo(() => {
@@ -448,8 +464,6 @@ export default function DashboardPage() {
 
     // Personal Status Message State
     const [statusMessage, setStatusMessage] = useState("Building the future of IMS! 💻");
-    const [isEditingStatus, setIsEditingStatus] = useState(false);
-    const [newStatusMessage, setNewStatusMessage] = useState("");
 
     const [dailyPlan, setDailyPlan] = useState<Task[]>([]);
 
@@ -983,19 +997,19 @@ export default function DashboardPage() {
         }
     };
 
-    const addTask = async () => {
+    const addTask = async (text: string, priority: "high" | "medium" | "low") => {
         if (!profile) {
             alert("Error: User profile is not loaded. Cannot save task.");
             return;
         }
 
-        if (newTaskText.trim()) {
+        if (text.trim()) {
             try {
                 // Simple payload: text + priority
                 const payload = {
                     profile_id: profile.id,
-                    task_text: newTaskText.trim(),
-                    priority: newTaskPriority
+                    task_text: text.trim(),
+                    priority: priority
                 };
 
                 const { data, error } = await supabase
@@ -1035,8 +1049,8 @@ export default function DashboardPage() {
                         return m;
                     }));
 
-                    setNewTaskText("");
-                    setNewTaskPriority("medium");
+                    // setNewTaskText("");
+                    // setNewTaskPriority("medium");
                 }
 
             } catch (error) {
@@ -1119,15 +1133,15 @@ export default function DashboardPage() {
         }
     };
 
-    const saveStatusMessage = async () => {
-        if (!profile || !newStatusMessage.trim()) return;
+    const saveStatusMessage = async (newMessage: string) => {
+        if (!profile || !newMessage.trim()) return;
 
-        console.log("Saving status message:", newStatusMessage);
+        console.log("Saving status message:", newMessage);
 
         try {
             const { data, error } = await supabase
                 .from('profiles')
-                .update({ status_message: newStatusMessage.trim() })
+                .update({ status_message: newMessage.trim() })
                 .eq('id', profile.id)
                 .select(); // Select to verify return
 
@@ -1138,16 +1152,16 @@ export default function DashboardPage() {
 
             console.log("Status updated successfully:", data);
 
-            const newMessage = newStatusMessage.trim();
-            setStatusMessage(newMessage);
-            setIsEditingStatus(false);
+            const finalMessage = newMessage.trim();
+            setStatusMessage(finalMessage);
+            // setIsEditingStatus(false);
 
             // Sync with Team Activity
             setTeamStatuses(prev => prev.map(m => {
                 if (m.id === profile.id) {
                     return {
                         ...m,
-                        personalNote: newMessage
+                        personalNote: finalMessage
                     };
                 }
                 return m;
@@ -1259,24 +1273,28 @@ export default function DashboardPage() {
                             {/* Top Row: Status Badge + Time */}
                             <div className="flex justify-between items-start">
                                 <div className="flex items-center gap-2">
-                                    {/* Online Status */}
-                                    <Badge variant="outline" className="gap-2 bg-emerald-500/20 border-emerald-500/30 text-emerald-400 backdrop-blur-md px-3 py-1.5 shadow-none">
-                                        <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                                        <span className="text-xs font-bold uppercase tracking-wider text-emerald-400 !text-emerald-400">Online</span>
-                                    </Badge>
-                                    {/* Dynamic Work Status Label - Always visible based on computed status */}
-                                    {(() => {
-                                        const statusInfo = statusOptions.find(s => s.id === currentUserStatus) || statusOptions[0];
-                                        const StatusIcon = statusInfo.Icon;
-                                        return (
-                                            <Badge className={cn("gap-2 px-3 py-1.5 backdrop-blur-md border", `${statusInfo.color}/20`, `border-${statusInfo.color.replace('bg-', '')}/30`)}>
-                                                <StatusIcon className="w-3.5 h-3.5 text-white" />
-                                                <span className="text-xs font-bold uppercase tracking-wider text-white">
-                                                    {statusInfo.label}
-                                                </span>
-                                            </Badge>
-                                        );
-                                    })()}
+                                    {/* Dynamic Work Status Label */}
+                                    {isLoadingTeamData ? (
+                                        <Badge className="gap-2 px-4 py-2 backdrop-blur-md border bg-gray-500/20 border-white/30">
+                                            <div className="w-2.5 h-2.5 rounded-full bg-gray-400 animate-pulse" />
+                                            <span className="text-sm font-bold uppercase tracking-wider text-white w-[100px]">
+                                                Loading<LoadingDots />
+                                            </span>
+                                        </Badge>
+                                    ) : (
+                                        (() => {
+                                            const statusInfo = statusOptions.find(s => s.id === currentUserStatus) || statusOptions[0];
+                                            const StatusIcon = statusInfo.Icon;
+                                            return (
+                                                <Badge className={cn("gap-2 px-4 py-2 backdrop-blur-md border", `${statusInfo.color}/20`, `border-${statusInfo.color.replace('bg-', '')}/30`)}>
+                                                    <StatusIcon className="w-4 h-4 text-white" />
+                                                    <span className="text-sm font-bold uppercase tracking-wider text-white">
+                                                        {statusInfo.label}
+                                                    </span>
+                                                </Badge>
+                                            );
+                                        })()
+                                    )}
                                 </div>
                                 {/* Clock */}
                                 <div className="text-right">
@@ -1341,7 +1359,7 @@ export default function DashboardPage() {
                                                     <span className="text-xs font-medium uppercase text-[#f4d875]">Cuti Tahunan</span>
                                                 </div>
                                                 <p className="text-xl font-bold text-white !text-white">
-                                                    {leaveQuota?.annual_leave_used || 0}/{leaveQuota?.annual_leave_total || 12}
+                                                    {leaveQuota?.annual_leave_used || 0}/{leaveQuota?.annual_leave_total || 18}
                                                 </p>
                                             </CardContent>
                                         </Card>
@@ -1577,69 +1595,11 @@ export default function DashboardPage() {
                                             <div className="flex-1 min-w-0">
                                                 <div className="flex items-center gap-2">
                                                     <h4 className="text-lg font-bold dark:text-white text-black truncate">{profile?.full_name || 'Loading...'}</h4>
-                                                    <p className="text-xs text-[var(--text-muted)] font-medium mb-1">{profile?.job_title || 'Tourism Analyst'}</p>
-                                                    {/* Status Badge */}
-                                                    {(() => {
-                                                        const statusInfo = statusOptions.find(s => s.id === currentUserStatus) || statusOptions[0];
-                                                        const StatusIcon = statusInfo.Icon;
-                                                        return (
-                                                            <Badge className={cn("gap-1 px-2 py-0.5 text-[10px]", statusInfo.color)}>
-                                                                <StatusIcon className="w-3 h-3" />
-                                                                {statusInfo.label}
-                                                            </Badge>
-                                                        );
-                                                    })()}
                                                 </div>
-                                                {isEditingStatus ? (
-                                                    <div className="flex items-center gap-1 mt-1 w-full animate-in fade-in zoom-in duration-200">
-                                                        <MessageSquare className="w-4 h-4 text-[var(--primary)] flex-shrink-0" />
-                                                        <input
-                                                            type="text"
-                                                            value={newStatusMessage}
-                                                            onChange={(e) => setNewStatusMessage(e.target.value)}
-                                                            className="flex-1 min-w-0 bg-black/10 dark:bg-white/10 border-none rounded px-2 py-0.5 text-sm dark:text-white text-black outline-none focus:ring-1 focus:ring-[#e8c559]"
-                                                            autoFocus
-                                                            onKeyDown={(e) => {
-                                                                if (e.key === 'Enter') {
-                                                                    saveStatusMessage();
-                                                                } else if (e.key === 'Escape') {
-                                                                    setIsEditingStatus(false);
-                                                                }
-                                                            }}
-                                                        />
-                                                        <button
-                                                            onClick={() => saveStatusMessage()}
-                                                            className="p-1 text-emerald-500 hover:bg-emerald-500/10 rounded"
-                                                        >
-                                                            <Check className="h-3 w-3" />
-                                                        </button>
-                                                        <button
-                                                            onClick={() => setIsEditingStatus(false)}
-                                                            className="p-1 text-rose-500 hover:bg-rose-500/10 rounded"
-                                                        >
-                                                            <X className="h-3 w-3" />
-                                                        </button>
-                                                    </div>
-                                                ) : (
-                                                    <div className="flex items-center gap-2 mt-1 group">
-                                                        <div className="flex items-center gap-1.5 min-w-0">
-                                                            <MessageSquare className="w-4 h-4 text-[var(--primary)] flex-shrink-0" />
-                                                            <p className="text-sm dark:text-white/70 text-gray-600 truncate">
-                                                                {statusMessage}
-                                                            </p>
-                                                        </div>
-                                                        <button
-                                                            onClick={() => {
-                                                                setNewStatusMessage(statusMessage);
-                                                                setIsEditingStatus(true);
-                                                            }}
-                                                            className="opacity-0 group-hover:opacity-100 p-1 text-[var(--text-secondary)] hover:text-[#e8c559] transition-all"
-                                                            title="Edit Status"
-                                                        >
-                                                            <Pencil className="h-3 w-3" />
-                                                        </button>
-                                                    </div>
-                                                )}
+                                                <StatusEditor
+                                                    initialStatus={statusMessage}
+                                                    onSave={saveStatusMessage}
+                                                />
                                             </div>
                                         </div>
 
@@ -1765,64 +1725,7 @@ export default function DashboardPage() {
                                         </div>
 
                                         {/* Add New Task Form - Neutral & Clean */}
-                                        <div className={`mb-4 group flex items-center gap-3 p-3 rounded-2xl transition-all border dark:border-white/10 shadow-sm ${newTaskPriority === 'high' ? 'bg-white dark:bg-white/5 border-gray-200 dark:border-rose-500/30 dark:focus-within:ring-rose-500/20' :
-                                            newTaskPriority === 'medium' ? 'bg-white dark:bg-white/5 border-gray-200 dark:border-amber-500/30 dark:focus-within:ring-amber-500/20' :
-                                                'bg-white dark:bg-white/5 border-gray-200 dark:border-emerald-500/30 dark:focus-within:ring-emerald-500/20'
-                                            }`}>
-                                            <div className={`w-8 h-8 rounded-full flex items-center justify-center transition-colors ${newTaskPriority === 'high' ? 'bg-rose-100 text-rose-600 dark:bg-rose-500/20 dark:text-rose-400' :
-                                                newTaskPriority === 'medium' ? 'bg-amber-100 text-amber-600 dark:bg-amber-500/20 dark:text-amber-400' :
-                                                    'bg-emerald-100 text-emerald-600 dark:bg-emerald-500/20 dark:text-emerald-400'
-                                                }`}>
-                                                <Plus className="h-4 w-4" />
-                                            </div>
-                                            <input
-                                                type="text"
-                                                value={newTaskText}
-                                                onChange={(e) => setNewTaskText(e.target.value)}
-                                                placeholder="What's your focus today?"
-                                                autoComplete="off"
-                                                style={{
-                                                    backgroundColor: 'transparent',
-                                                    backgroundImage: 'none',
-                                                    boxShadow: 'none',
-                                                    outline: 'none',
-                                                    border: 'none',
-                                                    WebkitAppearance: 'none'
-                                                }}
-                                                className="daily-plan-input flex-1 bg-transparent !bg-transparent text-sm font-medium dark:text-white text-black placeholder:text-gray-400 dark:placeholder:text-white/30 outline-none !outline-none border-none !border-none ring-0 !ring-0 shadow-none !shadow-none focus:outline-none focus:!outline-none focus:border-none focus:ring-0 focus:shadow-none focus:bg-transparent"
-                                                onKeyDown={(e) => {
-                                                    if (e.key === 'Enter') {
-                                                        addTask();
-                                                    }
-                                                }}
-                                            />
-                                            <div className="flex items-center gap-2">
-                                                <select
-                                                    value={newTaskPriority}
-                                                    onChange={(e) => setNewTaskPriority(e.target.value as TaskPriority)}
-                                                    className={`bg-transparent text-[10px] font-bold uppercase outline-none cursor-pointer py-1 px-3 rounded-full border transition-colors ${newTaskPriority === 'high' ? 'text-rose-600 border-rose-200 bg-rose-50 dark:bg-rose-500/10 dark:text-rose-400 dark:border-rose-500/30' :
-                                                        newTaskPriority === 'medium' ? 'text-amber-600 border-amber-200 bg-amber-50 dark:bg-amber-500/10 dark:text-amber-400 dark:border-amber-500/30' :
-                                                            'text-emerald-600 border-emerald-200 bg-emerald-50 dark:bg-emerald-500/10 dark:text-emerald-400 dark:border-emerald-500/30'
-                                                        }`}
-                                                >
-                                                    <option value="low" className="bg-white text-emerald-600 dark:bg-[#1c2120] dark:text-emerald-400">Low</option>
-                                                    <option value="medium" className="bg-white text-amber-600 dark:bg-[#1c2120] dark:text-amber-400">Mid</option>
-                                                    <option value="high" className="bg-white text-rose-600 dark:bg-[#1c2120] dark:text-rose-400">High</option>
-                                                </select>
-                                                <button
-                                                    onClick={addTask}
-                                                    className={`p-1.5 rounded-full transition-all shadow-sm ${newTaskText.trim()
-                                                        ? (newTaskPriority === 'high' ? 'bg-rose-500 text-white hover:bg-rose-600' :
-                                                            newTaskPriority === 'medium' ? 'bg-amber-500 text-white hover:bg-amber-600' :
-                                                                'bg-emerald-500 text-white hover:bg-emerald-600')
-                                                        : 'bg-gray-100 text-gray-300 dark:bg-white/5 dark:text-white/10 cursor-not-allowed'
-                                                        }`}
-                                                    disabled={!newTaskText.trim()}
-                                                >
-                                                    <ArrowRight className="w-3.5 h-3.5" />
-                                                </button>
-                                            </div>
-                                        </div>
+                                        <TaskEditor onAddTask={addTask} />
 
                                         {/* Task List - Expanded & Larger - Fixed Height Scrollable */}
                                         <div className="space-y-3 flex-1 overflow-y-auto h-[320px] max-h-[320px] pr-2 mt-4 custom-scrollbar">
@@ -2164,28 +2067,31 @@ export default function DashboardPage() {
                                                 {/* Online indicator */}
                                                 <div className="absolute -bottom-0.5 -right-0.5 w-4 h-4 rounded-full bg-emerald-500 border-2 border-white dark:border-[var(--glass-bg)]" />
                                             </div>
-                                            <div className="flex-1 min-w-0">
-                                                <div className="flex items-center gap-2 flex-wrap">
-                                                    <span className="font-bold text-sm truncate text-[var(--text-primary)]">
-                                                        {userWithTasks.name}
-                                                    </span>
-                                                    <span className="text-xs text-[var(--primary)] font-medium">(You)</span>
-                                                    <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-bold ${memberStatusInfo?.color} text-white shadow-sm`}>
-                                                        {StatusIcon && <StatusIcon className="w-3 h-3" />}
-                                                        {memberStatusInfo?.label}
-                                                    </span>
+                                            <div className="flex-1 min-w-0 flex items-start gap-3">
+                                                <div className="flex flex-col min-w-[120px] max-w-[200px]">
+                                                    <div className="flex items-center gap-2">
+                                                        <span className="font-bold text-sm truncate text-[var(--text-primary)]">
+                                                            {userWithTasks.name}
+                                                        </span>
+                                                        <span className="text-xs text-[var(--primary)] font-medium">(You)</span>
+                                                        <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-bold ${memberStatusInfo?.color} text-white shadow-sm`}>
+                                                            {StatusIcon && <StatusIcon className="w-3 h-3" />}
+                                                            {memberStatusInfo?.label}
+                                                        </span>
+                                                    </div>
+                                                    <p className="text-xs text-[var(--text-muted)] mt-0.5 truncate">{userWithTasks.role}</p>
                                                 </div>
-                                                <p className="text-xs text-[var(--text-muted)] mt-0.5">{userWithTasks.role}</p>
+
+                                                {userWithTasks.personalNote && (
+                                                    <div className="flex-1 min-w-0">
+                                                        <div className="relative w-fit max-w-full bg-gray-100 dark:bg-white/10 px-3 py-2 rounded-2xl rounded-tl-none text-xs text-[var(--text-primary)] leading-snug break-words">
+                                                            {userWithTasks.personalNote}
+                                                        </div>
+                                                    </div>
+                                                )}
                                             </div>
                                         </div>
-                                        {userWithTasks.personalNote && (
-                                            <div className="flex items-start gap-2 mb-3 pl-[72px]">
-                                                <MessageSquare className="w-3.5 h-3.5 text-[var(--text-muted)] mt-1 flex-shrink-0" />
-                                                <p className="text-sm text-[var(--text-primary)] leading-snug">
-                                                    {userWithTasks.personalNote}
-                                                </p>
-                                            </div>
-                                        )}
+
                                         {userWithTasks.tasks && userWithTasks.tasks.length > 0 && (
                                             <div className="pl-[72px] flex flex-wrap gap-2">
                                                 {userWithTasks.tasks.slice(0, 3).map((task, idx) => (
@@ -2232,35 +2138,42 @@ export default function DashboardPage() {
                                                             {member.avatar}
                                                         </div>
                                                     )}
+                                                    {/* Online indicator */}
+                                                    <div className={`absolute -bottom-0.5 -right-0.5 w-4 h-4 rounded-full border-2 border-white dark:border-[var(--glass-bg)] ${memberStatusInfo?.color.replace('bg-', 'bg-') || 'bg-gray-400'}`} />
                                                 </div>
-                                                <div className="flex-1 min-w-0">
-                                                    <div className="flex items-center gap-2 flex-wrap">
-                                                        <span className="font-semibold text-sm text-[var(--text-primary)] truncate">{member.name}</span>
-                                                        <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[9px] font-bold ${memberStatusInfo?.color} text-white`}>
-                                                            {StatusIcon && <StatusIcon className="w-2.5 h-2.5" />}
-                                                            {memberStatusInfo?.label}
-                                                        </span>
+                                                <div className="flex-1 min-w-0 flex items-start gap-3">
+                                                    <div className="flex flex-col min-w-[120px] max-w-[200px]">
+                                                        <div className="flex items-center gap-2">
+                                                            <span className="font-semibold text-sm text-[var(--text-primary)] truncate">{member.name}</span>
+                                                            <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[9px] font-bold ${memberStatusInfo?.color} text-white`}>
+                                                                {StatusIcon && <StatusIcon className="w-2.5 h-2.5" />}
+                                                                {memberStatusInfo?.label}
+                                                            </span>
+                                                        </div>
+                                                        <p className="text-xs text-[var(--text-muted)] mt-0.5 truncate">{member.role}</p>
                                                     </div>
-                                                    <p className="text-xs text-[var(--text-muted)] mt-0.5">{member.role}</p>
+
+                                                    {member.personalNote && (
+                                                        <div className="flex-1 min-w-0">
+                                                            <div className="relative w-fit max-w-full bg-gray-100 dark:bg-white/10 px-3 py-2 rounded-2xl rounded-tl-none text-xs text-[var(--text-primary)] leading-snug break-words">
+                                                                {member.personalNote}
+                                                            </div>
+                                                        </div>
+                                                    )}
                                                 </div>
                                             </div>
-                                            {member.personalNote && (
-                                                <div className="flex items-start gap-2 mb-2 pl-[64px]">
-                                                    <MessageSquare className="w-3 h-3 text-[var(--text-muted)] mt-1 flex-shrink-0" />
-                                                    <p className="text-sm text-[var(--text-primary)] leading-snug line-clamp-2">
-                                                        {member.personalNote}
-                                                    </p>
-                                                </div>
-                                            )}
-                                            {member.tasks && member.tasks.length > 0 && (
-                                                <div className="pl-[64px] flex flex-wrap gap-1.5">
-                                                    {member.tasks.map((task, idx) => (
-                                                        <span key={idx} className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[9px] font-medium ${taskPriorityColors[task.priority as keyof typeof taskPriorityColors] || taskPriorityColors.medium}`}>
-                                                            {task.name}
-                                                        </span>
-                                                    ))}
-                                                </div>
-                                            )}
+
+                                            {
+                                                member.tasks && member.tasks.length > 0 && (
+                                                    <div className="pl-[64px] flex flex-wrap gap-1.5">
+                                                        {member.tasks.map((task, idx) => (
+                                                            <span key={idx} className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[9px] font-medium ${taskPriorityColors[task.priority as keyof typeof taskPriorityColors] || taskPriorityColors.medium}`}>
+                                                                {task.name}
+                                                            </span>
+                                                        ))}
+                                                    </div>
+                                                )
+                                            }
                                         </div>
                                     );
                                 })}
