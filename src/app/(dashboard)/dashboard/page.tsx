@@ -2273,7 +2273,12 @@ export default function DashboardPage() {
                                     placeholder="Add a new task..."
                                     value={newTaskText}
                                     onChange={(e) => setNewTaskText(e.target.value)}
-                                    onKeyPress={(e) => e.key === 'Enter' && addTask()}
+                                    onKeyPress={(e) => {
+                                        if (e.key === 'Enter') {
+                                            addTask(newTaskText, newTaskPriority as "high" | "medium" | "low");
+                                            setNewTaskText("");
+                                        }
+                                    }}
                                     className="flex-1 p-3 rounded-lg bg-black/10 dark:bg-black/30 border border-[var(--glass-border)] text-[var(--text-primary)] placeholder-[var(--text-secondary)] focus:border-[#e8c559] focus:ring-1 focus:ring-[#e8c559] outline-none"
                                 />
                                 <select
@@ -2286,7 +2291,10 @@ export default function DashboardPage() {
                                     <option value="Project XYZ">Project XYZ</option>
                                 </select>
                                 <button
-                                    onClick={addTask}
+                                    onClick={() => {
+                                        addTask(newTaskText, newTaskPriority as "high" | "medium" | "low");
+                                        setNewTaskText("");
+                                    }}
                                     className="px-4 rounded-lg bg-[#e8c559] text-[#1c2120] font-bold hover:bg-[#ebd07a] transition-colors"
                                 >
                                     Add
