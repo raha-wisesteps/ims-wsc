@@ -1,125 +1,206 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import {
-    ChevronLeft,
+    ChevronRight,
     Send,
     Users,
     User,
     Bell,
     Search,
     Clock,
-    CheckCircle2
+    CheckCircle2,
+    Loader2,
+    Megaphone,
+    AlertCircle,
+    FileText,
+    Calendar,
+    Wrench,
+    Lightbulb
 } from "lucide-react";
-
-// Mock Data for Roles and Users
-const ROLES = [
-    { id: "all", label: "Example: All Employees (Broadcast)" },
-    { id: "hr", label: "HR Team" },
-    { id: "sales", label: "Sales Team" },
-    { id: "analyst", label: "Analyst Team" },
-    { id: "intern", label: "Interns" },
-];
-
-const USERS = [
-    { id: "1", name: "Andi Pratama", role: "Business Development" },
-    { id: "2", name: "Budi Santoso", role: "Sales" },
-    { id: "3", name: "Citra Lestari", role: "Analyst" },
-    { id: "4", name: "David Chen", role: "Analyst" },
-];
+import { createClient } from "@/lib/supabase/client";
+import { announcementService } from "@/services/announcement";
+import { Announcement } from "@/types/announcement";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { ANNOUNCEMENT_CATEGORIES, ANNOUNCEMENT_TEMPLATES } from "@/lib/constants";
 
 export default function MessageCenterPage() {
     const [activeTab, setActiveTab] = useState<"compose" | "history">("compose");
+    const supabase = createClient();
 
     // Compose State
-    const [messageType, setMessageType] = useState<"broadcast" | "private">("broadcast");
-    const [targetAudience, setTargetAudience] = useState("all"); // For broadcast/role
-    const [specificUser, setSpecificUser] = useState(""); // For private
+    const [messageType, setMessageType] = useState<"broadcast" | "department" | "private">("broadcast");
+    const [targetAudience, setTargetAudience] = useState("all");
+    const [specificUser, setSpecificUser] = useState("");
+    const [category, setCategory] = useState("General");
     const [subject, setSubject] = useState("");
     const [messageBody, setMessageBody] = useState("");
     const [isSending, setIsSending] = useState(false);
     const [showSuccess, setShowSuccess] = useState(false);
 
-    // Mock History State
-    const [messageHistory, setMessageHistory] = useState([
-        {
-            id: 1,
-            type: "broadcast",
-            target: "All Employees",
-            subject: "Update Kebijakan WFH",
-            date: "2026-01-10 09:00",
-            status: "Sent"
-        },
-        {
-            id: 2,
-            type: "private",
-            target: "Andi Pratama",
-            subject: "Feedback Presentasi Client",
-            date: "2026-01-08 14:30",
-            status: "Read"
-        },
+    // Data State
+    const [departments, setDepartments] = useState<{ id: string; label: string }[]>([
+        { id: "all", label: "All Employees (Broadcast)" }
     ]);
+    const [users, setUsers] = useState<{ id: string; full_name: string; role: string; department: string }[]>([]);
+    const [messageHistory, setMessageHistory] = useState<Announcement[]>([]);
+    const [loadingHistory, setLoadingHistory] = useState(false);
+    const [currentUser, setCurrentUser] = useState<string | null>(null);
 
-    const handleSend = (e: React.FormEvent) => {
-        e.preventDefault();
-        setIsSending(true);
+    // Filter State for History
+    const [searchQuery, setSearchQuery] = useState("");
 
-        // Simulate API call
-        setTimeout(() => {
-            const newMessage = {
-                id: messageHistory.length + 1,
-                type: messageType,
-                target: messageType === "broadcast"
-                    ? ROLES.find(r => r.id === targetAudience)?.label || "Everyone"
-                    : USERS.find(u => u.id === specificUser)?.name || "User",
-                subject: subject,
-                date: new Date().toLocaleString("id-ID"),
-                status: "Sent"
-            };
+    // Initial Data Fetch
+    useEffect(() => {
+        const fetchInitialData = async () => {
+            const { data: { user } } = await supabase.auth.getUser();
+            if (user) setCurrentUser(user.id);
 
-            setMessageHistory([newMessage, ...messageHistory]);
-            setIsSending(false);
-            setShowSuccess(true);
+            // Fetch Profiles (Active Only)
+            // RLS policies typically only return active users anyway
+            const { data: profiles, error: profilesError } = await supabase
+                .from('profiles')
+                .select('id, full_name, role, department')
+                .order('full_name');
 
-            // Reset form
-            setSubject("");
-            setMessageBody("");
-            setTimeout(() => setShowSuccess(false), 3000);
-        }, 1500);
+            if (profiles) {
+                // @ts-ignore - Supabase types might not include department yet
+                setUsers(profiles);
+
+                // Extract Unique Departments
+                // @ts-ignore - Supabase types might not include department yet
+                const uniqueDepts = Array.from(new Set(profiles.map((p: any) => p.department).filter(Boolean))).sort();
+                const deptOptions = [
+                    { id: "all", label: "All Employees (Broadcast)" },
+                    ...uniqueDepts.map((d: any) => ({ id: d, label: d }))
+                ];
+                setDepartments(deptOptions);
+            }
+
+            if (profilesError) {
+                console.error("Error fetching profiles:", profilesError);
+            }
+        };
+
+        fetchInitialData();
+    }, []);
+
+    // Fetch History when tab changes
+    useEffect(() => {
+        if (activeTab === "history") {
+            loadHistory();
+        }
+    }, [activeTab]);
+
+    const loadHistory = async () => {
+        setLoadingHistory(true);
+        try {
+            const data = await announcementService.fetchAnnouncements();
+            setMessageHistory(data);
+        } catch (error) {
+            console.error("Failed to load history", error);
+        } finally {
+            setLoadingHistory(false);
+        }
     };
 
+    const handleSend = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!currentUser) return;
+
+        setIsSending(true);
+
+        try {
+            let audience_type: 'broadcast' | 'department' | 'individual' = 'broadcast';
+            let target_departments: string[] | undefined = undefined;
+            let target_users: string[] | undefined = undefined;
+
+            if (messageType === 'broadcast') {
+                if (targetAudience === 'all') {
+                    audience_type = 'broadcast';
+                } else {
+                    audience_type = 'department';
+                    target_departments = [targetAudience];
+                }
+            } else if (messageType === 'private') {
+                audience_type = 'individual';
+                target_users = [specificUser];
+            }
+
+            await announcementService.createAnnouncement({
+                title: subject,
+                content: messageBody,
+                audience_type,
+                target_departments,
+                target_users,
+                author_id: currentUser,
+                category: category
+            });
+
+            setShowSuccess(true);
+            setSubject("");
+            setMessageBody("");
+            setSpecificUser("");
+            setTargetAudience("all");
+            setCategory("General");
+
+            setTimeout(() => setShowSuccess(false), 3000);
+        } catch (error) {
+            console.error("Failed to send message", error);
+            alert("Failed to send message. Please try again.");
+        } finally {
+            setIsSending(false);
+        }
+    };
+
+    const applyTemplate = (template: typeof ANNOUNCEMENT_TEMPLATES[0]) => {
+        setSubject(template.subject);
+        setMessageBody(template.body);
+        setCategory(template.category);
+        if (activeTab !== "compose") setActiveTab("compose");
+    };
+
+    const filteredHistory = messageHistory.filter(msg =>
+        msg.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        msg.content.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (msg.author?.full_name || "").toLowerCase().includes(searchQuery.toLowerCase())
+    );
+
     return (
-        <div className="space-y-6 pb-20">
+        <div className="flex flex-col space-y-8 pb-20">
             {/* Header */}
-            <header>
-                <Link
-                    href="/dashboard/hr"
-                    className="inline-flex items-center gap-2 text-gray-400 hover:text-white mb-2 transition-colors group"
-                >
-                    <ChevronLeft className="w-4 h-4 group-hover:-translate-x-1 transition-transform" />
-                    Back to Human Resource
-                </Link>
-                <div className="flex items-center justify-between">
+            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                <div className="flex items-center gap-3">
+                    <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-purple-500 to-purple-600 flex items-center justify-center shadow-lg shadow-purple-500/20">
+                        <Send className="h-6 w-6 text-white" />
+                    </div>
                     <div>
-                        <h1 className="text-3xl font-black tracking-tight text-white flex items-center gap-3">
-                            <Send className="w-8 h-8 text-purple-500" /> Message Center
-                        </h1>
-                        <p className="text-gray-400">Kirim broadcast atau pesan privat ke tim.</p>
+                        <div className="flex items-center gap-2 mb-1 text-sm text-[var(--text-secondary)]">
+                            <Link href="/dashboard" className="hover:text-[var(--text-primary)] transition-colors">Dashboard</Link>
+                            <ChevronRight className="h-4 w-4" />
+                            <Link href="/dashboard/hr" className="hover:text-[var(--text-primary)] transition-colors">Human Resource</Link>
+                            <ChevronRight className="h-4 w-4" />
+                            <span>Message Center</span>
+                        </div>
+                        <h2 className="text-2xl font-bold text-[var(--text-primary)]">Message Center</h2>
+                        <p className="text-sm text-[var(--text-secondary)]">Send broadcasts, announcements, and private messages to your team.</p>
                     </div>
                 </div>
-            </header>
+            </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 {/* Left Panel: Compose or Menu */}
                 <div className="lg:col-span-2 space-y-6">
                     {/* Tabs */}
-                    <div className="flex p-1 bg-white/5 rounded-xl border border-white/10 w-fit">
+                    <div className="flex p-1 bg-[var(--card-bg)] rounded-xl border border-[var(--glass-border)] w-fit backdrop-blur-sm">
                         <button
                             onClick={() => setActiveTab("compose")}
                             className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${activeTab === "compose"
                                 ? "bg-purple-500 text-white shadow-lg"
-                                : "text-gray-400 hover:text-white"
+                                : "text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
                                 }`}
                         >
                             Compose Message
@@ -128,7 +209,7 @@ export default function MessageCenterPage() {
                             onClick={() => setActiveTab("history")}
                             className={`px-4 py-2 rounded-lg text-sm font-bold transition-all ${activeTab === "history"
                                 ? "bg-purple-500 text-white shadow-lg"
-                                : "text-gray-400 hover:text-white"
+                                : "text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
                                 }`}
                         >
                             Sent History
@@ -136,197 +217,290 @@ export default function MessageCenterPage() {
                     </div>
 
                     {activeTab === "compose" ? (
-                        <div className="glass-panel p-6 rounded-2xl border border-white/10 relative overflow-hidden">
+                        <Card className="border-[var(--glass-border)] bg-[var(--card-bg)] backdrop-blur-sm relative overflow-hidden">
                             {showSuccess && (
-                                <div className="absolute inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-10 animate-in fade-in">
+                                <div className="absolute inset-0 bg-background/80 backdrop-blur-sm flex items-center justify-center z-10 animate-in fade-in">
                                     <div className="text-center">
-                                        <div className="w-16 h-16 bg-emerald-500 rounded-full flex items-center justify-center mx-auto mb-4">
-                                            <CheckCircle2 className="w-8 h-8 text-white" />
+                                        <div className="w-16 h-16 bg-emerald-500 rounded-full flex items-center justify-center mx-auto mb-4 text-white">
+                                            <CheckCircle2 className="w-8 h-8" />
                                         </div>
-                                        <h3 className="text-2xl font-bold text-white mb-1">Message Sent!</h3>
-                                        <p className="text-gray-400">Pesan anda berhasil dikirim.</p>
+                                        <h3 className="text-2xl font-bold text-foreground mb-1">Message Sent!</h3>
+                                        <p className="text-muted-foreground">Your message has been successfully broadcasted.</p>
                                     </div>
                                 </div>
                             )}
 
-                            <form onSubmit={handleSend} className="space-y-6">
-                                {/* Message Type Selection */}
-                                <div className="grid grid-cols-2 gap-4">
-                                    <div
-                                        onClick={() => setMessageType("broadcast")}
-                                        className={`cursor-pointer p-4 rounded-xl border transition-all ${messageType === "broadcast"
-                                            ? "bg-purple-500/20 border-purple-500 ring-1 ring-purple-500"
-                                            : "bg-white/5 border-white/10 hover:bg-white/10"
-                                            }`}
-                                    >
-                                        <div className="flex items-center gap-3 mb-2">
-                                            <div className={`p-2 rounded-lg ${messageType === "broadcast" ? "bg-purple-500" : "bg-gray-700"} text-white`}>
-                                                <Bell className="w-5 h-5" />
+                            <CardContent className="p-6">
+                                <form onSubmit={handleSend} className="space-y-6">
+                                    {/* Message Type Selection */}
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        <div
+                                            onClick={() => setMessageType("broadcast")}
+                                            className={`cursor-pointer p-4 rounded-xl border transition-all ${messageType === "broadcast" || messageType === "department"
+                                                ? "bg-purple-500/10 border-purple-500 ring-1 ring-purple-500"
+                                                : "bg-[var(--glass-bg)] border-[var(--glass-border)] hover:bg-[var(--glass-border)]"
+                                                }`}
+                                        >
+                                            <div className="flex items-center gap-3 mb-2">
+                                                <div className={`p-2 rounded-lg ${messageType === "broadcast" || messageType === "department" ? "bg-purple-500 text-white" : "bg-[var(--glass-border)] text-muted-foreground"}`}>
+                                                    <Bell className="w-5 h-5" />
+                                                </div>
+                                                <span className={`font-bold ${messageType === "broadcast" || messageType === "department" ? "text-purple-600 dark:text-purple-400" : "text-[var(--text-secondary)]"}`}>Company Broadcast</span>
                                             </div>
-                                            <span className={`font-bold ${messageType === "broadcast" ? "text-purple-400" : "text-gray-300"}`}>Company Broadcast</span>
+                                            <p className="text-xs text-[var(--text-muted)]">Send notifications to a Department or All Employees.</p>
                                         </div>
-                                        <p className="text-xs text-gray-400">Kirim notifikasi ke Department atau Semua Karyawan (Company News).</p>
+
+                                        <div
+                                            onClick={() => setMessageType("private")}
+                                            className={`cursor-pointer p-4 rounded-xl border transition-all ${messageType === "private"
+                                                ? "bg-blue-500/10 border-blue-500 ring-1 ring-blue-500"
+                                                : "bg-[var(--glass-bg)] border-[var(--glass-border)] hover:bg-[var(--glass-border)]"
+                                                }`}
+                                        >
+                                            <div className="flex items-center gap-3 mb-2">
+                                                <div className={`p-2 rounded-lg ${messageType === "private" ? "bg-blue-500 text-white" : "bg-[var(--glass-border)] text-muted-foreground"}`}>
+                                                    <User className="w-5 h-5" />
+                                                </div>
+                                                <span className={`font-bold ${messageType === "private" ? "text-blue-600 dark:text-blue-400" : "text-[var(--text-secondary)]"}`}>Private Message</span>
+                                            </div>
+                                            <p className="text-xs text-[var(--text-muted)]">Send a direct message to a specific employee.</p>
+                                        </div>
                                     </div>
 
-                                    <div
-                                        onClick={() => setMessageType("private")}
-                                        className={`cursor-pointer p-4 rounded-xl border transition-all ${messageType === "private"
-                                            ? "bg-blue-500/20 border-blue-500 ring-1 ring-blue-500"
-                                            : "bg-white/5 border-white/10 hover:bg-white/10"
-                                            }`}
-                                    >
-                                        <div className="flex items-center gap-3 mb-2">
-                                            <div className={`p-2 rounded-lg ${messageType === "private" ? "bg-blue-500" : "bg-gray-700"} text-white`}>
-                                                <User className="w-5 h-5" />
-                                            </div>
-                                            <span className={`font-bold ${messageType === "private" ? "text-blue-400" : "text-gray-300"}`}>Private Message</span>
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                        {/* Target Selection */}
+                                        <div className="space-y-2">
+                                            <label className="text-sm font-bold text-[var(--text-primary)]">
+                                                {messageType === "private" ? "Recipient" : "Target Audience"}
+                                            </label>
+
+                                            {messageType !== "private" ? (
+                                                <select
+                                                    value={targetAudience}
+                                                    onChange={(e) => setTargetAudience(e.target.value)}
+                                                    className="w-full h-10 rounded-md bg-background border border-input px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                                                >
+                                                    {departments.map(dept => (
+                                                        <option key={dept.id} value={dept.id}>{dept.label}</option>
+                                                    ))}
+                                                </select>
+                                            ) : (
+                                                <select
+                                                    value={specificUser}
+                                                    onChange={(e) => setSpecificUser(e.target.value)}
+                                                    required={messageType === "private"}
+                                                    className="w-full h-10 rounded-md bg-background border border-input px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                                                >
+                                                    <option value="" disabled>-- Select Employee --</option>
+                                                    {users.map(user => (
+                                                        <option key={user.id} value={user.id}>{user.full_name} - {user.role} ({user.department || 'No Dept'})</option>
+                                                    ))}
+                                                </select>
+                                            )}
                                         </div>
-                                        <p className="text-xs text-gray-400">Kirim pesan personal langsung ke satu karyawan tertentu.</p>
+
+                                        {/* Category Selection */}
+                                        <div className="space-y-2">
+                                            <label className="text-sm font-bold text-[var(--text-primary)]">Category</label>
+                                            <select
+                                                value={category}
+                                                onChange={(e) => setCategory(e.target.value)}
+                                                className="w-full h-10 rounded-md bg-background border border-input px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                                            >
+                                                {ANNOUNCEMENT_CATEGORIES.map(cat => (
+                                                    <option key={cat.id} value={cat.id}>{cat.label}</option>
+                                                ))}
+                                            </select>
+                                        </div>
                                     </div>
-                                </div>
 
-                                {/* Target Selection */}
-                                <div>
-                                    <label className="block text-sm font-bold text-gray-300 mb-2">
-                                        {messageType === "broadcast" ? "Target Audience (Department)" : "Select Recipient"}
-                                    </label>
+                                    {/* Subject */}
+                                    <div className="space-y-2">
+                                        <label className="text-sm font-bold text-[var(--text-primary)]">Subject</label>
+                                        <input
+                                            type="text"
+                                            value={subject}
+                                            onChange={(e) => setSubject(e.target.value)}
+                                            placeholder="Enter message subject..."
+                                            required
+                                            className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                                        />
+                                    </div>
 
-                                    {messageType === "broadcast" ? (
-                                        <select
-                                            value={targetAudience}
-                                            onChange={(e) => setTargetAudience(e.target.value)}
-                                            className="w-full h-12 rounded-xl bg-black/40 border border-white/10 text-white px-4 focus:border-purple-500 outline-none transition-colors"
+                                    {/* Body */}
+                                    <div className="space-y-2">
+                                        <label className="text-sm font-bold text-[var(--text-primary)]">Message Content</label>
+                                        <textarea
+                                            value={messageBody}
+                                            onChange={(e) => setMessageBody(e.target.value)}
+                                            placeholder="Type your message here..."
+                                            required
+                                            className="flex min-h-[150px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 resize-y"
+                                        />
+                                    </div>
+
+                                    {/* Action Buttons */}
+                                    <div className="pt-4 border-t border-[var(--glass-border)] flex items-center justify-end gap-3">
+                                        <Button
+                                            type="button"
+                                            variant="outline"
+                                            onClick={() => {
+                                                setSubject("");
+                                                setMessageBody("");
+                                            }}
                                         >
-                                            {ROLES.map(role => (
-                                                <option key={role.id} value={role.id}>{role.label}</option>
-                                            ))}
-                                        </select>
-                                    ) : (
-                                        <select
-                                            value={specificUser}
-                                            onChange={(e) => setSpecificUser(e.target.value)}
-                                            required={messageType === "private"}
-                                            className="w-full h-12 rounded-xl bg-black/40 border border-white/10 text-white px-4 focus:border-blue-500 outline-none transition-colors"
+                                            Clear Form
+                                        </Button>
+                                        <Button
+                                            type="submit"
+                                            disabled={isSending || (messageType === 'private' && !specificUser)}
+                                            className="bg-purple-600 hover:bg-purple-700 text-white !text-white min-w-[120px]"
                                         >
-                                            <option value="" disabled>-- Select Employee --</option>
-                                            {USERS.map(user => (
-                                                <option key={user.id} value={user.id}>{user.name} - {user.role}</option>
-                                            ))}
-                                        </select>
-                                    )}
-                                </div>
-
-                                {/* Subject */}
-                                <div>
-                                    <label className="block text-sm font-bold text-gray-300 mb-2">Subject / Title</label>
-                                    <input
-                                        type="text"
-                                        value={subject}
-                                        onChange={(e) => setSubject(e.target.value)}
-                                        placeholder="Judul pesan..."
-                                        required
-                                        className="w-full h-12 rounded-xl bg-black/40 border border-white/10 text-white px-4 focus:border-purple-500 outline-none transition-colors"
-                                    />
-                                </div>
-
-                                {/* Body */}
-                                <div>
-                                    <label className="block text-sm font-bold text-gray-300 mb-2">Message Content</label>
-                                    <textarea
-                                        value={messageBody}
-                                        onChange={(e) => setMessageBody(e.target.value)}
-                                        placeholder="Tulis pesan anda disini..."
-                                        required
-                                        className="w-full h-40 rounded-xl bg-black/40 border border-white/10 text-white p-4 focus:border-purple-500 outline-none transition-colors resize-none"
-                                    />
-                                </div>
-
-                                {/* Action Buttons */}
-                                <div className="pt-4 border-t border-white/5 flex items-center justify-end gap-3">
-                                    <button
-                                        type="button"
-                                        className="px-6 py-3 rounded-xl border border-white/10 text-gray-400 hover:text-white hover:bg-white/5 font-medium transition-colors"
-                                    >
-                                        Draft
-                                    </button>
-                                    <button
-                                        type="submit"
-                                        disabled={isSending}
-                                        className="px-6 py-3 rounded-xl bg-purple-500 hover:bg-purple-600 text-white font-bold shadow-lg shadow-purple-500/20 flex items-center gap-2 transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
-                                    >
-                                        {isSending ? (
-                                            <>Converting...</>
-                                        ) : (
-                                            <>Send Message <Send className="w-4 h-4" /></>
-                                        )}
-                                    </button>
-                                </div>
-                            </form>
-                        </div>
+                                            {isSending ? (
+                                                <>
+                                                    <Loader2 className="w-4 h-4 animate-spin mr-2 text-white" />
+                                                    <span className="text-white">Sending...</span>
+                                                </>
+                                            ) : (
+                                                <>
+                                                    <span className="text-white">Send Message</span> <Send className="w-4 h-4 ml-2 text-white" />
+                                                </>
+                                            )}
+                                        </Button>
+                                    </div>
+                                </form>
+                            </CardContent>
+                        </Card>
                     ) : (
                         // History View
-                        <div className="glass-panel rounded-2xl border border-white/10 overflow-hidden">
-                            <div className="p-4 bg-white/5 border-b border-white/10 flex items-center justify-between">
-                                <h3 className="font-bold text-white">History Pesan Terkirim</h3>
-                                <div className="relative">
-                                    <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-500" />
+                        <Card className="border-[var(--glass-border)] bg-[var(--card-bg)] backdrop-blur-sm">
+                            <CardHeader className="flex flex-row items-center justify-between pb-2 border-b border-[var(--glass-border)]">
+                                <div>
+                                    <CardTitle>Sent History</CardTitle>
+                                    <CardDescription>View all previously sent announcements.</CardDescription>
+                                </div>
+                                <div className="relative w-64">
+                                    <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
                                     <input
                                         type="text"
-                                        placeholder="Search..."
-                                        className="h-9 w-48 rounded-lg bg-black/20 border border-white/10 pl-9 text-xs text-white focus:border-purple-500 outline-none"
+                                        placeholder="Search history..."
+                                        value={searchQuery}
+                                        onChange={(e) => setSearchQuery(e.target.value)}
+                                        className="w-full h-9 rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring pl-9"
                                     />
                                 </div>
-                            </div>
-                            <div className="divide-y divide-white/5">
-                                {messageHistory.map((msg) => (
-                                    <div key={msg.id} className="p-4 hover:bg-white/5 transition-colors flex items-center justify-between group">
-                                        <div className="flex items-center gap-4">
-                                            <div className={`w-10 h-10 rounded-full flex items-center justify-center ${msg.type === "broadcast" ? "bg-purple-500/20 text-purple-400" : "bg-blue-500/20 text-blue-400"
-                                                }`}>
-                                                {msg.type === "broadcast" ? <Bell className="w-5 h-5" /> : <User className="w-5 h-5" />}
-                                            </div>
-                                            <div>
-                                                <h4 className="font-bold text-white text-sm mb-0.5">{msg.subject}</h4>
-                                                <div className="flex items-center gap-2 text-xs text-gray-400">
-                                                    <span>To: {msg.target}</span>
-                                                    <span>•</span>
-                                                    <span className="flex items-center gap-1"><Clock className="w-3 h-3" /> {msg.date}</span>
-                                                </div>
-                                            </div>
-                                        </div>
-                                        <span className="px-3 py-1 rounded-full bg-emerald-500/10 text-emerald-400 text-xs font-bold border border-emerald-500/20">
-                                            {msg.status}
-                                        </span>
+                            </CardHeader>
+                            <CardContent className="p-0">
+                                {loadingHistory ? (
+                                    <div className="p-12 text-center text-muted-foreground">
+                                        <Loader2 className="w-8 h-8 animate-spin mx-auto mb-2" />
+                                        Loading message history...
                                     </div>
-                                ))}
-                            </div>
-                        </div>
+                                ) : filteredHistory.length === 0 ? (
+                                    <div className="p-12 text-center text-muted-foreground flex flex-col items-center">
+                                        <div className="w-12 h-12 rounded-full bg-muted flex items-center justify-center mb-3">
+                                            <Bell className="w-6 h-6 opacity-30" />
+                                        </div>
+                                        <p>No messages found matching your search.</p>
+                                    </div>
+                                ) : (
+                                    <div className="divide-y divide-[var(--glass-border)] max-h-[600px] overflow-y-auto custom-scrollbar">
+                                        {filteredHistory.map((msg) => {
+                                            const catParams = ANNOUNCEMENT_CATEGORIES.find(c => c.id === msg.category) || ANNOUNCEMENT_CATEGORIES[0];
+                                            const CatIcon = catParams.icon;
+
+                                            return (
+                                                <div key={msg.id} className="p-5 hover:bg-black/5 dark:hover:bg-white/5 transition-colors group">
+                                                    <div className="flex items-start justify-between mb-2">
+                                                        <div className="flex items-center gap-2">
+                                                            <Badge variant="outline" className={`${catParams.bg} ${catParams.color} ${catParams.border} hover:${catParams.bg} gap-1`}>
+                                                                <CatIcon className="w-3 h-3" />
+                                                                {msg.category || "General"}
+                                                            </Badge>
+                                                            <span className="text-xs text-[var(--text-muted)] flex items-center gap-1">
+                                                                <Clock className="w-3 h-3" />
+                                                                {new Date(msg.created_at).toLocaleDateString()}
+                                                            </span>
+                                                        </div>
+                                                        <Badge variant="secondary" className="text-[10px] uppercase">
+                                                            {msg.audience_type === 'individual' ? 'Private' : msg.audience_type}
+                                                        </Badge>
+                                                    </div>
+
+                                                    <h4 className="font-bold text-[var(--text-primary)] text-sm mb-1">{msg.title}</h4>
+                                                    <p className="text-xs text-[var(--text-secondary)] line-clamp-2 mb-2">
+                                                        {msg.content}
+                                                    </p>
+
+                                                    <div className="flex items-center gap-2 text-xs text-[var(--text-muted)]">
+                                                        <div className="flex -space-x-2">
+                                                            <div className="w-6 h-6 rounded-full bg-purple-500/20 border border-[var(--card-bg)] flex items-center justify-center text-[10px] font-bold text-purple-600">
+                                                                {msg.author?.full_name ? msg.author.full_name[0] : "A"}
+                                                            </div>
+                                                        </div>
+                                                        <span>To: {msg.audience_type === 'department' ? msg.target_departments?.join(', ') : msg.audience_type === 'broadcast' ? 'All' : 'Recipient'}</span>
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                )}
+                            </CardContent>
+                        </Card>
                     )}
                 </div>
 
                 {/* Right Panel: Hints/Templates */}
                 <div className="space-y-6">
-                    <div className="glass-panel p-6 rounded-2xl border border-white/10">
-                        <h3 className="font-bold text-white mb-4 flex items-center gap-2">
-                            💡 Tips & Templates
-                        </h3>
-                        <div className="space-y-4">
-                            <div className="p-4 rounded-xl bg-white/5 border border-white/5 hover:border-purple-500/50 transition-colors cursor-pointer group">
-                                <h4 className="font-bold text-gray-200 text-sm mb-1 group-hover:text-purple-400">Company Announcement</h4>
-                                <p className="text-xs text-gray-500 line-clamp-2">Template standar untuk pengumuman libur, kebijakan baru, dll.</p>
-                            </div>
-                            <div className="p-4 rounded-xl bg-white/5 border border-white/5 hover:border-blue-500/50 transition-colors cursor-pointer group">
-                                <h4 className="font-bold text-gray-200 text-sm mb-1 group-hover:text-blue-400">Performance Feedback</h4>
-                                <p className="text-xs text-gray-500 line-clamp-2">Format untuk memberikan feedback personal 1-on-1.</p>
-                            </div>
-                            <div className="p-4 rounded-xl bg-white/5 border border-white/5 hover:border-amber-500/50 transition-colors cursor-pointer group">
-                                <h4 className="font-bold text-gray-200 text-sm mb-1 group-hover:text-amber-400">Team Appreciation</h4>
-                                <p className="text-xs text-gray-500 line-clamp-2">Ucapan selamat atas pencapaian target tim.</p>
-                            </div>
-                        </div>
-                    </div>
+                    <Card className="border-[var(--glass-border)] bg-[var(--card-bg)] backdrop-blur-sm">
+                        <CardHeader>
+                            <CardTitle className="flex items-center gap-2">
+                                <Lightbulb className="w-5 h-5 text-yellow-500" />
+                                Quick Templates
+                            </CardTitle>
+                            <CardDescription>Click a template to pre-fill the form.</CardDescription>
+                        </CardHeader>
+                        <CardContent className="space-y-3">
+                            {ANNOUNCEMENT_TEMPLATES.map((template, idx) => (
+                                <div
+                                    key={idx}
+                                    onClick={() => applyTemplate(template)}
+                                    className="p-3 rounded-xl bg-[var(--glass-bg)] border border-[var(--glass-border)] hover:border-purple-500/50 hover:bg-purple-500/5 transition-all cursor-pointer group"
+                                >
+                                    <div className="flex items-center justify-between mb-1">
+                                        <h4 className="font-bold text-[var(--text-primary)] text-sm group-hover:text-purple-500 transition-colors">
+                                            {template.title}
+                                        </h4>
+                                        <Badge variant="secondary" className="text-[10px] h-5 px-1.5">
+                                            {template.category}
+                                        </Badge>
+                                    </div>
+                                    <p className="text-xs text-[var(--text-secondary)] line-clamp-2">
+                                        {template.subject}
+                                    </p>
+                                </div>
+                            ))}
+                        </CardContent>
+                    </Card>
+
+                    <Card className="border-[var(--glass-border)] bg-gradient-to-br from-purple-500/5 to-blue-500/5 backdrop-blur-sm">
+                        <CardHeader>
+                            <CardTitle className="text-base">Best Practices</CardTitle>
+                        </CardHeader>
+                        <CardContent className="space-y-4 text-sm text-[var(--text-secondary)]">
+                            <ul className="list-disc pl-4 space-y-1">
+                                <li>Use <strong>Broadcast</strong> for major company updates.</li>
+                                <li>Select proper <strong>Category</strong> to help employees filter news.</li>
+                                <li>Keep titles concise and action-oriented.</li>
+                                <li>Use <strong>Private</strong> messages for sensitive 1-on-1 communication.</li>
+                            </ul>
+                        </CardContent>
+                    </Card>
                 </div>
             </div>
         </div>
     );
 }
+
+// Icon component helper if needed, but imported directly
+// Removed unused icon to keep file clean

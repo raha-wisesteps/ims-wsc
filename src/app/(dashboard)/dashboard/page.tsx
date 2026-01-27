@@ -19,6 +19,8 @@ import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/AuthContext";
 import { createClient } from "@/lib/supabase/client";
+import { announcementService } from "@/services/announcement";
+import { Announcement } from "@/types/announcement";
 
 // ============================================
 // DYNAMIC GREETING & MOTIVATIONAL MESSAGES
@@ -461,6 +463,21 @@ export default function DashboardPage() {
         const currentUser = teamStatuses.find(m => m.id === profile?.id);
         return currentUser?.status || 'office';
     }, [teamStatuses, profile?.id]);
+
+    // Announcements State
+    const [announcements, setAnnouncements] = useState<Announcement[]>([]);
+
+    useEffect(() => {
+        const loadAnnouncements = async () => {
+            try {
+                const data = await announcementService.fetchAnnouncements();
+                setAnnouncements(data);
+            } catch (err) {
+                console.error("Failed to fetch announcements", err);
+            }
+        };
+        loadAnnouncements();
+    }, []);
 
     // Personal Status Message State
     const [statusMessage, setStatusMessage] = useState("Building the future of IMS! 💻");
@@ -2280,32 +2297,34 @@ export default function DashboardPage() {
                     </CardHeader>
 
                     <div className="flex-1 overflow-y-auto p-4 space-y-4 custom-scrollbar">
-                        {/* Mock Announcements */}
-                        {[
-                            { id: 1, title: "Q3 Townhall Meeting", date: "Today, 14:00", text: "Join us for the quarterly update. Link in calendar.", author: "Admin", role: "Management", initial: "A" },
-                            { id: 2, title: "New WFH Policy", date: "Yesterday", text: "Please review the updated remote work guidelines in the portal.", author: "", role: "Human Resources", initial: "HR" },
-                            { id: 3, title: "Office Maintenance", date: "Oct 24", text: "AC maintenance scheduled for this weekend.", author: "GA", role: "General Affair", initial: "GA" },
-                            { id: 4, title: "Welcome New Hires", date: "Oct 20", text: "Say hello to our 5 new team members!", author: "", role: "Human Resources", initial: "HR" },
-                        ].map((announcement) => (
-                            <div key={announcement.id} className="group flex gap-3 p-3 rounded-xl hover:bg-black/5 dark:hover:bg-white/5 transition-colors border border-transparent hover:border-border/50">
-                                <div className={`w-10 h-10 rounded-full flex items-center justify-center text-xs font-bold shrink-0 shadow-sm bg-[var(--primary)] text-[var(--primary-foreground)]`}>
-                                    {announcement.initial}
-                                </div>
-
-                                <div className="flex-1 min-w-0 space-y-1">
-                                    <div className="flex justify-between items-start">
-                                        <div>
-                                            <h4 className="text-sm font-bold text-[var(--text-primary)] group-hover:text-primary transition-colors">{announcement.title}</h4>
-                                            <p className="text-[10px] text-muted-foreground uppercase font-bold tracking-wide">{announcement.role}</p>
-                                        </div>
-                                        <span className="text-[10px] text-[var(--text-muted)] font-mono whitespace-nowrap ml-2 bg-secondary/50 px-1.5 py-0.5 rounded">{announcement.date}</span>
-                                    </div>
-                                    <p className="text-xs text-[var(--text-secondary)] leading-relaxed line-clamp-2 group-hover:line-clamp-none transition-all">
-                                        {announcement.text}
-                                    </p>
-                                </div>
+                        {announcements.length === 0 ? (
+                            <div className="text-center py-10 text-muted-foreground">
+                                <p className="text-sm">No new announcements</p>
                             </div>
-                        ))}
+                        ) : (
+                            announcements.slice(0, 5).map((announcement) => (
+                                <div key={announcement.id} className="group flex gap-3 p-3 rounded-xl hover:bg-black/5 dark:hover:bg-white/5 transition-colors border border-transparent hover:border-border/50">
+                                    <div className={`w-10 h-10 rounded-full flex items-center justify-center text-xs font-bold shrink-0 shadow-sm bg-[var(--primary)] text-[var(--primary-foreground)]`}>
+                                        {announcement.author?.full_name ? announcement.author.full_name[0].toUpperCase() : "A"}
+                                    </div>
+
+                                    <div className="flex-1 min-w-0 space-y-1">
+                                        <div className="flex justify-between items-start">
+                                            <div>
+                                                <h4 className="text-sm font-bold text-[var(--text-primary)] group-hover:text-primary transition-colors">{announcement.title}</h4>
+                                                <p className="text-[10px] text-muted-foreground uppercase font-bold tracking-wide">{announcement.author?.role || "Management"}</p>
+                                            </div>
+                                            <span className="text-[10px] text-[var(--text-muted)] font-mono whitespace-nowrap ml-2 bg-secondary/50 px-1.5 py-0.5 rounded">
+                                                {new Date(announcement.created_at).toLocaleDateString('id-ID', { day: 'numeric', month: 'short' })}
+                                            </span>
+                                        </div>
+                                        <p className="text-xs text-[var(--text-secondary)] leading-relaxed line-clamp-2 group-hover:line-clamp-none transition-all">
+                                            {announcement.content}
+                                        </p>
+                                    </div>
+                                </div>
+                            ))
+                        )}
                     </div>
 
                     <div className="p-3 border-t border-[var(--glass-border)] bg-black/5 dark:bg-white/5 backdrop-blur-sm">
