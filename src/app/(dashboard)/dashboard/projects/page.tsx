@@ -1,7 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
+import { createClient } from "@/lib/supabase/client";
+import Image from "next/image";
+import { Briefcase, ChevronRight } from "lucide-react";
 
 // Status configurations
 const STATUS_CONFIG = {
@@ -13,137 +16,69 @@ const STATUS_CONFIG = {
 };
 
 type ProjectStatus = keyof typeof STATUS_CONFIG;
+type ProjectCategory = 'project' | 'proposal' | 'event' | 'internal' | 'etc';
 
 interface Helper {
+    id?: string;
+    profile_id?: string;
     name: string;
+    avatar_url?: string;
     startDate: string;
     endDate: string;
     color: string;
+}
+
+interface ProjectMember {
+    id: string;
+    full_name: string;
+    avatar_url?: string;
 }
 
 interface Project {
     id: string;
     name: string;
     status: ProjectStatus;
+    category: ProjectCategory;
     progress: number;
+    start_date: string;
     dueDate: string;
     expectedFinishDate: string;
-    lead: { name: string; initials: string };
-    team: { name: string; initials: string }[];
+    lead: { id: string; name: string; initials: string; avatar_url?: string };
+    team: { id: string; name: string; initials: string; avatar_url?: string }[];
     helpers: Helper[];
+    jira_link?: string;
+    drive_link?: string;
+    is_archived: boolean;
 }
 
-// Mock data
-const mockProjects: Project[] = [
-    {
-        id: "1",
-        name: "Project ABC - Audit PT Maju Jaya",
-        status: "active",
-        progress: 75,
-        dueDate: "Oct 24, 2024",
-        expectedFinishDate: "Oct 20, 2024",
-        lead: { name: "Andi Pratama", initials: "AP" },
-        team: [
-            { name: "Dewi", initials: "DW" },
-            { name: "Eko", initials: "EK" },
-            { name: "Fitri", initials: "FT" },
-        ],
-        helpers: [
-            { name: "Budi", startDate: "Oct 1, 2024", endDate: "Oct 5, 2024", color: "indigo" },
-            { name: "Gita", startDate: "Oct 10, 2024", endDate: "Oct 12, 2024", color: "pink" },
-        ],
-    },
-    {
-        id: "2",
-        name: "Q4 Recruitment Drive - Tech Division",
-        status: "review",
-        progress: 92,
-        dueDate: "Nov 01, 2024",
-        expectedFinishDate: "Oct 30, 2024",
-        lead: { name: "Sarah Jenkins", initials: "SJ" },
-        team: [
-            { name: "Tom", initials: "TM" },
-            { name: "Jerry", initials: "JR" },
-        ],
-        helpers: [],
-    },
-    {
-        id: "3",
-        name: "Annual Employee Satisfaction Survey",
-        status: "planning",
-        progress: 15,
-        dueDate: "Dec 15, 2024",
-        expectedFinishDate: "Dec 10, 2024",
-        lead: { name: "Michael Chen", initials: "MC" },
-        team: [
-            { name: "Lisa", initials: "LS" },
-            { name: "Mark", initials: "MK" },
-            { name: "Nina", initials: "NN" },
-        ],
-        helpers: [
-            { name: "Kevin", startDate: "Nov 20, 2024", endDate: "Nov 30, 2024", color: "cyan" },
-        ],
-    },
-    {
-        id: "4",
-        name: "Digital Transformation Phase 2",
-        status: "active",
-        progress: 45,
-        dueDate: "Jan 30, 2025",
-        expectedFinishDate: "Jan 25, 2025",
-        lead: { name: "David Lee", initials: "DL" },
-        team: [
-            { name: "Anna", initials: "AN" },
-            { name: "Ben", initials: "BN" },
-        ],
-        helpers: [],
-    },
-    {
-        id: "5",
-        name: "Office Renovation Project",
-        status: "onhold",
-        progress: 30,
-        dueDate: "Mar 15, 2025",
-        expectedFinishDate: "Mar 20, 2025",
-        lead: { name: "Citra Lestari", initials: "CL" },
-        team: [
-            { name: "Joko", initials: "JK" },
-        ],
-        helpers: [],
-    },
-    {
-        id: "6",
-        name: "Client XYZ Contract Renewal",
-        status: "completed",
-        progress: 100,
-        dueDate: "Sep 30, 2024",
-        expectedFinishDate: "Sep 28, 2024",
-        lead: { name: "Budi Santoso", initials: "BS" },
-        team: [
-            { name: "Rina", initials: "RN" },
-            { name: "Sari", initials: "SR" },
-        ],
-        helpers: [],
-    },
-];
+interface Profile {
+    id: string;
+    full_name: string;
+    email: string;
+    avatar_url?: string;
 
-// Mock Users for Selection
-const mockUsers = [
-    { id: 1, name: "Mochamad Nalendra", initials: "MN" },
-    { id: 2, name: "Milla Omarsaid", initials: "MO" },
-    { id: 3, name: "Rega Aldiaz Wahyundi", initials: "RA" },
-    { id: 4, name: "Muhammad Sofyan Hadi", initials: "MS" },
-    { id: 5, name: "Annisa Dwi Febrianty", initials: "AD" },
-    { id: 6, name: "Rahadian Muhammad S.", initials: "RM" },
-    { id: 7, name: "Shafa Nurfaizah", initials: "SN" },
-    { id: 8, name: "Selma Ana Asriani", initials: "SA" },
-    { id: 9, name: "Seprian Setiawan", initials: "SS" },
-];
+    is_hr?: boolean;
+    role?: string;
+}
+
+// Helper to get initials
+const getInitials = (name: string) => {
+    return name
+        .split(' ')
+        .map((n) => n[0])
+        .join('')
+        .toUpperCase()
+        .slice(0, 2);
+};
 
 export default function ProjectBoardPage() {
+    const supabase = createClient();
     const [searchQuery, setSearchQuery] = useState("");
     const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
-    const [projects, setProjects] = useState<Project[]>(mockProjects);
+    const [projects, setProjects] = useState<Project[]>([]);
+    const [profiles, setProfiles] = useState<Profile[]>([]);
+    const [userProfile, setUserProfile] = useState<Profile | null>(null);
+    const [isLoading, setIsLoading] = useState(true);
 
     // Modal & Action State
     const [isAssignmentModalOpen, setIsAssignmentModalOpen] = useState(false);
@@ -157,70 +92,198 @@ export default function ProjectBoardPage() {
     const [formData, setFormData] = useState({
         name: "",
         leadId: "",
-        teamIds: [] as number[],
+        teamIds: [] as string[],
+        start_date: "",
         dueDate: "",
         expectedFinishDate: "",
         status: "planning" as ProjectStatus,
+        category: "project" as ProjectCategory,
         progress: 0,
-        helpers: [] as Helper[]
+        helpers: [] as Helper[],
+        jira_link: "",
+        drive_link: ""
     });
 
     const [newHelper, setNewHelper] = useState({ name: "", startDate: "", endDate: "" });
 
     // Filter & Sort State
     const [statusFilter, setStatusFilter] = useState<ProjectStatus | "all">("all");
+    const [categoryFilter, setCategoryFilter] = useState<ProjectCategory | "all">("all");
     const [leadFilter, setLeadFilter] = useState<string | "all">("all");
     const [sortOrder, setSortOrder] = useState<"earliest" | "latest" | null>(null);
-    const [activeDropdown, setActiveDropdown] = useState<"status" | "lead" | "date" | null>(null);
+    const [activeDropdown, setActiveDropdown] = useState<"status" | "category" | "lead" | "date" | null>(null);
+    const [showArchived, setShowArchived] = useState(false);
 
     // Inline Edit State (for table view quick edit)
     const [inlineEditId, setInlineEditId] = useState<string | null>(null);
     const [inlineEditData, setInlineEditData] = useState<{ progress: number; status: ProjectStatus }>({ progress: 0, status: "planning" });
 
     // Details Modal Edit State
-    const [detailsEditData, setDetailsEditData] = useState<{ progress: number; status: ProjectStatus; helpers: Helper[] }>({ progress: 0, status: "planning", helpers: [] });
-    const [detailsNewHelper, setDetailsNewHelper] = useState({ name: "", startDate: "", endDate: "" });
+    const [detailsEditData, setDetailsEditData] = useState<{ progress: number; status: ProjectStatus; helpers: Helper[]; jira_link: string; drive_link: string }>({ progress: 0, status: "planning", helpers: [], jira_link: "", drive_link: "" });
+    const [detailsNewHelper, setDetailsNewHelper] = useState({ name: "", profileId: "", startDate: "", endDate: "" });
+
+    // Fetch Data
+    const fetchData = async () => {
+        try {
+            setIsLoading(true);
+
+            // Fetch Profiles
+            const { data: profilesData } = await supabase
+                .from('profiles')
+                .select('id, full_name, email, avatar_url, is_hr, role')
+                .order('full_name');
+
+            if (profilesData) setProfiles(profilesData);
+
+            // Get Current User Profile
+            const { data: { user } } = await supabase.auth.getUser();
+            if (user && profilesData) {
+                const current = profilesData.find((p: any) => p.id === user.id);
+                if (current) setUserProfile(current);
+            }
+
+            // Fetch Projects
+            const { data: projectsData, error } = await supabase
+                .from('projects')
+                .select(`
+                    *,
+                    lead:profiles!lead_id(id, full_name, avatar_url),
+                    project_members(profile:profiles(id, full_name, avatar_url)),
+                    project_helpers(*, profile:profiles(id, avatar_url))
+                `)
+                .order('created_at', { ascending: false });
+
+            if (error) throw error;
+
+            if (projectsData) {
+                const formattedProjects: Project[] = projectsData.map((p: any) => ({
+                    id: p.id,
+                    name: p.name,
+                    status: p.status,
+                    category: p.category,
+                    progress: p.progress,
+                    start_date: p.start_date,
+                    dueDate: p.due_date ? new Date(p.due_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : "",
+                    expectedFinishDate: p.expected_finish_date ? new Date(p.expected_finish_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : "",
+                    lead: {
+                        id: p.lead?.id,
+                        name: p.lead?.full_name || "Unknown",
+                        initials: getInitials(p.lead?.full_name || "Unknown"),
+                        avatar_url: p.lead?.avatar_url
+                    },
+                    team: p.project_members.map((m: any) => ({
+                        id: m.profile?.id,
+                        name: m.profile?.full_name || "Unknown",
+                        initials: getInitials(m.profile?.full_name || "Unknown"),
+                        avatar_url: m.profile?.avatar_url
+                    })),
+                    helpers: p.project_helpers.map((h: any) => ({
+                        id: h.id,
+                        profile_id: h.profile_id,
+                        name: h.name,
+                        avatar_url: h.profile?.avatar_url,
+                        startDate: new Date(h.start_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+                        endDate: new Date(h.end_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+                        color: h.color
+                    })),
+                    jira_link: p.jira_link,
+                    drive_link: p.drive_link,
+                    is_archived: p.is_archived
+                }));
+                setProjects(formattedProjects);
+            }
+        } catch (error) {
+            console.error('Error fetching data:', error);
+            alert('Failed to load projects');
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    useEffect(() => {
+        fetchData();
+    }, []);
 
     // Actions
-    const handleSaveProject = () => {
-        if (!formData.name || !formData.leadId || !formData.dueDate) {
-            alert("Please fill in all required fields.");
+    const handleSaveProject = async () => {
+        if (!formData.name || !formData.leadId || !formData.dueDate || !formData.category) {
+            alert("Please fill in all required fields (Name, Lead, Due Date, Category).");
             return;
         }
 
-        const leadUser = mockUsers.find(u => u.id === parseInt(formData.leadId));
-        const teamUsers = mockUsers.filter(u => formData.teamIds.includes(u.id));
-
-        const leadData = { name: leadUser?.name || "Unknown", initials: leadUser?.initials || "??" };
-        const teamData = teamUsers.map(u => ({ name: u.name, initials: u.initials }));
-
-        if (isEditing && currentProjectId) {
-            setProjects(projects.map(p => p.id === currentProjectId ? {
-                ...p,
+        try {
+            const projectPayload = {
                 name: formData.name,
+                lead_id: formData.leadId,
                 status: formData.status,
+                category: formData.category,
                 progress: formData.progress,
-                dueDate: new Date(formData.dueDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
-                expectedFinishDate: formData.expectedFinishDate ? new Date(formData.expectedFinishDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : "",
-                lead: leadData,
-                team: teamData,
-                helpers: formData.helpers
-            } : p));
-        } else {
-            const newProject: Project = {
-                id: Math.random().toString(),
-                name: formData.name,
-                status: formData.status,
-                progress: 0,
-                dueDate: new Date(formData.dueDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
-                expectedFinishDate: formData.expectedFinishDate ? new Date(formData.expectedFinishDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : "",
-                lead: leadData,
-                team: teamData,
-                helpers: []
+                start_date: formData.start_date || null,
+                due_date: formData.dueDate,
+                expected_finish_date: formData.expectedFinishDate || null,
+                jira_link: formData.jira_link || null,
+                drive_link: formData.drive_link || null,
+                is_archived: false // New projects are not archived
             };
-            setProjects([newProject, ...projects]);
+
+            let projectId = currentProjectId;
+
+            if (isEditing && currentProjectId) {
+                // Update Project
+                const { error } = await supabase
+                    .from('projects')
+                    .update(projectPayload)
+                    .eq('id', currentProjectId);
+
+                if (error) throw error;
+            } else {
+                // Create Project
+                const { data, error } = await supabase
+                    .from('projects')
+                    .insert(projectPayload)
+                    .select()
+                    .single();
+
+                if (error) throw error;
+                projectId = data.id;
+            }
+
+            if (projectId) {
+                // Handle Members (Delete all and re-insert for simplicity, or diffing)
+                // For simplicity: Delete existing members for this project and re-add
+                if (isEditing) {
+                    await supabase.from('project_members').delete().eq('project_id', projectId);
+                    await supabase.from('project_helpers').delete().eq('project_id', projectId);
+                }
+
+                // Insert Members
+                if (formData.teamIds.length > 0) {
+                    const membersPayload = formData.teamIds.map(id => ({
+                        project_id: projectId,
+                        profile_id: id
+                    }));
+                    await supabase.from('project_members').insert(membersPayload);
+                }
+
+                // Insert Helpers
+                if (formData.helpers.length > 0) {
+                    const helpersPayload = formData.helpers.map(h => ({
+                        project_id: projectId,
+                        name: h.name,
+                        start_date: new Date(h.startDate).toISOString().split('T')[0], // Ensure YYYY-MM-DD
+                        end_date: new Date(h.endDate).toISOString().split('T')[0],
+                        color: h.color
+                    }));
+                    await supabase.from('project_helpers').insert(helpersPayload);
+                }
+            }
+
+            fetchData();
+            closeModal();
+        } catch (error) {
+            console.error('Error saving project:', error);
+            alert('Failed to save project');
         }
-        closeModal();
     };
 
     const openCreateModal = () => {
@@ -229,11 +292,15 @@ export default function ProjectBoardPage() {
             name: "",
             leadId: "",
             teamIds: [],
+            start_date: "",
             dueDate: "",
             expectedFinishDate: "",
             status: "planning",
+            category: "project",
             progress: 0,
-            helpers: []
+            helpers: [],
+            jira_link: "",
+            drive_link: ""
         });
         setIsAssignmentModalOpen(true);
     };
@@ -241,27 +308,28 @@ export default function ProjectBoardPage() {
     const openEditModal = (project: Project) => {
         setIsEditing(true);
         setCurrentProjectId(project.id);
-        const leadUser = mockUsers.find(u => u.name === project.lead.name);
-        const teamUserIds = project.team.map(m => mockUsers.find(u => u.name === m.name)?.id).filter(id => id !== undefined) as number[];
 
         // Parse dates for inputs (YYYY-MM-DD)
         const parseDate = (dateStr: string) => {
             if (!dateStr) return "";
             const date = new Date(dateStr);
-            // Check if valid date
             if (isNaN(date.getTime())) return "";
             return date.toISOString().split('T')[0];
         };
 
         setFormData({
             name: project.name,
-            leadId: leadUser?.id.toString() || "",
-            teamIds: teamUserIds,
+            leadId: project.lead.id,
+            teamIds: project.team.map(t => t.id),
+            start_date: parseDate(project.start_date || ""),
             dueDate: parseDate(project.dueDate),
             expectedFinishDate: parseDate(project.expectedFinishDate),
             status: project.status,
+            category: project.category,
             progress: project.progress,
-            helpers: project.helpers
+            helpers: project.helpers,
+            jira_link: project.jira_link || "",
+            drive_link: project.drive_link || ""
         });
         setIsAssignmentModalOpen(true);
         setActiveActionDropdown(null);
@@ -288,9 +356,29 @@ export default function ProjectBoardPage() {
         setFormData({ ...formData, helpers: newHelpers });
     };
 
-    const handleDeleteProject = (id: string) => {
-        setProjects(projects.filter(p => p.id !== id));
-        setActiveActionDropdown(null);
+    const handleDeleteProject = async (id: string) => {
+        if (!confirm("Are you sure you want to PERMANENTLY delete this assignment? prevent this action by Archiving instead.")) return;
+        try {
+            const { error } = await supabase.from('projects').delete().eq('id', id);
+            if (error) throw error;
+            setProjects(projects.filter(p => p.id !== id));
+            setActiveActionDropdown(null);
+        } catch (error) {
+            console.error('Error deleting project:', error);
+            alert('Failed to delete project');
+        }
+    };
+
+    const handleArchiveProject = async (id: string) => {
+        try {
+            const { error } = await supabase.from('projects').update({ is_archived: true }).eq('id', id);
+            if (error) throw error;
+            fetchData(); // Refresh to hide archived
+            setActiveActionDropdown(null);
+        } catch (error) {
+            console.error('Error archiving project:', error);
+            alert('Failed to archive project');
+        }
     };
 
     // Inline Edit Functions (for table view quick edit)
@@ -299,14 +387,29 @@ export default function ProjectBoardPage() {
         setInlineEditData({ progress: project.progress, status: project.status });
     };
 
-    const saveInlineEdit = () => {
+    const saveInlineEdit = async () => {
         if (!inlineEditId) return;
-        setProjects(projects.map(p => p.id === inlineEditId ? {
-            ...p,
-            progress: inlineEditData.progress,
-            status: inlineEditData.status
-        } : p));
-        setInlineEditId(null);
+        try {
+            const { error } = await supabase
+                .from('projects')
+                .update({
+                    progress: inlineEditData.progress,
+                    status: inlineEditData.status
+                })
+                .eq('id', inlineEditId);
+
+            if (error) throw error;
+
+            setProjects(projects.map(p => p.id === inlineEditId ? {
+                ...p,
+                progress: inlineEditData.progress,
+                status: inlineEditData.status
+            } : p));
+            setInlineEditId(null);
+        } catch (error) {
+            console.error('Error updating project:', error);
+            alert('Failed to update project');
+        }
     };
 
     const cancelInlineEdit = () => {
@@ -316,21 +419,53 @@ export default function ProjectBoardPage() {
     // Details Modal Functions
     const openDetailsModal = (project: Project) => {
         setSelectedProject(project);
-        setDetailsEditData({ progress: project.progress, status: project.status, helpers: [...project.helpers] });
-        setDetailsNewHelper({ name: "", startDate: "", endDate: "" });
+        setDetailsEditData({
+            progress: project.progress,
+            status: project.status,
+            helpers: [...project.helpers],
+            jira_link: project.jira_link || "",
+            drive_link: project.drive_link || ""
+        });
+        setDetailsNewHelper({ name: "", profileId: "", startDate: "", endDate: "" });
         setIsDetailsOpen(true);
     };
 
-    const saveDetailsEdit = () => {
+    const saveDetailsEdit = async () => {
         if (!selectedProject) return;
-        setProjects(projects.map(p => p.id === selectedProject.id ? {
-            ...p,
-            progress: detailsEditData.progress,
-            status: detailsEditData.status,
-            helpers: detailsEditData.helpers
-        } : p));
-        // Update selectedProject to reflect changes
-        setSelectedProject({ ...selectedProject, progress: detailsEditData.progress, status: detailsEditData.status, helpers: detailsEditData.helpers });
+        try {
+            // Update Helpers (Delete and Re-insert)
+            await supabase.from('project_helpers').delete().eq('project_id', selectedProject.id);
+            if (detailsEditData.helpers.length > 0) {
+                const helpersPayload = detailsEditData.helpers.map(h => ({
+                    project_id: selectedProject.id,
+                    profile_id: h.profile_id,
+                    name: h.name,
+                    start_date: new Date(h.startDate).toISOString().split('T')[0],
+                    end_date: new Date(h.endDate).toISOString().split('T')[0],
+                    color: h.color
+                }));
+                await supabase.from('project_helpers').insert(helpersPayload);
+            }
+
+            // Update Project Details
+            const { error } = await supabase
+                .from('projects')
+                .update({
+                    progress: detailsEditData.progress,
+                    status: detailsEditData.status,
+                    jira_link: detailsEditData.jira_link || null,
+                    drive_link: detailsEditData.drive_link || null
+                })
+                .eq('id', selectedProject.id);
+
+            if (error) throw error;
+
+            fetchData();
+            setIsDetailsOpen(false);
+        } catch (error) {
+            console.error('Error updating details:', error);
+            alert('Failed to update details');
+        }
     };
 
     const addDetailsHelper = () => {
@@ -339,7 +474,7 @@ export default function ProjectBoardPage() {
             ...detailsEditData,
             helpers: [...detailsEditData.helpers, { ...detailsNewHelper, color: 'indigo' }]
         });
-        setDetailsNewHelper({ name: "", startDate: "", endDate: "" });
+        setDetailsNewHelper({ name: "", profileId: "", startDate: "", endDate: "" });
     };
 
     const removeDetailsHelper = (idx: number) => {
@@ -353,11 +488,15 @@ export default function ProjectBoardPage() {
 
     const filteredProjects = projects
         .filter((project) =>
+            !project.is_archived || showArchived
+        )
+        .filter((project) =>
             project.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
             project.lead.name.toLowerCase().includes(searchQuery.toLowerCase())
         )
         .filter((project) => {
             if (statusFilter !== "all" && project.status !== statusFilter) return false;
+            if (categoryFilter !== "all" && project.category !== categoryFilter) return false;
             if (leadFilter !== "all" && project.lead.name !== leadFilter) return false;
             return true;
         })
@@ -369,7 +508,7 @@ export default function ProjectBoardPage() {
         });
 
     // Helper to close dropdowns
-    const toggleDropdown = (dropdown: "status" | "lead" | "date") => {
+    const toggleDropdown = (dropdown: "status" | "category" | "lead" | "date") => {
         if (activeDropdown === dropdown) {
             setActiveDropdown(null);
         } else {
@@ -390,13 +529,21 @@ export default function ProjectBoardPage() {
 
     return (
         <div className="flex flex-col" >
-            {/* Page Header */}
-            < header className="mb-8 flex flex-col justify-between gap-6 md:flex-row md:items-end" >
-                <div className="flex flex-col gap-2">
-                    <h1 className="text-4xl font-black tracking-tight text-[var(--text-primary)]">Assignment Management</h1>
-                    <p className="text-lg text-[var(--text-secondary)] max-w-2xl">
-                        Manage and track all ongoing assignments, team allocations, and timelines.
-                    </p>
+            {/* Page Header - Standardized */}
+            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-8">
+                <div className="flex items-center gap-3">
+                    <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-emerald-500 to-emerald-600 flex items-center justify-center shadow-lg shadow-emerald-500/20">
+                        <Briefcase className="h-6 w-6 text-white" />
+                    </div>
+                    <div>
+                        <div className="flex items-center gap-2 mb-1 text-sm text-[var(--text-secondary)]">
+                            <Link href="/dashboard" className="hover:text-[var(--text-primary)] transition-colors">Dashboard</Link>
+                            <ChevronRight className="h-4 w-4" />
+                            <span>Projects</span>
+                        </div>
+                        <h2 className="text-2xl font-bold text-[var(--text-primary)]">Assignment Management</h2>
+                        <p className="text-sm text-[var(--text-secondary)]">Manage and track all ongoing assignments, team allocations, and timelines.</p>
+                    </div>
                 </div>
                 <button
                     onClick={openCreateModal}
@@ -406,12 +553,12 @@ export default function ProjectBoardPage() {
                     </svg>
                     New Assignment
                 </button>
-            </header >
+            </div>
 
             {/* Toolbar / Filter Bar */}
-            < div className="mb-8 relative z-[100] flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-[var(--glass-border)] bg-[var(--glass-bg)] p-2 backdrop-blur-md" >
+            <div className="mb-8 relative z-[100] flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-[var(--glass-border)] bg-[var(--glass-bg)] p-2 backdrop-blur-md" >
                 {/* Search */}
-                < div className="relative flex-1 min-w-[280px]" >
+                <div className="relative flex-1 min-w-[280px]" >
                     <svg xmlns="http://www.w3.org/2000/svg" className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-[var(--text-muted)]" viewBox="0 0 24 24" fill="currentColor">
                         <path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z" />
                     </svg>
@@ -422,12 +569,48 @@ export default function ProjectBoardPage() {
                         onChange={(e) => setSearchQuery(e.target.value)}
                         className="h-11 w-full rounded-xl border border-[var(--glass-border)] bg-[var(--card-bg)] pl-10 pr-4 text-sm text-[var(--text-primary)] placeholder-[var(--text-muted)] focus:ring-2 focus:ring-[#e8c559]/50 focus:border-[#e8c559] transition-all"
                     />
-                </div >
+                </div>
 
                 {/* Filters */}
-                < div className="flex items-center gap-2 flex-wrap pb-2 md:pb-0" >
+                <div className="flex items-center gap-2 flex-wrap pb-2 md:pb-0" >
+                    {/* Category Filter */}
+                    <div className="relative" >
+                        <button
+                            onClick={() => toggleDropdown("category")}
+                            className={`flex items-center gap-2 whitespace-nowrap rounded-lg border px-4 py-2.5 text-sm font-medium transition-colors ${categoryFilter !== "all" ? "bg-[#e8c559]/20 border-[#e8c559] text-[#b89530] dark:text-[#e8c559]" : "border-[var(--glass-border)] bg-[var(--glass-bg)] text-[var(--text-secondary)] hover:bg-black/5 dark:hover:bg-white/10 hover:text-[var(--text-primary)]"}`}
+                        >
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor">
+                                <path d="M10 18h4v-2h-4v2zM3 6v2h18V6H3zm3 7h12v-2H6v2z" />
+                            </svg>
+                            Tag: {categoryFilter === "all" ? "All" : categoryFilter.charAt(0).toUpperCase() + categoryFilter.slice(1)}
+                        </button>
+                        {
+                            activeDropdown === "category" && (
+                                <>
+                                    <div className="fixed inset-0 z-10" onClick={() => setActiveDropdown(null)} />
+                                    <div className="absolute top-full left-0 mt-2 w-48 rounded-xl border border-[var(--glass-border)] bg-white dark:bg-[#1c2120] shadow-xl z-[100] p-1 flex flex-col gap-0.5">
+                                        <button
+                                            onClick={() => { setCategoryFilter("all"); setActiveDropdown(null); }}
+                                            className={`px-3 py-2 text-sm text-left rounded-lg transition-colors ${categoryFilter === "all" ? "bg-black/5 dark:bg-white/5 font-bold text-[var(--text-primary)]" : "text-[var(--text-secondary)] hover:bg-black/5 dark:hover:bg-white/5 hover:text-[var(--text-primary)]"}`}
+                                        >
+                                            All Tags
+                                        </button>
+                                        {['project', 'proposal', 'event', 'internal', 'etc'].map((cat) => (
+                                            <button
+                                                key={cat}
+                                                onClick={() => { setCategoryFilter(cat as ProjectCategory); setActiveDropdown(null); }}
+                                                className={`px-3 py-2 text-sm text-left rounded-lg transition-colors ${categoryFilter === cat ? "bg-black/5 dark:bg-white/5 font-bold text-[var(--text-primary)]" : "text-[var(--text-secondary)] hover:bg-black/5 dark:hover:bg-white/5 hover:text-[var(--text-primary)]"}`}
+                                            >
+                                                {cat.charAt(0).toUpperCase() + cat.slice(1)}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </>
+                            )
+                        }
+                    </div>
                     {/* Status Filter */}
-                    < div className="relative" >
+                    <div className="relative" >
                         <button
                             onClick={() => toggleDropdown("status")}
                             className={`flex items-center gap-2 whitespace-nowrap rounded-lg border px-4 py-2.5 text-sm font-medium transition-colors ${statusFilter !== "all" ? "bg-[#e8c559]/20 border-[#e8c559] text-[#b89530] dark:text-[#e8c559]" : "border-[var(--glass-border)] bg-[var(--glass-bg)] text-[var(--text-secondary)] hover:bg-black/5 dark:hover:bg-white/10 hover:text-[var(--text-primary)]"}`}
@@ -462,10 +645,10 @@ export default function ProjectBoardPage() {
                                 </>
                             )
                         }
-                    </div >
+                    </div>
 
                     {/* Lead Filter */}
-                    < div className="relative" >
+                    <div className="relative" >
                         <button
                             onClick={() => toggleDropdown("lead")}
                             className={`flex items-center gap-2 whitespace-nowrap rounded-lg border px-4 py-2.5 text-sm font-medium transition-colors ${leadFilter !== "all" ? "bg-[#e8c559]/20 border-[#e8c559] text-[#b89530] dark:text-[#e8c559]" : "border-[var(--glass-border)] bg-[var(--glass-bg)] text-[var(--text-secondary)] hover:bg-black/5 dark:hover:bg-white/10 hover:text-[var(--text-primary)]"}`}
@@ -499,10 +682,10 @@ export default function ProjectBoardPage() {
                                 </>
                             )
                         }
-                    </div >
+                    </div>
 
                     {/* Due Date Sort */}
-                    < div className="relative" >
+                    <div className="relative" >
                         <button
                             onClick={() => toggleDropdown("date")}
                             className={`flex items-center gap-2 whitespace-nowrap rounded-lg border px-4 py-2.5 text-sm font-medium transition-colors ${sortOrder ? "bg-[#e8c559]/20 border-[#e8c559] text-[#b89530] dark:text-[#e8c559]" : "border-[var(--glass-border)] bg-[var(--glass-bg)] text-[var(--text-secondary)] hover:bg-black/5 dark:hover:bg-white/10 hover:text-[var(--text-primary)]"}`}
@@ -539,7 +722,7 @@ export default function ProjectBoardPage() {
                                 </>
                             )
                         }
-                    </div >
+                    </div>
 
                     {/* Clear Filters */}
                     {
@@ -571,8 +754,8 @@ export default function ProjectBoardPage() {
                             </svg>
                         </button>
                     </div>
-                </div >
-            </div >
+                </div>
+            </div>
 
             {/* Content View */}
             {
@@ -590,44 +773,51 @@ export default function ProjectBoardPage() {
                                         {/* Card Header */}
                                         <div className="mb-4 flex items-start justify-between">
                                             <div className="flex flex-col gap-2">
-                                                <span className={`inline-flex w-fit items-center gap-1.5 rounded-full ${statusConfig.bgClass} px-2.5 py-1 text-xs font-bold ${statusConfig.textClass} border ${statusConfig.borderClass}`}>
-                                                    <span className="relative flex h-2 w-2">
-                                                        {statusConfig.animate && (
-                                                            <span className={`animate-ping absolute inline-flex h-full w-full rounded-full ${statusConfig.dotClass} opacity-75`} />
-                                                        )}
-                                                        <span className={`relative inline-flex rounded-full h-2 w-2 ${statusConfig.dotClass}`} />
+                                                <div className="flex items-center gap-2 flex-wrap">
+                                                    <span className={`inline-flex w-fit items-center gap-1.5 rounded-full ${statusConfig.bgClass} px-2.5 py-1 text-xs font-bold ${statusConfig.textClass} border ${statusConfig.borderClass}`}>
+                                                        <span className="relative flex h-2 w-2">
+                                                            {statusConfig.animate && (
+                                                                <span className={`animate-ping absolute inline-flex h-full w-full rounded-full ${statusConfig.dotClass} opacity-75`} />
+                                                            )}
+                                                            <span className={`relative inline-flex rounded-full h-2 w-2 ${statusConfig.dotClass}`} />
+                                                        </span>
+                                                        {statusConfig.label}
                                                     </span>
-                                                    {statusConfig.label}
-                                                </span>
-                                                <h3 className="text-xl font-bold text-[var(--text-primary)] leading-tight">{project.name}</h3>
+                                                    <span className="inline-flex items-center gap-1 rounded-full border border-[var(--glass-border)] bg-black/5 dark:bg-white/5 px-2 py-0.5 text-[10px] font-medium text-[var(--text-secondary)] uppercase tracking-wide">
+                                                        {project.category}
+                                                    </span>
+                                                </div>
+                                                <h3 className="text-xl font-bold text-[var(--text-primary)] leading-tight line-clamp-2">{project.name}</h3>
                                             </div>
-                                            <div className="relative">
-                                                <button
-                                                    onClick={() => setActiveActionDropdown(activeActionDropdown === project.id ? null : project.id)}
-                                                    className="rounded-full p-1 text-[var(--text-muted)] hover:bg-black/5 dark:hover:bg-white/10 hover:text-[var(--text-primary)] transition-colors">
-                                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 24 24" fill="currentColor">
-                                                        <path d="M6 10c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm12 0c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm-6 0c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z" />
-                                                    </svg>
-                                                </button>
-                                                {activeActionDropdown === project.id && (
-                                                    <>
-                                                        <div className="fixed inset-0 z-30" onClick={() => setActiveActionDropdown(null)} />
-                                                        <div className="absolute right-0 top-full mt-1 w-32 rounded-xl border border-[var(--glass-border)] bg-white dark:bg-[#1c2120] shadow-xl z-40 overflow-hidden flex flex-col">
-                                                            <button
-                                                                onClick={() => openEditModal(project)}
-                                                                className="px-4 py-2 text-sm text-left hover:bg-black/5 dark:hover:bg-white/5 text-[var(--text-primary)] transition-colors">
-                                                                Edit
-                                                            </button>
-                                                            <div className="h-px bg-[var(--glass-border)]" />
-                                                            <button
-                                                                onClick={() => handleDeleteProject(project.id)}
-                                                                className="px-4 py-2 text-sm text-left hover:bg-rose-500/10 text-rose-500 transition-colors">
-                                                                Delete
-                                                            </button>
-                                                        </div>
-                                                    </>
-                                                )}
-                                            </div>
+                                            {(userProfile?.role === 'super_admin' || userProfile?.role === 'ceo' || project.lead.id === userProfile?.id) && (
+                                                <div className="relative">
+                                                    <button
+                                                        onClick={() => setActiveActionDropdown(activeActionDropdown === project.id ? null : project.id)}
+                                                        className="rounded-full p-1 text-[var(--text-muted)] hover:bg-black/5 dark:hover:bg-white/10 hover:text-[var(--text-primary)] transition-colors">
+                                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 24 24" fill="currentColor">
+                                                            <path d="M6 10c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm12 0c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm-6 0c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z" />
+                                                        </svg>
+                                                    </button>
+                                                    {activeActionDropdown === project.id && (
+                                                        <>
+                                                            <div className="fixed inset-0 z-30" onClick={() => setActiveActionDropdown(null)} />
+                                                            <div className="absolute right-0 top-full mt-1 w-32 rounded-xl border border-[var(--glass-border)] bg-white dark:bg-[#1c2120] shadow-xl z-40 overflow-hidden flex flex-col">
+                                                                <button
+                                                                    onClick={() => openEditModal(project)}
+                                                                    className="px-4 py-2 text-sm text-left hover:bg-black/5 dark:hover:bg-white/5 text-[var(--text-primary)] transition-colors">
+                                                                    Edit
+                                                                </button>
+                                                                <div className="h-px bg-[var(--glass-border)]" />
+                                                                <button
+                                                                    onClick={() => handleDeleteProject(project.id)}
+                                                                    className="px-4 py-2 text-sm text-left hover:bg-rose-500/10 text-rose-500 transition-colors">
+                                                                    Delete
+                                                                </button>
+                                                            </div>
+                                                        </>
+                                                    )}
+                                                </div>
+                                            )}
                                         </div>
 
                                         {/* Progress Bar */}
@@ -661,81 +851,158 @@ export default function ProjectBoardPage() {
                                                     <span className="text-xs font-medium text-[#b89530] dark:text-[#e8c559]">{project.lead.name}</span>
                                                     <div className="relative">
                                                         <div className="absolute -top-3 -right-2 text-xs">👑</div>
-                                                        <div className="h-8 w-8 rounded-full border border-[var(--glass-border)] bg-gradient-to-br from-[#e8c559]/30 to-[#b89530]/30 flex items-center justify-center text-[#b89530] dark:text-[#e8c559] font-bold text-xs">
-                                                            {project.lead.initials}
-                                                        </div>
+                                                        {project.lead.avatar_url ? (
+                                                            <div className="h-8 w-8 rounded-full border border-[var(--glass-border)] overflow-hidden">
+                                                                {/* eslint-disable-next-line @next/next/no-img-element */}
+                                                                <img
+                                                                    src={project.lead.avatar_url}
+                                                                    alt={project.lead.name}
+                                                                    className="h-full w-full object-cover"
+                                                                />
+                                                            </div>
+                                                        ) : (
+                                                            <div className="h-8 w-8 rounded-full border border-[var(--glass-border)] bg-gradient-to-br from-[#e8c559]/30 to-[#b89530]/30 flex items-center justify-center text-[#b89530] dark:text-[#e8c559] font-bold text-xs">
+                                                                {project.lead.initials}
+                                                            </div>
+                                                        )}
                                                     </div>
                                                 </div>
                                             </div>
-
-                                            <div className="h-px w-full bg-[var(--glass-border)]" />
-
-                                            {/* Team Members */}
-                                            <div className="flex items-center justify-between">
-                                                <span className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-muted)]">Team</span>
-                                                <div className="flex -space-x-2">
-                                                    {project.team.slice(0, 3).map((member, idx) => (
-                                                        <div
-                                                            key={idx}
-                                                            className="h-7 w-7 rounded-full border border-[var(--card-bg)] bg-gradient-to-br from-gray-400 to-gray-600 dark:from-gray-600 dark:to-gray-800 ring-1 ring-[var(--glass-border)] flex items-center justify-center text-[10px] font-bold text-white"
-                                                            title={member.name}
-                                                        >
-                                                            {member.initials}
-                                                        </div>
-                                                    ))}
-                                                    {project.team.length > 3 && (
-                                                        <div className="flex h-7 w-7 items-center justify-center rounded-full border border-[var(--card-bg)] bg-black/10 dark:bg-white/10 ring-1 ring-[var(--glass-border)] text-[10px] font-bold text-[var(--text-primary)] hover:bg-black/20 dark:hover:bg-white/20 cursor-pointer">
-                                                            +{project.team.length - 3}
-                                                        </div>
-                                                    )}
-                                                </div>
-                                            </div>
-
-                                            {/* Helpers */}
-                                            {project.helpers.length > 0 && (
-                                                <>
-                                                    <div className="h-px w-full bg-[var(--glass-border)]" />
-                                                    <div className="flex items-center justify-between">
-                                                        <span className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-muted)]">Helpers</span>
-                                                        <div className="flex -space-x-2">
-                                                            {project.helpers.slice(0, 2).map((helper, idx) => (
-                                                                <div
-                                                                    key={idx}
-                                                                    className="h-6 w-6 rounded-full border border-[var(--card-bg)] bg-gradient-to-br from-indigo-400 to-purple-600 ring-1 ring-[var(--glass-border)] flex items-center justify-center text-[8px] font-bold text-white"
-                                                                    title={`${helper.name} (${helper.startDate} - ${helper.endDate})`}
-                                                                >
-                                                                    {helper.name.split(' ').map(n => n[0]).join('').slice(0, 2)}
-                                                                </div>
-                                                            ))}
-                                                            {project.helpers.length > 2 && (
-                                                                <div className="flex h-6 w-6 items-center justify-center rounded-full border border-[var(--card-bg)] bg-black/10 dark:bg-white/10 ring-1 ring-[var(--glass-border)] text-[8px] font-bold text-[var(--text-primary)]">
-                                                                    +{project.helpers.length - 2}
-                                                                </div>
-                                                            )}
-                                                        </div>
-                                                    </div>
-                                                </>
-                                            )}
                                         </div>
-                                    </div>
 
+                                        <div className="h-px w-full bg-[var(--glass-border)]" />
+
+                                        {/* Team Members */}
+                                        <div className="flex items-center justify-between">
+                                            <span className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-muted)]">Team</span>
+                                            <div className="flex -space-x-2">
+                                                {project.team.slice(0, 3).map((member, idx) => (
+                                                    <div
+                                                        key={idx}
+                                                        className="h-7 w-7 rounded-full border border-[var(--card-bg)] ring-1 ring-[var(--glass-border)] flex items-center justify-center text-[10px] font-bold text-white overflow-hidden bg-gradient-to-br from-gray-400 to-gray-600 dark:from-gray-600 dark:to-gray-800"
+                                                        title={member.name}
+                                                    >
+                                                        {member.avatar_url ? (
+                                                            // eslint-disable-next-line @next/next/no-img-element
+                                                            <img
+                                                                src={member.avatar_url}
+                                                                alt={member.name}
+                                                                className="h-full w-full object-cover"
+                                                            />
+                                                        ) : (
+                                                            member.initials
+                                                        )}
+                                                    </div>
+                                                ))}
+                                                {project.team.length > 3 && (
+                                                    <div className="flex h-7 w-7 items-center justify-center rounded-full border border-[var(--card-bg)] bg-black/10 dark:bg-white/10 ring-1 ring-[var(--glass-border)] text-[10px] font-bold text-[var(--text-primary)] hover:bg-black/20 dark:hover:bg-white/20 cursor-pointer">
+                                                        +{project.team.length - 3}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+
+                                        {/* Helpers */}
+                                        {project.helpers.length > 0 && (
+                                            <>
+                                                <div className="h-px w-full bg-[var(--glass-border)]" />
+                                                <div className="flex items-center justify-between">
+                                                    <span className="text-[10px] font-bold uppercase tracking-widest text-[var(--text-muted)]">Helpers</span>
+                                                    <div className="flex -space-x-2">
+                                                        {project.helpers.slice(0, 2).map((helper, idx) => (
+                                                            <div
+                                                                key={idx}
+                                                                className="h-6 w-6 rounded-full border border-[var(--card-bg)] bg-gradient-to-br from-indigo-400 to-purple-600 ring-1 ring-[var(--glass-border)] flex items-center justify-center text-[8px] font-bold text-white overflow-hidden"
+                                                                title={`${helper.name} (${helper.startDate} - ${helper.endDate})`}
+                                                            >
+                                                                {helper.avatar_url ? (
+                                                                    // eslint-disable-next-line @next/next/no-img-element
+                                                                    <img src={helper.avatar_url} alt={helper.name} className="h-full w-full object-cover" />
+                                                                ) : (
+                                                                    helper.name.split(' ').map(n => n[0]).join('').slice(0, 2)
+                                                                )}
+                                                            </div>
+                                                        ))}
+                                                        {project.helpers.length > 2 && (
+                                                            <div className="flex h-6 w-6 items-center justify-center rounded-full border border-[var(--card-bg)] bg-black/10 dark:bg-white/10 ring-1 ring-[var(--glass-border)] text-[8px] font-bold text-[var(--text-primary)]">
+                                                                +{project.helpers.length - 2}
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            </>
+                                        )}
+                                    </div>
                                     {/* Footer Actions */}
-                                    <div className="mt-4 flex items-center gap-2 pt-4 border-t border-[var(--glass-border)]">
-                                        <button
-                                            onClick={() => openDetailsModal(project)}
-                                            className="flex items-center justify-center rounded-lg p-2 text-[var(--text-muted)] hover:bg-black/5 dark:hover:bg-white/10 hover:text-[var(--text-primary)] transition-colors" title="View Details">
-                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 24 24" fill="currentColor">
-                                                <path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z" />
-                                            </svg>
-                                        </button>
-                                        <Link
-                                            href="/dashboard/projects/timeline"
-                                            className="ml-auto flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-bold text-[#b89530] dark:text-[#e8c559] hover:bg-[#e8c559]/10 transition-colors">
-                                            Timeline
-                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor">
-                                                <path d="M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z" />
-                                            </svg>
-                                        </Link>
+                                    <div className="mt-4 pt-4 border-t border-[var(--glass-border)] flex items-center justify-between">
+                                        {/* Left Side: Logos */}
+                                        <div className="flex items-center gap-4 px-1">
+                                            {/* Drive Logo */}
+                                            <div className="flex items-center min-w-[24px] pb-1">
+                                                {project.drive_link ? (
+                                                    <a
+                                                        href={project.drive_link}
+                                                        target="_blank"
+                                                        rel="noopener noreferrer"
+                                                        className="group transition-all duration-300"
+                                                        title="Open Drive Folder"
+                                                    >
+                                                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                                                        <img
+                                                            src="/Google_Drive_icon_(2020).svg"
+                                                            alt="Drive"
+                                                            className="w-8 h-8 grayscale opacity-50 group-hover:grayscale-0 group-hover:opacity-100 dark:grayscale-0 dark:opacity-100 dark:brightness-0 dark:invert transition-all duration-300"
+                                                        />
+                                                    </a>
+                                                ) : (
+                                                    <div className="w-8 h-8 invisible" />
+                                                )}
+                                            </div>
+
+                                            {/* Jira Logo */}
+                                            <div className="flex items-center min-w-[48px]">
+                                                {project.jira_link ? (
+                                                    <a
+                                                        href={project.jira_link}
+                                                        target="_blank"
+                                                        rel="noopener noreferrer"
+                                                        className="group transition-all duration-300"
+                                                        title="Open in Jira"
+                                                    >
+                                                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                                                        <img
+                                                            src="/Jira_Logo.svg"
+                                                            alt="Jira"
+                                                            className="w-16 h-16 grayscale opacity-50 group-hover:grayscale-0 group-hover:opacity-100 dark:grayscale-0 dark:opacity-100 dark:brightness-0 dark:invert transition-all duration-300"
+                                                        />
+                                                    </a>
+                                                ) : (
+                                                    <div className="w-16 h-16 invisible" />
+                                                )}
+                                            </div>
+                                        </div>
+
+                                        {/* Right Side: Actions */}
+                                        <div className="flex items-center gap-2">
+                                            {/* View Details (Eye) */}
+                                            <button
+                                                onClick={() => openDetailsModal(project)}
+                                                className="flex items-center justify-center rounded-lg p-2 text-[var(--text-muted)] hover:bg-black/5 dark:hover:bg-white/10 hover:text-[var(--text-primary)] transition-colors" title="View Details">
+                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 24 24" fill="currentColor">
+                                                    <path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z" />
+                                                </svg>
+                                            </button>
+
+                                            {/* Timeline Link */}
+                                            <Link
+                                                href="/dashboard/projects/timeline"
+                                                className="flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-bold text-[#b89530] dark:text-[#e8c559] hover:bg-[#e8c559]/10 transition-colors">
+                                                Timeline
+                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor">
+                                                    <path d="M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z" />
+                                                </svg>
+                                            </Link>
+                                        </div>
                                     </div>
                                 </div>
                             );
@@ -763,12 +1030,20 @@ export default function ProjectBoardPage() {
                                         return (
                                             <tr key={project.id} className="hover:bg-black/5 dark:hover:bg-white/5 transition-colors group">
                                                 <td className="px-6 py-4 font-bold text-[var(--text-primary)]">
-                                                    {project.name}
+                                                    <div className="flex flex-col">
+                                                        <span>{project.name}</span>
+                                                        <span className="text-[10px] uppercase tracking-wide text-[var(--text-secondary)] font-normal">{project.category}</span>
+                                                    </div>
                                                 </td>
                                                 <td className="px-6 py-4">
                                                     <div className="flex items-center gap-2">
-                                                        <div className="h-8 w-8 rounded-full border border-[var(--glass-border)] bg-gradient-to-br from-[#e8c559]/30 to-[#b89530]/30 flex items-center justify-center text-[#b89530] dark:text-[#e8c559] font-bold text-xs">
-                                                            {project.lead.initials}
+                                                        <div className="h-8 w-8 rounded-full border border-[var(--glass-border)] bg-gradient-to-br from-[#e8c559]/30 to-[#b89530]/30 flex items-center justify-center text-[#b89530] dark:text-[#e8c559] font-bold text-xs overflow-hidden">
+                                                            {project.lead.avatar_url ? (
+                                                                // eslint-disable-next-line @next/next/no-img-element
+                                                                <img src={project.lead.avatar_url} alt={project.lead.name} className="h-full w-full object-cover" />
+                                                            ) : (
+                                                                project.lead.initials
+                                                            )}
                                                         </div>
                                                         <div className="flex flex-col">
                                                             <span className="font-medium text-[var(--text-primary)]">{project.lead.name}</span>
@@ -781,10 +1056,15 @@ export default function ProjectBoardPage() {
                                                         {project.team.slice(0, 3).map((member, idx) => (
                                                             <div
                                                                 key={idx}
-                                                                className="h-8 w-8 rounded-full border border-[var(--card-bg)] bg-gradient-to-br from-gray-400 to-gray-600 dark:from-gray-600 dark:to-gray-800 ring-1 ring-[var(--glass-border)] flex items-center justify-center text-[10px] font-bold text-white shadow-sm"
+                                                                className="h-8 w-8 rounded-full border border-[var(--card-bg)] bg-gradient-to-br from-gray-400 to-gray-600 dark:from-gray-600 dark:to-gray-800 ring-1 ring-[var(--glass-border)] flex items-center justify-center text-[10px] font-bold text-white shadow-sm overflow-hidden"
                                                                 title={member.name}
                                                             >
-                                                                {member.initials}
+                                                                {member.avatar_url ? (
+                                                                    // eslint-disable-next-line @next/next/no-img-element
+                                                                    <img src={member.avatar_url} alt={member.name} className="h-full w-full object-cover" />
+                                                                ) : (
+                                                                    member.initials
+                                                                )}
                                                             </div>
                                                         ))}
                                                         {project.team.length > 3 && (
@@ -886,15 +1166,9 @@ export default function ProjectBoardPage() {
                             </table>
                         </div>
                     </div>
-                )
-            }
+                )}
 
-            {/* Load More */}
-            <div className="mt-8 flex justify-center">
-                <button className="text-sm font-medium text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors">
-                    Load more assignments...
-                </button>
-            </div>
+
 
             {/* New Assignment Modal */}
             {
@@ -932,8 +1206,8 @@ export default function ProjectBoardPage() {
                                         onChange={(e) => setFormData({ ...formData, leadId: e.target.value })}
                                     >
                                         <option value="">Select Project Lead</option>
-                                        {mockUsers.map(user => (
-                                            <option key={user.id} value={user.id}>{user.name}</option>
+                                        {profiles.map(user => (
+                                            <option key={user.id} value={user.id}>{user.full_name}</option>
                                         ))}
                                     </select>
                                 </div>
@@ -942,7 +1216,7 @@ export default function ProjectBoardPage() {
                                 <div>
                                     <label className="block text-sm font-semibold text-[var(--text-primary)] mb-2">Team Members</label>
                                     <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-[#252523] p-3 h-36 overflow-y-auto custom-scrollbar space-y-1">
-                                        {mockUsers.map(user => (
+                                        {profiles.map(user => (
                                             <label key={user.id} className="flex items-center gap-3 p-2 rounded-lg hover:bg-white dark:hover:bg-[#1c2120] cursor-pointer transition-colors">
                                                 <input
                                                     type="checkbox"
@@ -956,7 +1230,7 @@ export default function ProjectBoardPage() {
                                                         }
                                                     }}
                                                 />
-                                                <span className="text-sm text-[var(--text-primary)]">{user.name}</span>
+                                                <span className="text-sm text-[var(--text-primary)]">{user.full_name}</span>
                                             </label>
                                         ))}
                                     </div>
@@ -964,6 +1238,17 @@ export default function ProjectBoardPage() {
                                 </div>
 
                                 <div className="grid grid-cols-2 gap-4">
+                                    {/* Start Date */}
+                                    <div>
+                                        <label className="block text-sm font-semibold text-[var(--text-primary)] mb-2">Start Date</label>
+                                        <input
+                                            type="date"
+                                            className="w-full rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-[#252523] px-4 py-3 text-sm text-[var(--text-primary)] focus:ring-2 focus:ring-[#e8c559]/50 focus:border-[#e8c559] focus:bg-white dark:focus:bg-[#1c2120] transition-all"
+                                            value={formData.start_date}
+                                            onChange={(e) => setFormData({ ...formData, start_date: e.target.value })}
+                                        />
+                                    </div>
+
                                     {/* Due Date */}
                                     <div>
                                         <label className="block text-sm font-semibold text-[var(--text-primary)] mb-2">Due Date</label>
@@ -973,6 +1258,24 @@ export default function ProjectBoardPage() {
                                             value={formData.dueDate}
                                             onChange={(e) => setFormData({ ...formData, dueDate: e.target.value })}
                                         />
+                                    </div>
+                                </div>
+
+                                <div className="grid grid-cols-2 gap-4">
+                                    {/* Category */}
+                                    <div>
+                                        <label className="block text-sm font-semibold text-[var(--text-primary)] mb-2">Category</label>
+                                        <select
+                                            className="w-full rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-[#252523] px-4 py-3 text-sm text-[var(--text-primary)] focus:ring-2 focus:ring-[#e8c559]/50 focus:border-[#e8c559] focus:bg-white dark:focus:bg-[#1c2120] transition-all appearance-none cursor-pointer"
+                                            value={formData.category}
+                                            onChange={(e) => setFormData({ ...formData, category: e.target.value as ProjectCategory })}
+                                        >
+                                            <option value="project">Project</option>
+                                            <option value="proposal">Proposal</option>
+                                            <option value="event">Event</option>
+                                            <option value="internal">Internal</option>
+                                            <option value="etc">Etc</option>
+                                        </select>
                                     </div>
 
                                     {/* Status */}
@@ -987,6 +1290,37 @@ export default function ProjectBoardPage() {
                                                 <option key={key} value={key}>{config.label}</option>
                                             ))}
                                         </select>
+                                    </div>
+                                </div>
+
+                                {/* Links */}
+                                <div>
+                                    <label className="block text-sm font-semibold text-[var(--text-primary)] mb-2">Links (Optional)</label>
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <div className="relative">
+                                            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-[var(--text-muted)]">
+                                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path></svg>
+                                            </div>
+                                            <input
+                                                type="text"
+                                                className="w-full rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-[#252523] pl-10 pr-4 py-3 text-sm text-[var(--text-primary)] placeholder:text-gray-400 focus:ring-2 focus:ring-[#e8c559]/50 focus:border-[#e8c559] focus:bg-white dark:focus:bg-[#1c2120] transition-all"
+                                                placeholder="Jira Link"
+                                                value={formData.jira_link}
+                                                onChange={(e) => setFormData({ ...formData, jira_link: e.target.value })}
+                                            />
+                                        </div>
+                                        <div className="relative">
+                                            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-[var(--text-muted)]">
+                                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"></path></svg>
+                                            </div>
+                                            <input
+                                                type="text"
+                                                className="w-full rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-[#252523] pl-10 pr-4 py-3 text-sm text-[var(--text-primary)] placeholder:text-gray-400 focus:ring-2 focus:ring-[#e8c559]/50 focus:border-[#e8c559] focus:bg-white dark:focus:bg-[#1c2120] transition-all"
+                                                placeholder="Drive Link"
+                                                value={formData.drive_link}
+                                                onChange={(e) => setFormData({ ...formData, drive_link: e.target.value })}
+                                            />
+                                        </div>
                                     </div>
                                 </div>
 
@@ -1096,13 +1430,23 @@ export default function ProjectBoardPage() {
 
                                     {/* Add Helper Form */}
                                     <div className="flex flex-wrap gap-2 mb-3 p-3 rounded-xl bg-black/5 dark:bg-white/5 border border-[var(--glass-border)]">
-                                        <input
-                                            type="text"
-                                            placeholder="Helper Name"
+                                        <select
                                             className="flex-1 min-w-[120px] rounded-lg border border-[var(--glass-border)] bg-white dark:bg-[#2a2f2e] px-3 py-2 text-sm text-[var(--text-primary)] focus:ring-2 focus:ring-[#e8c559]/50"
-                                            value={detailsNewHelper.name}
-                                            onChange={(e) => setDetailsNewHelper({ ...detailsNewHelper, name: e.target.value })}
-                                        />
+                                            value={detailsNewHelper.profileId}
+                                            onChange={(e) => {
+                                                const selectedProfile = profiles.find(p => p.id === e.target.value);
+                                                if (selectedProfile) {
+                                                    setDetailsNewHelper({ ...detailsNewHelper, profileId: selectedProfile.id, name: selectedProfile.full_name });
+                                                }
+                                            }}
+                                        >
+                                            <option value="">Select Helper</option>
+                                            {profiles
+                                                .filter(p => !p.is_hr)
+                                                .map(user => (
+                                                    <option key={user.id} value={user.id}>{user.full_name}</option>
+                                                ))}
+                                        </select>
                                         <input
                                             type="date"
                                             className="rounded-lg border border-[var(--glass-border)] bg-white dark:bg-[#2a2f2e] px-3 py-2 text-sm text-[var(--text-primary)] focus:ring-2 focus:ring-[#e8c559]/50"
@@ -1164,6 +1508,6 @@ export default function ProjectBoardPage() {
                     </div>
                 )
             }
-        </div >
+        </div>
     );
 }

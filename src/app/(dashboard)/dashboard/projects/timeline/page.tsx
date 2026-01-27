@@ -1,7 +1,8 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import Link from "next/link";
+import { createClient } from "@/lib/supabase/client";
 
 // Status configurations
 const STATUS_CONFIG = {
@@ -14,7 +15,7 @@ const STATUS_CONFIG = {
 
 type ProjectStatus = keyof typeof STATUS_CONFIG;
 
-interface ProjectMock {
+interface Project {
     id: string;
     name: string;
     status: ProjectStatus;
@@ -25,80 +26,14 @@ interface ProjectMock {
     lead: string;
 }
 
-const mockProjects: ProjectMock[] = [
-    {
-        id: "1",
-        name: "Project ABC - Audit PT Maju Jaya",
-        status: "active",
-        startDate: "2024-10-01",
-        dueDate: "2024-10-24",
-        expectedFinishDate: "2024-10-20",
-        progress: 75,
-        lead: "Andi Pratama"
-    },
-    {
-        id: "2",
-        name: "Q4 Recruitment Drive - Tech Division",
-        status: "review",
-        startDate: "2024-10-15",
-        dueDate: "2024-11-01",
-        expectedFinishDate: "2024-10-30",
-        progress: 92,
-        lead: "Sarah Jenkins"
-    },
-    {
-        id: "3",
-        name: "Annual Employee Satisfaction Survey",
-        status: "planning",
-        startDate: "2024-11-01",
-        dueDate: "2024-12-15",
-        expectedFinishDate: "2024-12-10",
-        progress: 15,
-        lead: "Michael Chen"
-    },
-    {
-        id: "4",
-        name: "Digital Transformation Phase 2",
-        status: "active",
-        startDate: "2024-12-01",
-        dueDate: "2025-01-30",
-        expectedFinishDate: "2025-01-25",
-        progress: 45,
-        lead: "David Lee"
-    },
-    {
-        id: "5",
-        name: "Office Renovation Project",
-        status: "onhold",
-        startDate: "2025-02-01",
-        dueDate: "2025-03-15",
-        expectedFinishDate: "2025-03-20",
-        progress: 30,
-        lead: "Citra Lestari"
-    },
-    {
-        id: "6",
-        name: "Client XYZ Contract Renewal",
-        status: "completed",
-        startDate: "2024-09-01",
-        dueDate: "2024-09-30",
-        expectedFinishDate: "2024-09-28",
-        progress: 100,
-        lead: "Budi Santoso"
-    },
-];
-
 // Helper functions
 const parseDate = (dateStr: string): Date => {
-    return new Date(dateStr);
+    const d = new Date(dateStr);
+    return isNaN(d.getTime()) ? new Date() : d;
 };
 
 const formatDate = (date: Date): string => {
     return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-};
-
-const formatMonthYear = (date: Date): string => {
-    return date.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
 };
 
 const getDaysBetween = (start: Date, end: Date): number => {
@@ -112,12 +47,76 @@ const addDays = (date: Date, days: number): Date => {
 };
 
 export default function ProjectTimelinePage() {
-    const [selectedProject, setSelectedProject] = useState<ProjectMock | null>(null);
+    const supabase = createClient();
+    const [projects, setProjects] = useState<Project[]>([]);
+    const [selectedProject, setSelectedProject] = useState<Project | null>(null);
     const [viewMode, setViewMode] = useState<'month' | 'quarter'>('month');
+    const [isLoading, setIsLoading] = useState(true);
+
+    useEffect(() => {
+        const fetchProjects = async () => {
+            try {
+                const { data, error } = await supabase
+                    .from('projects')
+                    .select(`
+                        id,
+                        name,
+                        status,
+                        progress,
+                        start_date,
+                        due_date,
+                        expected_finish_date,
+                        created_at,
+                        lead:profiles!lead_id(full_name)
+                    `)
+                    .eq('is_archived', false) // Only show active projects
+                    .order('start_date', { ascending: true });
+
+                if (error) throw error;
+
+                if (data) {
+                    const formattedProjects: Project[] = data.map((p: any) => ({
+                        id: p.id,
+                        name: p.name,
+                        status: p.status,
+                        progress: p.progress,
+                        // Use start_date or created_at as fallback, ensuring we have a date
+                        startDate: p.start_date || p.created_at,
+                        // Use due_date or a default +30 days from start for valid timeline
+                        dueDate: p.due_date || new Date(new Date(p.start_date || p.created_at).getTime() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+                        expectedFinishDate: p.expected_finish_date,
+                        lead: p.lead?.full_name || "Unknown"
+                    }));
+                    setProjects(formattedProjects);
+                }
+            } catch (error) {
+                console.error('Error fetching projects:', error);
+            } finally {
+                setIsLoading(false);
+            }
+        };
+
+        fetchProjects();
+    }, []);
 
     // Calculate timeline boundaries
     const { timelineStart, timelineEnd, totalDays, months, quarters, sortedProjects } = useMemo(() => {
-        const sorted = [...mockProjects].sort((a, b) => parseDate(a.startDate).getTime() - parseDate(b.startDate).getTime());
+        if (projects.length === 0) {
+            // Default empty state
+            const now = new Date();
+            const start = addDays(now, -30);
+            const end = addDays(now, 30);
+            return {
+                timelineStart: start,
+                timelineEnd: end,
+                totalDays: 60,
+                months: [],
+                quarters: [],
+                sortedProjects: []
+            };
+        }
+
+        const sorted = [...projects].sort((a, b) => parseDate(a.startDate).getTime() - parseDate(b.startDate).getTime());
 
         // Find earliest start and latest end
         let earliest = parseDate(sorted[0].startDate);
@@ -133,7 +132,7 @@ export default function ProjectTimelinePage() {
         // Add padding (1 week before and after)
         const timelineStart = addDays(earliest, -7);
         const timelineEnd = addDays(latest, 14);
-        const totalDays = getDaysBetween(timelineStart, timelineEnd);
+        const totalDays = getDaysBetween(timelineStart, timelineEnd) || 1; // Avoid division by zero
 
         // Generate month markers
         const months: { date: Date; position: number; label: string }[] = [];
@@ -167,10 +166,10 @@ export default function ProjectTimelinePage() {
         }
 
         return { timelineStart, timelineEnd, totalDays, months, quarters, sortedProjects: sorted };
-    }, []);
+    }, [projects]);
 
     // Calculate bar position and width for a project
-    const getBarStyle = (project: ProjectMock) => {
+    const getBarStyle = (project: Project) => {
         const start = parseDate(project.startDate);
         const end = parseDate(project.dueDate);
 

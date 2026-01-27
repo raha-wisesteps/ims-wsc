@@ -7,7 +7,7 @@ import {
     Sun, CloudSun, Sunset, Moon,
     Rocket, Star, Diamond, Heart, Users, Lightbulb, Zap, Gift, Target, CalendarDays, GlassWater, Smile,
     Building2, Home, Plane, Building, Stethoscope, FileText, Clock, MapPin,
-    LayoutDashboard, Briefcase, ChevronRight, Plus, Bell, Megaphone, Trash2, Pencil, Check, X,
+    Calendar, Briefcase, ChevronRight, Plus, Bell, Megaphone, Trash2, Pencil, Check, X,
     CloudRain, CloudDrizzle, CloudLightning, Snowflake, Cloud,
     ArrowRight, BookOpen, Globe, Umbrella, ClipboardList, LucideIcon, MessageSquare
 } from "lucide-react";
@@ -1465,7 +1465,7 @@ export default function DashboardPage() {
 
                                         <Link href="/dashboard/board" className="group flex flex-col items-center justify-center gap-2 p-2 rounded-xl backdrop-blur-md transition-all hover:scale-105 active:scale-95 border bg-amber-500/10 border-amber-500/20 hover:bg-amber-500/20 dark:bg-white/5 dark:border-white/10 dark:hover:bg-white/10">
                                             <div className="w-8 h-8 rounded-lg bg-amber-500/20 flex items-center justify-center group-hover:bg-amber-500/30 transition-colors">
-                                                <LayoutDashboard className="h-4 w-4 text-amber-300" />
+                                                <Calendar className="h-4 w-4 text-amber-300" />
                                             </div>
                                             <span className="text-[10px] font-bold text-white uppercase tracking-wider text-center">Team Schedule</span>
                                         </Link>

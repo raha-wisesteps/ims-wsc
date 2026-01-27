@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState, useMemo } from "react";
 import {
     ChevronLeft,
@@ -460,10 +461,20 @@ export default function WeeklyBoardPage() {
     return (
         <div className="flex flex-col h-[calc(100vh-100px)] space-y-4">
             {/* --- Header & Controls --- */}
-            <div className="flex flex-col xl:flex-row justify-between items-start xl:items-center gap-4">
-                <div>
-                    <h1 className="text-3xl font-black tracking-tight text-foreground">Team Schedule</h1>
-                    <p className="text-muted-foreground mt-1">Manage attendance, workload, and availability at a glance.</p>
+            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-4">
+                <div className="flex items-center gap-3">
+                    <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-amber-500 to-amber-600 flex items-center justify-center shadow-lg shadow-amber-500/20">
+                        <CalendarIcon className="h-6 w-6 text-white" />
+                    </div>
+                    <div>
+                        <div className="flex items-center gap-2 mb-1 text-sm text-muted-foreground">
+                            <Link href="/dashboard" className="hover:text-foreground transition-colors">Dashboard</Link>
+                            <ChevronRight className="h-4 w-4" />
+                            <span>Team Schedule</span>
+                        </div>
+                        <h1 className="text-2xl font-black tracking-tight text-foreground">Team Schedule</h1>
+                        <p className="text-sm text-muted-foreground">Monitor team schedules and availability to coordinate with colleagues.</p>
+                    </div>
                 </div>
             </div>
 

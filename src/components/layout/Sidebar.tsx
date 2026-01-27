@@ -135,7 +135,7 @@ const navItems: NavItem[] = [
         href: "/dashboard/command-center",
         icon: (
             <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" viewBox="0 0 24 24" fill="currentColor">
-                <path d="M11 20.95c-5.07-.5-9-4.79-9-9.95s3.93-9.45 9-9.95V20.95zM13 1.05c5.07.5 9 4.79 9 9.95s-3.93 9.45-9 9.95V1.05z" />
+                <path d="M3 13h8V3H3v10zm0 8h8v-6H3v6zm10 0h8V11h-8v10zm0-18v6h8V3h-8z" />
             </svg>
         ),
         section: "Human Resource",
