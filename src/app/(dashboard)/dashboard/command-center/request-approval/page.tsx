@@ -6,23 +6,58 @@ import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { CheckCircle, XCircle, Loader2, RefreshCw } from "lucide-react";
 
-// Request type config for display
+// Request type config for display - aligned with my-request page
 const REQUEST_TYPE_CONFIG: Record<string, { label: string; icon: string; color: string }> = {
+    // Flexible Work
     wfh: { label: "WFH", icon: "🏠", color: "bg-purple-500" },
     wfa: { label: "WFA", icon: "📍", color: "bg-violet-500" },
+
+    // Leave types - all match /leave page (bg-emerald-500)
     annual_leave: { label: "Cuti Tahunan", icon: "🌴", color: "bg-emerald-500" },
+    menstrual_leave: { label: "Cuti Haid", icon: "🩸", color: "bg-emerald-500" },
+    maternity: { label: "Cuti Melahirkan", icon: "🤰", color: "bg-emerald-500" },
+    miscarriage: { label: "Cuti Keguguran", icon: "🚑", color: "bg-emerald-500" },
+    self_marriage: { label: "Pernikahan Sendiri", icon: "💍", color: "bg-emerald-500" },
+    child_marriage: { label: "Pernikahan Anak", icon: "💒", color: "bg-emerald-500" },
+    paternity: { label: "Istri Melahirkan", icon: "👶", color: "bg-emerald-500" },
+    wife_miscarriage: { label: "Istri Keguguran", icon: "💔", color: "bg-emerald-500" },
+    child_event: { label: "Khitanan/Baptis", icon: "✨", color: "bg-emerald-500" },
+    family_death: { label: "Keluarga Inti Meninggal", icon: "👪", color: "bg-emerald-500" },
+    household_death: { label: "Serumah Meninggal", icon: "🏠", color: "bg-emerald-500" },
+    sibling_death: { label: "Saudara Meninggal", icon: "🕯️", color: "bg-emerald-500" },
+    hajj: { label: "Ibadah Haji", icon: "🕋", color: "bg-emerald-500" },
+    government: { label: "Panggilan Pemerintah", icon: "🏛️", color: "bg-emerald-500" },
+    disaster: { label: "Bencana", icon: "🌊", color: "bg-emerald-500" },
+    other_permission: { label: "Izin Lainnya", icon: "📋", color: "bg-emerald-500" },
+
+    // Sick Leave
     sick_leave: { label: "Sakit", icon: "🤒", color: "bg-rose-500" },
-    unpaid_leave: { label: "Cuti Tidak Berbayar", icon: "📋", color: "bg-gray-500" },
-    marriage: { label: "Cuti Nikah", icon: "💍", color: "bg-pink-500" },
-    maternity: { label: "Cuti Melahirkan", icon: "👶", color: "bg-pink-400" },
-    paternity: { label: "Cuti Ayah", icon: "👨", color: "bg-blue-400" },
-    bereavement: { label: "Cuti Duka", icon: "🕯️", color: "bg-gray-600" },
-    overtime: { label: "Lembur", icon: "⏰", color: "bg-orange-500" },
-    training: { label: "Training", icon: "🎓", color: "bg-indigo-500" },
-    asset: { label: "Asset", icon: "💼", color: "bg-blue-500" },
-    reimburse: { label: "Reimburse", icon: "💰", color: "bg-teal-500" },
-    meeting: { label: "1-on-1", icon: "👤", color: "bg-pink-500" },
+
+    // Business Trip
     business_trip: { label: "Perjalanan Dinas", icon: "✈️", color: "bg-amber-500" },
+
+    // Overtime
+    overtime: { label: "Lembur", icon: "⏰", color: "bg-orange-500" },
+
+    // Training
+    training: { label: "Training", icon: "🎓", color: "bg-indigo-500" },
+
+    // Asset
+    asset: { label: "Asset", icon: "💻", color: "bg-blue-500" },
+
+    // Reimburse
+    reimburse: { label: "Reimburse", icon: "💰", color: "bg-teal-500" },
+
+    // 1-on-1
+    meeting: { label: "1-on-1", icon: "🗣️", color: "bg-pink-500" },
+    one_on_one: { label: "1-on-1", icon: "🗣️", color: "bg-pink-500" },
+};
+
+// Category mapping for filtering
+const CATEGORY_MAP: Record<string, string[]> = {
+    izin_absensi: ["wfh", "wfa", "annual_leave", "sick_leave", "menstrual_leave", "maternity", "miscarriage", "self_marriage", "child_marriage", "paternity", "wife_miscarriage", "child_event", "family_death", "household_death", "sibling_death", "hajj", "government", "disaster", "other_permission"],
+    tugas_lembur: ["overtime", "business_trip"],
+    fasilitas_pengembangan: ["training", "reimburse", "asset", "meeting", "one_on_one"],
 };
 
 interface PendingRequest {
@@ -55,6 +90,7 @@ export default function RequestApprovalPage() {
     const [isLoading, setIsLoading] = useState(true);
     const [processingId, setProcessingId] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
+    const [filterCategory, setFilterCategory] = useState<string>("all");
     const [filterType, setFilterType] = useState<string>("all");
     const [filterUser, setFilterUser] = useState<string>("all");
 
@@ -62,8 +98,16 @@ export default function RequestApprovalPage() {
     const uniqueUsers = [...new Map(requests.map(r => [r.profile?.id, r.profile])).values()].filter(Boolean);
     const uniqueTypes = [...new Set(requests.map(r => r.leave_type))];
 
+    // Category stats
+    const categoryStats = {
+        izin_absensi: requests.filter(r => CATEGORY_MAP.izin_absensi.includes(r.leave_type)).length,
+        tugas_lembur: requests.filter(r => CATEGORY_MAP.tugas_lembur.includes(r.leave_type)).length,
+        fasilitas_pengembangan: requests.filter(r => CATEGORY_MAP.fasilitas_pengembangan.includes(r.leave_type)).length,
+    };
+
     // Filtered requests
     const filteredRequests = requests
+        .filter(r => filterCategory === "all" || (CATEGORY_MAP[filterCategory]?.includes(r.leave_type) ?? false))
         .filter(r => filterType === "all" || r.leave_type === filterType)
         .filter(r => filterUser === "all" || r.profile?.id === filterUser);
 
@@ -265,8 +309,8 @@ export default function RequestApprovalPage() {
         setProcessingId(requestId);
 
         try {
-            // Determine which table to update - now always leave_requests
-            const tableName = 'leave_requests';
+            // Determine which table to update based on source_table
+            const tableName = request.source_table || 'leave_requests';
 
             const { error: updateError } = await supabase
                 .from(tableName)
@@ -384,7 +428,50 @@ export default function RequestApprovalPage() {
                 </div>
             )}
 
-            {/* Filters */}
+            {/* Category Filter */}
+            <div className="mb-3">
+                <p className="text-xs text-[var(--text-muted)] mb-2 font-medium">Filter Kategori</p>
+                <div className="flex gap-2 overflow-x-auto pb-2">
+                    <button
+                        onClick={() => setFilterCategory("all")}
+                        className={`px-4 py-2 rounded-lg text-sm font-medium transition-all whitespace-nowrap ${filterCategory === "all"
+                            ? "bg-[#3f545f] dark:bg-[#e8c559] text-white dark:text-[#171611]"
+                            : "bg-[var(--glass-bg)] text-[var(--text-secondary)] hover:bg-[var(--glass-border)]"
+                            }`}
+                    >
+                        📋 Semua ({requests.length})
+                    </button>
+                    <button
+                        onClick={() => setFilterCategory("izin_absensi")}
+                        className={`px-4 py-2 rounded-lg text-sm font-medium transition-all whitespace-nowrap ${filterCategory === "izin_absensi"
+                            ? "bg-purple-500 text-white"
+                            : "bg-[var(--glass-bg)] text-[var(--text-secondary)] hover:bg-[var(--glass-border)]"
+                            }`}
+                    >
+                        🏠 Izin & Absensi ({categoryStats.izin_absensi})
+                    </button>
+                    <button
+                        onClick={() => setFilterCategory("tugas_lembur")}
+                        className={`px-4 py-2 rounded-lg text-sm font-medium transition-all whitespace-nowrap ${filterCategory === "tugas_lembur"
+                            ? "bg-amber-500 text-white"
+                            : "bg-[var(--glass-bg)] text-[var(--text-secondary)] hover:bg-[var(--glass-border)]"
+                            }`}
+                    >
+                        🚀 Tugas & Lembur ({categoryStats.tugas_lembur})
+                    </button>
+                    <button
+                        onClick={() => setFilterCategory("fasilitas_pengembangan")}
+                        className={`px-4 py-2 rounded-lg text-sm font-medium transition-all whitespace-nowrap ${filterCategory === "fasilitas_pengembangan"
+                            ? "bg-blue-500 text-white"
+                            : "bg-[var(--glass-bg)] text-[var(--text-secondary)] hover:bg-[var(--glass-border)]"
+                            }`}
+                    >
+                        📁 Fasilitas & Pengembangan ({categoryStats.fasilitas_pengembangan})
+                    </button>
+                </div>
+            </div>
+
+            {/* Additional Filters */}
             <div className="flex flex-wrap gap-4 mb-4">
                 <select
                     value={filterType}

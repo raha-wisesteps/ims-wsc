@@ -6,21 +6,58 @@ import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { Loader2, RefreshCw } from "lucide-react";
 
-// Request type config for display
+// Request type config for display - aligned with my-request page
 const REQUEST_TYPE_CONFIG: Record<string, { label: string; icon: string; color: string }> = {
+    // Flexible Work
     wfh: { label: "WFH", icon: "🏠", color: "bg-purple-500" },
     wfa: { label: "WFA", icon: "📍", color: "bg-violet-500" },
+
+    // Leave types - all match /leave page (bg-emerald-500)
     annual_leave: { label: "Cuti Tahunan", icon: "🌴", color: "bg-emerald-500" },
+    menstrual_leave: { label: "Cuti Haid", icon: "🩸", color: "bg-emerald-500" },
+    maternity: { label: "Cuti Melahirkan", icon: "🤰", color: "bg-emerald-500" },
+    miscarriage: { label: "Cuti Keguguran", icon: "🚑", color: "bg-emerald-500" },
+    self_marriage: { label: "Pernikahan Sendiri", icon: "💍", color: "bg-emerald-500" },
+    child_marriage: { label: "Pernikahan Anak", icon: "💒", color: "bg-emerald-500" },
+    paternity: { label: "Istri Melahirkan", icon: "👶", color: "bg-emerald-500" },
+    wife_miscarriage: { label: "Istri Keguguran", icon: "💔", color: "bg-emerald-500" },
+    child_event: { label: "Khitanan/Baptis", icon: "✨", color: "bg-emerald-500" },
+    family_death: { label: "Keluarga Inti Meninggal", icon: "👪", color: "bg-emerald-500" },
+    household_death: { label: "Serumah Meninggal", icon: "🏠", color: "bg-emerald-500" },
+    sibling_death: { label: "Saudara Meninggal", icon: "🕯️", color: "bg-emerald-500" },
+    hajj: { label: "Ibadah Haji", icon: "🕋", color: "bg-emerald-500" },
+    government: { label: "Panggilan Pemerintah", icon: "🏛️", color: "bg-emerald-500" },
+    disaster: { label: "Bencana", icon: "🌊", color: "bg-emerald-500" },
+    other_permission: { label: "Izin Lainnya", icon: "📋", color: "bg-emerald-500" },
+
+    // Sick Leave
     sick_leave: { label: "Sakit", icon: "🤒", color: "bg-rose-500" },
-    other_permission: { label: "Izin Lainnya", icon: "📋", color: "bg-gray-500" },
-    self_marriage: { label: "Pernikahan", icon: "💍", color: "bg-pink-500" },
-    paternity: { label: "Istri Melahirkan", icon: "👶", color: "bg-blue-400" },
-    family_death: { label: "Duka", icon: "🕯️", color: "bg-gray-600" },
+
+    // Business Trip
+    business_trip: { label: "Perjalanan Dinas", icon: "✈️", color: "bg-amber-500" },
+
+    // Overtime
     overtime: { label: "Lembur", icon: "⏰", color: "bg-orange-500" },
+
+    // Training
     training: { label: "Training", icon: "🎓", color: "bg-indigo-500" },
-    asset: { label: "Asset", icon: "💼", color: "bg-blue-500" },
+
+    // Asset
+    asset: { label: "Asset", icon: "💻", color: "bg-blue-500" },
+
+    // Reimburse
     reimburse: { label: "Reimburse", icon: "💰", color: "bg-teal-500" },
-    meeting: { label: "1-on-1", icon: "👤", color: "bg-pink-500" },
+
+    // 1-on-1
+    meeting: { label: "1-on-1", icon: "🗣️", color: "bg-pink-500" },
+    one_on_one: { label: "1-on-1", icon: "🗣️", color: "bg-pink-500" },
+};
+
+// Category mapping for filtering
+const CATEGORY_MAP: Record<string, string[]> = {
+    izin_absensi: ["wfh", "wfa", "annual_leave", "sick_leave", "menstrual_leave", "maternity", "miscarriage", "self_marriage", "child_marriage", "paternity", "wife_miscarriage", "child_event", "family_death", "household_death", "sibling_death", "hajj", "government", "disaster", "other_permission"],
+    tugas_lembur: ["overtime", "business_trip"],
+    fasilitas_pengembangan: ["training", "reimburse", "asset", "meeting", "one_on_one"],
 };
 
 // Status config
@@ -54,6 +91,7 @@ export default function HistoryApprovalPage() {
 
     const [history, setHistory] = useState<HistoryRequest[]>([]);
     const [isLoading, setIsLoading] = useState(true);
+    const [selectedCategory, setSelectedCategory] = useState<string>("all");
     const [selectedType, setSelectedType] = useState<string>("all");
     const [selectedStatus, setSelectedStatus] = useState<"all" | "approved" | "rejected">("all");
     const [selectedUser, setSelectedUser] = useState<string>("all");
@@ -165,8 +203,16 @@ export default function HistoryApprovalPage() {
     // Get unique types for filter
     const uniqueTypes = [...new Set(history.map(h => h.leave_type))];
 
+    // Category stats
+    const categoryStats = {
+        izin_absensi: history.filter(r => CATEGORY_MAP.izin_absensi.includes(r.leave_type)).length,
+        tugas_lembur: history.filter(r => CATEGORY_MAP.tugas_lembur.includes(r.leave_type)).length,
+        fasilitas_pengembangan: history.filter(r => CATEGORY_MAP.fasilitas_pengembangan.includes(r.leave_type)).length,
+    };
+
     // Filtered history
     const filteredHistory = history
+        .filter(r => selectedCategory === "all" || (CATEGORY_MAP[selectedCategory]?.includes(r.leave_type) ?? false))
         .filter(r => selectedType === "all" || r.leave_type === selectedType)
         .filter(r => selectedStatus === "all" || r.status === selectedStatus)
         .filter(r => selectedUser === "all" || r.profile?.id === selectedUser);
@@ -257,7 +303,50 @@ export default function HistoryApprovalPage() {
                 </div>
             </div>
 
-            {/* Filters */}
+            {/* Category Filter */}
+            <div className="mb-3">
+                <p className="text-xs text-[var(--text-muted)] mb-2 font-medium">Filter Kategori</p>
+                <div className="flex gap-2 overflow-x-auto pb-2">
+                    <button
+                        onClick={() => setSelectedCategory("all")}
+                        className={`px-4 py-2 rounded-lg text-sm font-medium transition-all whitespace-nowrap ${selectedCategory === "all"
+                            ? "bg-[#3f545f] dark:bg-[#e8c559] text-white dark:text-[#171611]"
+                            : "bg-[var(--glass-bg)] text-[var(--text-secondary)] hover:bg-[var(--glass-border)]"
+                            }`}
+                    >
+                        📋 Semua ({history.length})
+                    </button>
+                    <button
+                        onClick={() => setSelectedCategory("izin_absensi")}
+                        className={`px-4 py-2 rounded-lg text-sm font-medium transition-all whitespace-nowrap ${selectedCategory === "izin_absensi"
+                            ? "bg-purple-500 text-white"
+                            : "bg-[var(--glass-bg)] text-[var(--text-secondary)] hover:bg-[var(--glass-border)]"
+                            }`}
+                    >
+                        🏠 Izin & Absensi ({categoryStats.izin_absensi})
+                    </button>
+                    <button
+                        onClick={() => setSelectedCategory("tugas_lembur")}
+                        className={`px-4 py-2 rounded-lg text-sm font-medium transition-all whitespace-nowrap ${selectedCategory === "tugas_lembur"
+                            ? "bg-amber-500 text-white"
+                            : "bg-[var(--glass-bg)] text-[var(--text-secondary)] hover:bg-[var(--glass-border)]"
+                            }`}
+                    >
+                        🚀 Tugas & Lembur ({categoryStats.tugas_lembur})
+                    </button>
+                    <button
+                        onClick={() => setSelectedCategory("fasilitas_pengembangan")}
+                        className={`px-4 py-2 rounded-lg text-sm font-medium transition-all whitespace-nowrap ${selectedCategory === "fasilitas_pengembangan"
+                            ? "bg-blue-500 text-white"
+                            : "bg-[var(--glass-bg)] text-[var(--text-secondary)] hover:bg-[var(--glass-border)]"
+                            }`}
+                    >
+                        📁 Fasilitas & Pengembangan ({categoryStats.fasilitas_pengembangan})
+                    </button>
+                </div>
+            </div>
+
+            {/* Status & Additional Filters */}
             <div className="flex flex-col md:flex-row gap-4 mb-6">
                 {/* Status Filter */}
                 <div className="flex gap-2">
