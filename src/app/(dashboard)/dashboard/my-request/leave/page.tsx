@@ -34,7 +34,7 @@ const LEAVE_CATEGORIES: LeaveCategory[] = [
     {
         category: "Cuti Khusus Wanita",
         items: [
-            { id: "menstrual_leave", label: "Cuti Haid", emoji: "🩸", days: 2, description: "2 hari/bulan", gender: "female" },
+            { id: "menstrual_leave", label: "Cuti Haid", emoji: "🩸", days: null, description: "Max 2 hari/bulan", gender: "female" },
             { id: "maternity", label: "Cuti Melahirkan", emoji: "🤰", days: 90, description: "3 bulan", gender: "female" },
             { id: "miscarriage", label: "Cuti Keguguran", emoji: "🚑", days: 45, description: "1.5 bulan", gender: "female" },
         ]

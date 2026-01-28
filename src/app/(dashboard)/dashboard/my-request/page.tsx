@@ -20,21 +20,52 @@ const REQUEST_TYPES = [
 ];
 
 // Leave type config for display
+// Colors are aligned with their dedicated submission pages for visual consistency
 const LEAVE_TYPE_CONFIG: Record<string, { label: string; icon: string; color: string }> = {
+    // Flexible Work - matches /flexible-work page
     wfh: { label: "WFH", icon: "🏠", color: "bg-purple-500" },
     wfa: { label: "WFA", icon: "📍", color: "bg-violet-500" },
+
+    // Leave types - all match /leave page (bg-emerald-500)
     annual_leave: { label: "Cuti Tahunan", icon: "🌴", color: "bg-emerald-500" },
+    menstrual_leave: { label: "Cuti Haid", icon: "🩸", color: "bg-emerald-500" },
+    maternity: { label: "Cuti Melahirkan", icon: "🤰", color: "bg-emerald-500" },
+    miscarriage: { label: "Cuti Keguguran", icon: "🚑", color: "bg-emerald-500" },
+    self_marriage: { label: "Pernikahan Sendiri", icon: "💍", color: "bg-emerald-500" },
+    child_marriage: { label: "Pernikahan Anak", icon: "💒", color: "bg-emerald-500" },
+    paternity: { label: "Istri Melahirkan", icon: "👶", color: "bg-emerald-500" },
+    wife_miscarriage: { label: "Istri Keguguran", icon: "💔", color: "bg-emerald-500" },
+    child_event: { label: "Khitanan/Baptis", icon: "✨", color: "bg-emerald-500" },
+    family_death: { label: "Keluarga Inti Meninggal", icon: "👪", color: "bg-emerald-500" },
+    household_death: { label: "Serumah Meninggal", icon: "🏠", color: "bg-emerald-500" },
+    sibling_death: { label: "Saudara Meninggal", icon: "🕯️", color: "bg-emerald-500" },
+    hajj: { label: "Ibadah Haji", icon: "🕋", color: "bg-emerald-500" },
+    government: { label: "Panggilan Pemerintah", icon: "🏛️", color: "bg-emerald-500" },
+    disaster: { label: "Bencana", icon: "🌊", color: "bg-emerald-500" },
+    other_permission: { label: "Izin Lainnya", icon: "📋", color: "bg-emerald-500" },
+
+    // Sick Leave - matches /sakit page (bg-rose-500)
     sick_leave: { label: "Sakit", icon: "🤒", color: "bg-rose-500" },
-    other_permission: { label: "Izin Lainnya", icon: "📋", color: "bg-gray-500" },
-    self_marriage: { label: "Pernikahan", icon: "💍", color: "bg-pink-500" },
-    paternity: { label: "Istri Melahirkan", icon: "👶", color: "bg-blue-400" },
-    family_death: { label: "Duka", icon: "🕯️", color: "bg-gray-600" },
-    overtime: { label: "Lembur", icon: "⏰", color: "bg-orange-500" },
-    training: { label: "Training", icon: "🎓", color: "bg-indigo-500" },
-    asset: { label: "Asset", icon: "💼", color: "bg-blue-500" },
-    reimburse: { label: "Reimburse", icon: "💰", color: "bg-teal-500" },
-    meeting: { label: "1-on-1", icon: "👤", color: "bg-pink-500" },
+
+    // Business Trip - matches /business-trip page (bg-amber-500)
     business_trip: { label: "Dinas", icon: "💼", color: "bg-amber-500" },
+
+    // Overtime - matches /overtime page (bg-orange-500)
+    overtime: { label: "Lembur", icon: "⏰", color: "bg-orange-500" },
+
+    // Training - matches /training page (bg-indigo-500)
+    training: { label: "Training", icon: "🎓", color: "bg-indigo-500" },
+
+    // Asset - matches /asset page (bg-blue-500)
+    asset: { label: "Asset", icon: "💻", color: "bg-blue-500" },
+
+    // Reimburse - matches /reimburse page (bg-teal-500)
+    reimburse: { label: "Reimburse", icon: "💰", color: "bg-teal-500" },
+
+    // 1-on-1 - matches /one-on-one page (bg-pink-500)
+    meeting: { label: "1-on-1", icon: "🗣️", color: "bg-pink-500" },
+    "1-on-1": { label: "1-on-1", icon: "🗣️", color: "bg-pink-500" },
+    one_on_one: { label: "1-on-1", icon: "🗣️", color: "bg-pink-500" }, // DB format
 };
 
 // Status configuration
@@ -42,6 +73,13 @@ const STATUS_CONFIG = {
     pending: { label: "Pending", icon: AlertCircle, color: "text-amber-500", bg: "bg-amber-500/10" },
     approved: { label: "Approved", icon: CheckCircle, color: "text-emerald-500", bg: "bg-emerald-500/10" },
     rejected: { label: "Rejected", icon: XCircle, color: "text-rose-500", bg: "bg-rose-500/10" },
+};
+
+// Category mapping for filtering
+const CATEGORY_MAP: Record<string, string[]> = {
+    "izin_absensi": ["wfh", "wfa", "annual_leave", "sick_leave", "menstrual_leave", "maternity", "miscarriage", "self_marriage", "child_marriage", "paternity", "wife_miscarriage", "child_event", "family_death", "household_death", "sibling_death", "hajj", "government", "disaster", "other_permission"],
+    "tugas_lembur": ["overtime", "business_trip"],
+    "fasilitas_pengembangan": ["training", "reimburse", "asset", "meeting", "one_on_one"],
 };
 
 interface LeaveRequest {
@@ -53,6 +91,8 @@ interface LeaveRequest {
     status: string;
     created_at: string;
     total_hours?: number;
+    amount?: number; // For reimburse requests
+    source_table?: string; // To track which table the request came from
 }
 
 export default function MyRequestPage() {
@@ -62,27 +102,58 @@ export default function MyRequestPage() {
 
     const [requests, setRequests] = useState<LeaveRequest[]>([]);
     const [isLoading, setIsLoading] = useState(true);
-    const [selectedFilter, setSelectedFilter] = useState<string>("all");
+    const [selectedStatusFilter, setSelectedStatusFilter] = useState<string>("all");
+    const [selectedCategoryFilter, setSelectedCategoryFilter] = useState<string>("all");
     const [activeSlide, setActiveSlide] = useState(0);
 
-    // Fetch user's requests
+    // Fetch user's requests from both tables
     const fetchRequests = async () => {
         if (!user) return;
 
         setIsLoading(true);
         try {
-            const { data, error } = await supabase
+            // Fetch from leave_requests table
+            const { data: leaveData, error: leaveError } = await supabase
                 .from("leave_requests")
                 .select("id, leave_type, start_date, end_date, reason, status, created_at, total_hours")
                 .eq("profile_id", user.id)
                 .order("created_at", { ascending: false });
 
-            if (error) {
-                console.error("Fetch error:", error);
-                return;
+            if (leaveError) {
+                console.error("Fetch leave_requests error:", leaveError);
             }
 
-            setRequests(data || []);
+            // Fetch from other_requests table
+            const { data: otherData, error: otherError } = await supabase
+                .from("other_requests")
+                .select("id, request_type, request_date, reason, status, created_at, amount")
+                .eq("profile_id", user.id)
+                .order("created_at", { ascending: false });
+
+            if (otherError) {
+                console.error("Fetch other_requests error:", otherError);
+            }
+
+            // Transform other_requests to match LeaveRequest interface
+            const transformedOtherData: LeaveRequest[] = (otherData || []).map(item => ({
+                id: item.id,
+                leave_type: item.request_type,
+                start_date: item.request_date,
+                end_date: item.request_date, // Single date requests
+                reason: item.reason || "",
+                status: item.status,
+                created_at: item.created_at,
+                amount: item.amount,
+                source_table: "other_requests"
+            }));
+
+            // Combine and sort by created_at
+            const combined = [
+                ...(leaveData || []).map(item => ({ ...item, source_table: "leave_requests" })),
+                ...transformedOtherData
+            ].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+
+            setRequests(combined);
         } catch (err) {
             console.error("Error:", err);
         } finally {
@@ -96,16 +167,30 @@ export default function MyRequestPage() {
         }
     }, [user]);
 
-    // Filter requests
-    const filteredRequests = selectedFilter === "all"
-        ? requests
-        : requests.filter(r => r.status === selectedFilter);
+    // Filter requests by both category and status
+    const filteredRequests = requests.filter(r => {
+        // Category filter
+        const categoryMatch = selectedCategoryFilter === "all" ||
+            (CATEGORY_MAP[selectedCategoryFilter]?.includes(r.leave_type) ?? false);
 
-    // Stats
+        // Status filter
+        const statusMatch = selectedStatusFilter === "all" || r.status === selectedStatusFilter;
+
+        return categoryMatch && statusMatch;
+    });
+
+    // Stats (calculate from all requests, not filtered)
     const stats = {
         pending: requests.filter(r => r.status === "pending").length,
         approved: requests.filter(r => r.status === "approved").length,
         rejected: requests.filter(r => r.status === "rejected").length,
+    };
+
+    // Category stats
+    const categoryStats = {
+        izin_absensi: requests.filter(r => CATEGORY_MAP.izin_absensi.includes(r.leave_type)).length,
+        tugas_lembur: requests.filter(r => CATEGORY_MAP.tugas_lembur.includes(r.leave_type)).length,
+        fasilitas_pengembangan: requests.filter(r => CATEGORY_MAP.fasilitas_pengembangan.includes(r.leave_type)).length,
     };
 
     // Helper: Format date
@@ -361,47 +446,93 @@ export default function MyRequestPage() {
                 </div>
             </div>
 
+            {/* Category Filter Tabs */}
+            <div className="mb-3">
+                <p className="text-xs text-[var(--text-muted)] mb-2 font-medium">Filter Kategori</p>
+                <div className="flex gap-2 overflow-x-auto pb-2">
+                    <button
+                        onClick={() => setSelectedCategoryFilter("all")}
+                        className={`px-4 py-2 rounded-lg text-sm font-medium transition-all whitespace-nowrap ${selectedCategoryFilter === "all"
+                            ? "bg-[#3f545f] dark:bg-[#e8c559] text-white dark:text-[#171611]"
+                            : "bg-[var(--glass-bg)] text-[var(--text-secondary)] hover:bg-[var(--glass-border)]"
+                            }`}
+                    >
+                        📋 Semua ({requests.length})
+                    </button>
+                    <button
+                        onClick={() => setSelectedCategoryFilter("izin_absensi")}
+                        className={`px-4 py-2 rounded-lg text-sm font-medium transition-all whitespace-nowrap ${selectedCategoryFilter === "izin_absensi"
+                            ? "bg-purple-500 text-white"
+                            : "bg-[var(--glass-bg)] text-[var(--text-secondary)] hover:bg-[var(--glass-border)]"
+                            }`}
+                    >
+                        🏠 Izin & Absensi ({categoryStats.izin_absensi})
+                    </button>
+                    <button
+                        onClick={() => setSelectedCategoryFilter("tugas_lembur")}
+                        className={`px-4 py-2 rounded-lg text-sm font-medium transition-all whitespace-nowrap ${selectedCategoryFilter === "tugas_lembur"
+                            ? "bg-amber-500 text-white"
+                            : "bg-[var(--glass-bg)] text-[var(--text-secondary)] hover:bg-[var(--glass-border)]"
+                            }`}
+                    >
+                        🚀 Tugas & Lembur ({categoryStats.tugas_lembur})
+                    </button>
+                    <button
+                        onClick={() => setSelectedCategoryFilter("fasilitas_pengembangan")}
+                        className={`px-4 py-2 rounded-lg text-sm font-medium transition-all whitespace-nowrap ${selectedCategoryFilter === "fasilitas_pengembangan"
+                            ? "bg-blue-500 text-white"
+                            : "bg-[var(--glass-bg)] text-[var(--text-secondary)] hover:bg-[var(--glass-border)]"
+                            }`}
+                    >
+                        📁 Fasilitas & Pengembangan ({categoryStats.fasilitas_pengembangan})
+                    </button>
+                </div>
+            </div>
+
             {/* Status Filter Tabs */}
-            <div className="flex gap-2 mb-4 overflow-x-auto pb-2">
-                <button
-                    onClick={() => setSelectedFilter("all")}
-                    className={`px-4 py-2 rounded-lg text-sm font-medium transition-all whitespace-nowrap ${selectedFilter === "all"
-                        ? "bg-[#3f545f] dark:bg-[#e8c559] text-white dark:text-[#171611]"
-                        : "bg-[var(--glass-bg)] text-[var(--text-secondary)] hover:bg-[var(--glass-border)]"
-                        }`}
-                >
-                    Semua ({requests.length})
-                </button>
-                <button
-                    onClick={() => setSelectedFilter("pending")}
-                    className={`px-4 py-2 rounded-lg text-sm font-medium transition-all whitespace-nowrap flex items-center gap-2 ${selectedFilter === "pending"
-                        ? "bg-amber-500 text-white"
-                        : "bg-[var(--glass-bg)] text-[var(--text-secondary)] hover:bg-[var(--glass-border)]"
-                        }`}
-                >
-                    <AlertCircle className="w-4 h-4" />
-                    Pending ({stats.pending})
-                </button>
-                <button
-                    onClick={() => setSelectedFilter("approved")}
-                    className={`px-4 py-2 rounded-lg text-sm font-medium transition-all whitespace-nowrap flex items-center gap-2 ${selectedFilter === "approved"
-                        ? "bg-emerald-500 text-white"
-                        : "bg-[var(--glass-bg)] text-[var(--text-secondary)] hover:bg-[var(--glass-border)]"
-                        }`}
-                >
-                    <CheckCircle className="w-4 h-4" />
-                    Approved ({stats.approved})
-                </button>
-                <button
-                    onClick={() => setSelectedFilter("rejected")}
-                    className={`px-4 py-2 rounded-lg text-sm font-medium transition-all whitespace-nowrap flex items-center gap-2 ${selectedFilter === "rejected"
-                        ? "bg-rose-500 text-white"
-                        : "bg-[var(--glass-bg)] text-[var(--text-secondary)] hover:bg-[var(--glass-border)]"
-                        }`}
-                >
-                    <XCircle className="w-4 h-4" />
-                    Rejected ({stats.rejected})
-                </button>
+            <div className="mb-4">
+                <p className="text-xs text-[var(--text-muted)] mb-2 font-medium">Filter Status</p>
+                <div className="flex gap-2 overflow-x-auto pb-2">
+                    <button
+                        onClick={() => setSelectedStatusFilter("all")}
+                        className={`px-4 py-2 rounded-lg text-sm font-medium transition-all whitespace-nowrap ${selectedStatusFilter === "all"
+                            ? "bg-[#3f545f] dark:bg-[#e8c559] text-white dark:text-[#171611]"
+                            : "bg-[var(--glass-bg)] text-[var(--text-secondary)] hover:bg-[var(--glass-border)]"
+                            }`}
+                    >
+                        Semua Status
+                    </button>
+                    <button
+                        onClick={() => setSelectedStatusFilter("pending")}
+                        className={`px-4 py-2 rounded-lg text-sm font-medium transition-all whitespace-nowrap flex items-center gap-2 ${selectedStatusFilter === "pending"
+                            ? "bg-amber-500 text-white"
+                            : "bg-[var(--glass-bg)] text-[var(--text-secondary)] hover:bg-[var(--glass-border)]"
+                            }`}
+                    >
+                        <AlertCircle className="w-4 h-4" />
+                        Pending ({stats.pending})
+                    </button>
+                    <button
+                        onClick={() => setSelectedStatusFilter("approved")}
+                        className={`px-4 py-2 rounded-lg text-sm font-medium transition-all whitespace-nowrap flex items-center gap-2 ${selectedStatusFilter === "approved"
+                            ? "bg-emerald-500 text-white"
+                            : "bg-[var(--glass-bg)] text-[var(--text-secondary)] hover:bg-[var(--glass-border)]"
+                            }`}
+                    >
+                        <CheckCircle className="w-4 h-4" />
+                        Approved ({stats.approved})
+                    </button>
+                    <button
+                        onClick={() => setSelectedStatusFilter("rejected")}
+                        className={`px-4 py-2 rounded-lg text-sm font-medium transition-all whitespace-nowrap flex items-center gap-2 ${selectedStatusFilter === "rejected"
+                            ? "bg-rose-500 text-white"
+                            : "bg-[var(--glass-bg)] text-[var(--text-secondary)] hover:bg-[var(--glass-border)]"
+                            }`}
+                    >
+                        <XCircle className="w-4 h-4" />
+                        Rejected ({stats.rejected})
+                    </button>
+                </div>
             </div>
 
             {/* Request History List */}
