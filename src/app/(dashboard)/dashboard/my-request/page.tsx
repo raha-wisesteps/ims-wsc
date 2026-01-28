@@ -135,7 +135,16 @@ export default function MyRequestPage() {
             }
 
             // Transform other_requests to match LeaveRequest interface
-            const transformedOtherData: LeaveRequest[] = (otherData || []).map(item => ({
+            interface OtherRequestItem {
+                id: string;
+                request_type: string;
+                request_date: string;
+                reason: string | null;
+                status: string;
+                created_at: string;
+                amount: number | null;
+            }
+            const transformedOtherData: LeaveRequest[] = (otherData || []).map((item: OtherRequestItem) => ({
                 id: item.id,
                 leave_type: item.request_type,
                 start_date: item.request_date,
@@ -143,13 +152,13 @@ export default function MyRequestPage() {
                 reason: item.reason || "",
                 status: item.status,
                 created_at: item.created_at,
-                amount: item.amount,
+                amount: item.amount ?? undefined,
                 source_table: "other_requests"
             }));
 
             // Combine and sort by created_at
             const combined = [
-                ...(leaveData || []).map(item => ({ ...item, source_table: "leave_requests" })),
+                ...(leaveData || []).map((item: LeaveRequest & { source_table?: string }) => ({ ...item, source_table: "leave_requests" as const })),
                 ...transformedOtherData
             ].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
 
