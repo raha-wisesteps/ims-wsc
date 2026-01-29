@@ -4,15 +4,15 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
-import { Loader2, RefreshCw, Download } from "lucide-react";
+import { Loader2, RefreshCw, Download, ArrowLeft } from "lucide-react";
 
-// Request type config for display - aligned with my-request page
+// Request type config for display
 const REQUEST_TYPE_CONFIG: Record<string, { label: string; icon: string; color: string }> = {
     // Flexible Work
     wfh: { label: "WFH", icon: "🏠", color: "bg-purple-500" },
     wfa: { label: "WFA", icon: "📍", color: "bg-violet-500" },
 
-    // Leave types - all match /leave page (bg-emerald-500)
+    // Leave types
     annual_leave: { label: "Cuti Tahunan", icon: "🌴", color: "bg-emerald-500" },
     menstrual_leave: { label: "Cuti Haid", icon: "🩸", color: "bg-emerald-500" },
     maternity: { label: "Cuti Melahirkan", icon: "🤰", color: "bg-emerald-500" },
@@ -53,7 +53,7 @@ const REQUEST_TYPE_CONFIG: Record<string, { label: string; icon: string; color: 
     one_on_one: { label: "1-on-1", icon: "🗣️", color: "bg-pink-500" },
 };
 
-// Category mapping for filtering
+// Category mapping
 const CATEGORY_MAP: Record<string, string[]> = {
     izin_absensi: ["wfh", "wfa", "annual_leave", "sick_leave", "menstrual_leave", "maternity", "miscarriage", "self_marriage", "child_marriage", "paternity", "wife_miscarriage", "child_event", "family_death", "household_death", "sibling_death", "hajj", "government", "disaster", "other_permission"],
     tugas_lembur: ["overtime", "business_trip"],
@@ -85,9 +85,14 @@ interface HistoryRequest {
     };
 }
 
-export default function HistoryApprovalPage() {
-    const { canAccessCommandCenter } = useAuth();
+export default function HRRequestHistoryPage() {
+    const { profile, isLoading: authLoading } = useAuth();
     const supabase = createClient();
+
+    // RBAC
+    const isFullHR = profile?.role === 'hr' || profile?.role === 'ceo' || profile?.role === 'super_admin' || profile?.role === 'owner';
+    const isLimitedHR = profile?.is_hr === true;
+    const hasAccess = isFullHR || isLimitedHR;
 
     const [history, setHistory] = useState<HistoryRequest[]>([]);
     const [isLoading, setIsLoading] = useState(true);
@@ -96,6 +101,14 @@ export default function HistoryApprovalPage() {
     const [selectedStatus, setSelectedStatus] = useState<"all" | "approved" | "rejected">("all");
     const [selectedUser, setSelectedUser] = useState<string>("all");
     const [downloadingId, setDownloadingId] = useState<string | null>(null);
+
+    // Leave types that can be downloaded as Excel
+    const DOWNLOADABLE_LEAVE_TYPES = [
+        "annual_leave", "menstrual_leave", "maternity", "miscarriage",
+        "self_marriage", "child_marriage", "paternity", "wife_miscarriage",
+        "child_event", "family_death", "household_death", "sibling_death",
+        "hajj", "government", "disaster", "other_permission", "extra_leave"
+    ];
 
     // Fetch history data
     const fetchHistory = async () => {
@@ -127,7 +140,7 @@ export default function HistoryApprovalPage() {
 
             if (leaveError) throw leaveError;
 
-            // Fetch OTHER REQUESTS (new)
+            // Fetch OTHER REQUESTS
             const { data: otherData, error: otherError } = await supabase
                 .from("other_requests")
                 .select(`
@@ -193,10 +206,10 @@ export default function HistoryApprovalPage() {
     };
 
     useEffect(() => {
-        if (canAccessCommandCenter) {
+        if (hasAccess) {
             fetchHistory();
         }
-    }, [canAccessCommandCenter]);
+    }, [hasAccess]);
 
     // Get unique users for filter
     const uniqueUsers = [...new Map(history.map(h => [h.profile?.id, h.profile])).values()].filter(Boolean);
@@ -232,14 +245,6 @@ export default function HistoryApprovalPage() {
         return new Date(dateStr).toLocaleDateString("id-ID", { day: "numeric", month: "short", year: "numeric" });
     };
 
-    // Leave types that can be downloaded as Excel
-    const DOWNLOADABLE_LEAVE_TYPES = [
-        "annual_leave", "menstrual_leave", "maternity", "miscarriage",
-        "self_marriage", "child_marriage", "paternity", "wife_miscarriage",
-        "child_event", "family_death", "household_death", "sibling_death",
-        "hajj", "government", "disaster", "other_permission", "extra_leave"
-    ];
-
     // Handle Excel download
     const handleDownloadExcel = async (leaveRequestId: string) => {
         try {
@@ -270,13 +275,25 @@ export default function HistoryApprovalPage() {
         }
     };
 
+    // Loading state
+    if (authLoading) {
+        return (
+            <div className="flex items-center justify-center min-h-[50vh]">
+                <div className="w-8 h-8 border-4 border-[var(--primary)] border-t-transparent rounded-full animate-spin" />
+            </div>
+        );
+    }
+
     // Access check
-    if (!canAccessCommandCenter) {
+    if (!hasAccess) {
         return (
             <div className="flex flex-col items-center justify-center h-full text-center p-8">
                 <p className="text-4xl mb-4">🔒</p>
                 <h2 className="text-2xl font-bold mb-2">Access Denied</h2>
                 <p className="text-[var(--text-muted)]">Anda tidak memiliki akses ke halaman ini.</p>
+                <Link href="/dashboard/hr" className="mt-4 px-4 py-2 bg-[#e8c559] text-black rounded-lg font-bold hover:bg-[#d6b54e] transition-colors">
+                    Kembali ke HR
+                </Link>
             </div>
         );
     }
@@ -289,18 +306,16 @@ export default function HistoryApprovalPage() {
                     <div className="flex items-center gap-2 text-sm text-[var(--text-muted)] mb-1">
                         <Link href="/dashboard" className="hover:text-[#3f545f] dark:hover:text-[#e8c559]">Dashboard</Link>
                         <span>/</span>
-                        <Link href="/dashboard/command-center" className="hover:text-[#3f545f] dark:hover:text-[#e8c559]">Command Center</Link>
+                        <Link href="/dashboard/hr" className="hover:text-[#3f545f] dark:hover:text-[#e8c559]">HR</Link>
                         <span>/</span>
-                        <Link href="/dashboard/command-center/request-approval" className="hover:text-[#3f545f] dark:hover:text-[#e8c559]">Request Approval</Link>
-                        <span>/</span>
-                        <span className="text-[var(--text-primary)]">History</span>
+                        <span className="text-[var(--text-primary)]">Request History</span>
                     </div>
                     <div className="flex items-center gap-3">
-                        <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-[#3f545f] to-[#5f788e] dark:from-[#e8c559] dark:to-[#dcb33e] flex items-center justify-center text-2xl text-white dark:text-[#171611] shadow-lg">
+                        <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-blue-600 to-blue-800 flex items-center justify-center text-2xl text-white shadow-lg">
                             📜
                         </div>
                         <div>
-                            <h2 className="text-3xl font-bold tracking-tight text-[var(--text-primary)]">History Approval</h2>
+                            <h2 className="text-3xl font-bold tracking-tight text-[var(--text-primary)]">Request History</h2>
                             <p className="text-[var(--text-secondary)] text-sm">Riwayat request yang sudah diproses</p>
                         </div>
                     </div>
@@ -315,12 +330,10 @@ export default function HistoryApprovalPage() {
                         Refresh
                     </button>
                     <Link
-                        href="/dashboard/command-center/request-approval"
+                        href="/dashboard/hr"
                         className="px-4 py-2 rounded-lg bg-[var(--glass-bg)] hover:bg-[var(--glass-border)] text-[var(--text-secondary)] font-medium transition-colors flex items-center gap-2"
                     >
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 24 24" fill="currentColor">
-                            <path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z" />
-                        </svg>
+                        <ArrowLeft className="w-4 h-4" />
                         Kembali
                     </Link>
                 </div>

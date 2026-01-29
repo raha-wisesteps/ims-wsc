@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Calendar, ArrowLeft, Send, Loader2, ChevronDown, CheckCircle, XCircle, AlertCircle } from "lucide-react";
+import { Calendar, ArrowLeft, Send, Loader2, ChevronDown, CheckCircle, XCircle, AlertCircle, Download } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 
@@ -95,6 +95,7 @@ export default function IzinCutiPage() {
     const [error, setError] = useState<string | null>(null);
     const [history, setHistory] = useState<any[]>([]);
     const [isLoadingHistory, setIsLoadingHistory] = useState(true);
+    const [downloadingId, setDownloadingId] = useState<string | null>(null);
 
     // Fetch history
     useEffect(() => {
@@ -168,6 +169,38 @@ export default function IzinCutiPage() {
     };
 
     const requestedDays = calculateDays();
+
+    // Handle Excel download
+    const handleDownloadExcel = async (leaveRequestId: string) => {
+        try {
+            setDownloadingId(leaveRequestId);
+            const response = await fetch(`/api/generate-leave-excel?id=${leaveRequestId}`);
+
+            if (!response.ok) {
+                throw new Error("Failed to generate Excel");
+            }
+
+            const blob = await response.blob();
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement("a");
+            a.href = url;
+
+            // Get filename from Content-Disposition header or use default
+            const contentDisposition = response.headers.get("Content-Disposition");
+            const filenameMatch = contentDisposition?.match(/filename="(.+)"/);
+            a.download = filenameMatch ? filenameMatch[1] : "form_cuti.xlsx";
+
+            document.body.appendChild(a);
+            a.click();
+            window.URL.revokeObjectURL(url);
+            document.body.removeChild(a);
+        } catch (err) {
+            console.error("Download error:", err);
+            setError("Gagal mengunduh file Excel");
+        } finally {
+            setDownloadingId(null);
+        }
+    };
 
     // Auto-set end date for fixed-duration leaves
     const handleTypeChange = (typeId: string) => {
@@ -475,6 +508,21 @@ export default function IzinCutiPage() {
                                             {' • '}{h.reason}
                                         </p>
                                     </div>
+                                    {/* Download Button - only show for approved requests */}
+                                    {h.status === 'approved' && (
+                                        <button
+                                            onClick={() => handleDownloadExcel(h.id)}
+                                            disabled={downloadingId === h.id}
+                                            className="p-2 rounded-lg bg-[var(--glass-bg)] hover:bg-emerald-500/20 text-[var(--text-secondary)] hover:text-emerald-500 transition-colors disabled:opacity-50"
+                                            title="Download Form Cuti"
+                                        >
+                                            {downloadingId === h.id ? (
+                                                <Loader2 className="w-5 h-5 animate-spin" />
+                                            ) : (
+                                                <Download className="w-5 h-5" />
+                                            )}
+                                        </button>
+                                    )}
                                 </div>
                             );
                         })}

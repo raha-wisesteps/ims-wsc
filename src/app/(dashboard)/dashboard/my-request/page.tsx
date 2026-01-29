@@ -207,6 +207,53 @@ export default function MyRequestPage() {
         return new Date(dateStr).toLocaleDateString("id-ID", { day: "numeric", month: "short" });
     };
 
+    // Helper: Get dedicated page URL from leave_type
+    const getRequestPageUrl = (leaveType: string): string => {
+        // Flexible work types
+        if (["wfh", "wfa"].includes(leaveType)) {
+            return "/dashboard/my-request/flexible-work";
+        }
+        // Leave/permission types
+        if ([
+            "annual_leave", "menstrual_leave", "maternity", "miscarriage",
+            "self_marriage", "child_marriage", "paternity", "wife_miscarriage",
+            "child_event", "family_death", "household_death", "sibling_death",
+            "hajj", "government", "disaster", "other_permission", "extra_leave"
+        ].includes(leaveType)) {
+            return "/dashboard/my-request/leave";
+        }
+        // Sick leave
+        if (leaveType === "sick_leave") {
+            return "/dashboard/my-request/sakit";
+        }
+        // Business trip
+        if (leaveType === "business_trip") {
+            return "/dashboard/my-request/business-trip";
+        }
+        // Overtime
+        if (leaveType === "overtime") {
+            return "/dashboard/my-request/overtime";
+        }
+        // Training
+        if (leaveType === "training") {
+            return "/dashboard/my-request/training";
+        }
+        // Reimburse
+        if (leaveType === "reimburse") {
+            return "/dashboard/my-request/reimburse";
+        }
+        // Asset
+        if (leaveType === "asset") {
+            return "/dashboard/my-request/asset";
+        }
+        // 1-on-1 / Meeting
+        if (["meeting", "one_on_one", "1-on-1"].includes(leaveType)) {
+            return "/dashboard/my-request/one-on-one";
+        }
+        // Default fallback
+        return "/dashboard/my-request";
+    };
+
     return (
         <div className="flex flex-col h-full overflow-auto">
             {/* Page Header */}
@@ -596,8 +643,14 @@ export default function MyRequestPage() {
                                         </div>
                                     </div>
 
-                                    {/* Arrow */}
-                                    <ChevronRight className="w-5 h-5 text-[var(--text-muted)] flex-shrink-0" />
+                                    {/* Arrow - Navigate to dedicated page */}
+                                    <Link
+                                        href={getRequestPageUrl(request.leave_type)}
+                                        className="p-2 rounded-lg hover:bg-[var(--glass-border)] transition-colors flex-shrink-0"
+                                        title="Lihat detail"
+                                    >
+                                        <ChevronRight className="w-5 h-5 text-[var(--text-muted)]" />
+                                    </Link>
                                 </div>
                             );
                         })

@@ -1,6 +1,6 @@
 "use client";
 
-import { Users, UploadCloud, MessageSquare, LayoutDashboard, ArrowRight, Clock, ShieldAlert, Thermometer } from "lucide-react";
+import { Users, UploadCloud, MessageSquare, LayoutDashboard, ArrowRight, Clock, ShieldAlert, Thermometer, History } from "lucide-react";
 import Link from "next/link";
 import { useAuth } from "@/contexts/AuthContext";
 
@@ -43,6 +43,7 @@ export default function HRDashboardPage() {
         { href: "/dashboard/hr/attendance-history", icon: Clock, title: "Attendance History", desc: "Riwayat Absensi Karyawan", color: "indigo", action: "View Records" },
         { href: "/dashboard/hr/sick-reports", icon: Thermometer, title: "Laporan Sakit", desc: "Kelola Sick Reports", color: "rose", action: "View Reports" },
         { href: "/dashboard/hr/messages", icon: MessageSquare, title: "Message Center", desc: "Broadcast & Private Msg", color: "purple", action: "Send Updates" },
+        { href: "/dashboard/hr/request-history", icon: History, title: "Request History", desc: "Riwayat Request Karyawan", color: "blue", action: "View History" },
     ];
 
     return (
