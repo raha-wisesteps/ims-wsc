@@ -9,8 +9,9 @@ import {
     Building2, Home, Plane, Building, Stethoscope, FileText, Clock, MapPin,
     Calendar, Briefcase, ChevronRight, Plus, Bell, Megaphone, Trash2, Pencil, Check, X,
     CloudRain, CloudDrizzle, CloudLightning, Snowflake, Cloud,
-    ArrowRight, BookOpen, Globe, Umbrella, ClipboardList, LucideIcon, MessageSquare
+    ArrowRight, BookOpen, Globe, Umbrella, ClipboardList, LucideIcon, MessageSquare, GripVertical
 } from "lucide-react";
+import { Reorder } from "framer-motion";
 import StatusEditor from "./_components/StatusEditor";
 import TaskEditor from "./_components/TaskEditor";
 import { Button } from "@/components/ui/button";
@@ -76,6 +77,7 @@ export interface Task {
     project: string;
     priority: "high" | "medium" | "low";
     completed: boolean;
+    position?: number;
 }
 
 export interface TeamMember {
@@ -371,9 +373,14 @@ export default function DashboardPage() {
                 const { data: myTasks, error: tasksError } = await supabase
                     .from('daily_tasks')
                     .select('*')
-                    .eq('profile_id', profile.id);
+                    .eq('profile_id', profile.id)
+                    .order('position', { ascending: true })
+                    .order('id', { ascending: false });
 
-                if (tasksError) console.error("Error fetching tasks:", tasksError);
+                if (tasksError) {
+                    console.error("Error fetching tasks:", tasksError);
+                    console.error("Error details:", JSON.stringify(tasksError, null, 2));
+                }
                 else {
                     setDailyPlan(myTasks?.map((t: any) => ({
                         id: t.id,
@@ -483,6 +490,53 @@ export default function DashboardPage() {
     const [statusMessage, setStatusMessage] = useState("Building the future of IMS! 💻");
 
     const [dailyPlan, setDailyPlan] = useState<Task[]>([]);
+
+    const handleReorder = (newOrder: Task[]) => {
+        setDailyPlan(newOrder);
+    };
+
+    const handleDragEnd = async () => {
+        if (!profile) return;
+
+        // Create updates array with new positions
+        const updates = dailyPlan.map((task, index) => ({
+            id: task.id,
+            position: index,
+            // We need to provide other required fields if upserting, 
+            // but if we only update, we can use `upsert` with ignoreDuplicates? 
+            // Or better, just update the changed rows.
+            // Supabase upsert requires primary key.
+            // But to avoid validation errors on other fields if they are missing?
+            // "daily_tasks" usually allows partial updates via .update(), 
+            // but we need to update MULTIPLE rows. 
+            // Upsert is the way, but we must ensure we don't overwrite/erase other data if we don't pass it?
+            // Actually, we should fetch current data? No, too expensive.
+            // Best way: use RPC or map and promise.all update.
+            // For < 20 tasks, Promise.all is fine.
+        }));
+
+        try {
+            // Optimised: upsert with only id and position, assuming other fields are nullable or have defaults?
+            // No, update will fail if we upsert partial data and it tries to insert new?
+            // Since ID exists, it updates. But does it Nullify others?
+            // Postgres UPSERT UPDATE SET ... usually keeps values if not specified? 
+            // Supabase: "If the record exists, it will be updated." 
+            // "If you don't mention a column, it won't be changed" -> verify this.
+            // Actually, `upsert` REPLACES the row if not careful? No, it performs ON CONFLICT DO UPDATE.
+            // In Supabase js: .upsert({ id: 1, position: 5 }) -> updates position, other columns preserved?
+            // LET'S VERIFY: Standard SQL `INSERT ... ON CONFLICT DO UPDATE` requires specifying columns to update.
+            // Supabase JS `upsert` handles this?
+            // SAFEST OPTION: Promise.all with .update()
+
+            await Promise.all(updates.map(u =>
+                supabase.from('daily_tasks').update({ position: u.position }).eq('id', u.id)
+            ));
+
+            console.log("Order saved");
+        } catch (err) {
+            console.error("Failed to save order", err);
+        }
+    };
 
 
     // Workload Data State
@@ -1855,7 +1909,12 @@ export default function DashboardPage() {
                                         <TaskEditor onAddTask={addTask} />
 
                                         {/* Task List - Expanded & Larger - Fixed Height Scrollable */}
-                                        <div className="space-y-3 flex-1 overflow-y-auto h-[320px] max-h-[320px] pr-2 mt-4 custom-scrollbar">
+                                        <Reorder.Group
+                                            axis="y"
+                                            values={dailyPlan}
+                                            onReorder={handleReorder}
+                                            className="space-y-3 flex-1 overflow-y-auto h-[320px] max-h-[320px] pr-2 mt-4 custom-scrollbar"
+                                        >
                                             {dailyPlan.length === 0 ? (
                                                 <div className="text-center py-10 dark:text-white/30 text-black/30 flex flex-col items-center justify-center h-full">
                                                     <span className="text-4xl block mb-3 opacity-50">✨</span>
@@ -1864,8 +1923,10 @@ export default function DashboardPage() {
                                             ) : (
                                                 <>
                                                     {dailyPlan.map(task => (
-                                                        <div
+                                                        <Reorder.Item
                                                             key={task.id}
+                                                            value={task}
+                                                            onDragEnd={handleDragEnd}
                                                             onClick={() => {
                                                                 setDailyPlan(dailyPlan.map(t =>
                                                                     t.id === task.id ? { ...t, completed: !t.completed } : t
@@ -1908,12 +1969,12 @@ export default function DashboardPage() {
                                                             >
                                                                 <Trash2 className="h-4 w-4" />
                                                             </button>
-                                                        </div>
+                                                        </Reorder.Item>
                                                     ))}
                                                     {/* Filler div to ensure scroll for few items if height is fixed, but overflow-y-auto handles resizing automatically */}
                                                 </>
                                             )}
-                                        </div>
+                                        </Reorder.Group>
                                     </CardContent>
                                 </Card>
                             </div>
