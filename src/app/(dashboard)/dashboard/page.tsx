@@ -7,7 +7,7 @@ import {
     Sun, CloudSun, Sunset, Moon,
     Rocket, Star, Diamond, Heart, Users, Lightbulb, Zap, Gift, Target, CalendarDays, GlassWater, Smile,
     Building2, Home, Plane, Building, Stethoscope, FileText, Clock, MapPin,
-    Calendar, Briefcase, ChevronRight, Plus, Bell, Megaphone, Trash2, Pencil, Check, X,
+    Calendar, Briefcase, ChevronRight, ChevronLeft, Plus, Bell, Megaphone, Trash2, Pencil, Check, X,
     CloudRain, CloudDrizzle, CloudLightning, Snowflake, Cloud,
     ArrowRight, BookOpen, Globe, Umbrella, ClipboardList, LucideIcon, MessageSquare, GripVertical
 } from "lucide-react";
@@ -387,7 +387,7 @@ export default function DashboardPage() {
                         text: t.task_text,
                         project: "General",
                         priority: t.priority as "high" | "medium" | "low",
-                        completed: false // pending tasks are never completed in this new model
+                        completed: t.completed || false
                     })) || []);
                 }
 
@@ -417,7 +417,7 @@ export default function DashboardPage() {
                 // Fetch ALL team's tasks for display
                 const { data: allTeamTasks } = await supabase
                     .from('daily_tasks')
-                    .select('profile_id, task_text, priority');
+                    .select('profile_id, task_text, priority, completed');
 
                 const teamData: TeamMember[] = profiles?.map((p: any) => {
                     // Normalize status to lowercase for frontend logic compatibility
@@ -431,8 +431,8 @@ export default function DashboardPage() {
                     if (status === 'dinas') status = 'dinas'; // We might need to add 'dinas' to config or map to 'field'
                     // if (status === 'remote') status = 'wfh'; // Or keep distinct if we add 'remote' config
 
-                    // Use daily_tasks for this user
-                    const pTasks = allTeamTasks?.filter((t: any) => t.profile_id === p.id).slice(0, 3).map((t: any) => ({
+                    // Use daily_tasks for this user - Filter out completed tasks for team view
+                    const pTasks = allTeamTasks?.filter((t: any) => t.profile_id === p.id && !t.completed).slice(0, 3).map((t: any) => ({
                         name: t.task_text,
                         priority: t.priority
                     })) || [];
@@ -1255,21 +1255,23 @@ export default function DashboardPage() {
         return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
     }, []);
 
-    const toggleTask = async (id: number | string) => {
-        // Optimistic update: Remove from UI immediately upon completion
-        const taskIndex = dailyPlan.findIndex(t => t.id === id);
-        if (taskIndex === -1) return;
+    const handleToggleTask = async (id: number | string) => {
+        // Find task
+        const taskToToggle = dailyPlan.find(t => t.id === id);
+        if (!taskToToggle) return;
 
-        const taskToRemove = dailyPlan[taskIndex];
+        const newCompletedStatus = !taskToToggle.completed;
 
-        // Remove from local list (Optimistic)
-        setDailyPlan(prev => prev.filter(t => t.id !== id));
+        // Optimistic update
+        setDailyPlan(prev => prev.map(t =>
+            t.id === id ? { ...t, completed: newCompletedStatus } : t
+        ));
 
-        // Sync with DB (DELETE)
+        // Sync with DB
         try {
             const { error } = await supabase
                 .from('daily_tasks')
-                .delete()
+                .update({ completed: newCompletedStatus })
                 .eq('id', id);
 
             if (error) throw error;
@@ -1278,10 +1280,17 @@ export default function DashboardPage() {
             if (profile) {
                 setTeamStatuses(prev => prev.map(m => {
                     if (m.id === profile.id) {
-                        // Filter out removed task
+                        // If completed, remove from visible list in team activity. If unchecked, add back.
+                        // For simplicity, we just filter from current dailyPlan state which is already updated
+                        // But dailyPlan state update is async/batched.
+                        // Let's use the new status.
+                        const updatedTasks = dailyPlan.map(t =>
+                            t.id === id ? { ...t, completed: newCompletedStatus } : t
+                        ).filter(t => !t.completed).map(t => ({ name: t.text, priority: t.priority }));
+
                         return {
                             ...m,
-                            tasks: (m.tasks || []).filter(t => t.name !== taskToRemove.text)
+                            tasks: updatedTasks.slice(0, 3)
                         };
                     }
                     return m;
@@ -1289,12 +1298,17 @@ export default function DashboardPage() {
             }
 
         } catch (error) {
-            console.error("Error completing task:", error);
+            console.error("Error toggling task:", error);
             // Revert state if error
-            setDailyPlan(prev => [...prev, taskToRemove]);
-            alert("Failed to complete task");
+            setDailyPlan(prev => prev.map(t =>
+                t.id === id ? { ...t, completed: !taskToToggle.completed } : t
+            ));
+            alert("Failed to update task status");
         }
     };
+
+    const handlePrevSlide = () => setActiveSlide(prev => Math.max(0, prev - 1));
+    const handleNextSlide = () => setActiveSlide(prev => Math.min(2, prev + 1)); // Assuming 3 slides 0,1,2
 
     const addTask = async (text: string, priority: "high" | "medium" | "low") => {
         if (!profile) {
@@ -2198,10 +2212,9 @@ export default function DashboardPage() {
                                                             key={task.id}
                                                             value={task}
                                                             onDragEnd={handleDragEnd}
-                                                            onClick={() => {
-                                                                setDailyPlan(dailyPlan.map(t =>
-                                                                    t.id === task.id ? { ...t, completed: !t.completed } : t
-                                                                ));
+                                                            dragTransition={{ bounceStiffness: 300, bounceDamping: 30 }}
+                                                            onClick={(e) => {
+                                                                handleToggleTask(task.id);
                                                             }}
                                                             className={`flex items-center justify-between p-4 rounded-xl border transition-all cursor-pointer group ${task.completed
                                                                 ? 'bg-emerald-500/5 border-emerald-500/20 opacity-60 hover:opacity-100'
@@ -2441,6 +2454,24 @@ export default function DashboardPage() {
                     }
                 </div >
                 {/* End of Carousel Inner */}
+
+                {/* Navigation Arrows */}
+                <div className="absolute top-1/2 -translate-y-1/2 w-full flex justify-between px-2 pointer-events-none z-40">
+                    <button
+                        onClick={handlePrevSlide}
+                        className={`p-2 rounded-full bg-black/30 text-white backdrop-blur-md border border-white/10 hover:bg-black/50 transition-all pointer-events-auto ${activeSlide === 0 ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}
+                        aria-label="Previous slide"
+                    >
+                        <ChevronLeft className="w-6 h-6" />
+                    </button>
+                    <button
+                        onClick={handleNextSlide}
+                        className={`p-2 rounded-full bg-black/30 text-white backdrop-blur-md border border-white/10 hover:bg-black/50 transition-all pointer-events-auto ${activeSlide === 2 || (!isIntern && profile?.role !== 'ceo' && activeSlide === 2) || (isIntern && activeSlide === 1) ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}
+                        aria-label="Next slide"
+                    >
+                        <ChevronRight className="w-6 h-6" />
+                    </button>
+                </div>
 
                 {/* Dot Indicators - Inside Carousel Wrapper */}
                 <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-30 flex items-center gap-2">
@@ -2778,7 +2809,7 @@ export default function DashboardPage() {
                                         <input
                                             type="checkbox"
                                             checked={task.completed}
-                                            onChange={() => toggleTask(task.id)}
+                                            onChange={() => handleToggleTask(task.id)}
                                             className="h-5 w-5 rounded border-[var(--glass-border)] border-2 bg-transparent text-[#e8c559] checked:bg-[#e8c559] checked:border-[#e8c559] focus:ring-0"
                                         />
                                         <div className="flex-1">
