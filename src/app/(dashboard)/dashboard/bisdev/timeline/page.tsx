@@ -54,19 +54,19 @@ export default function CombinedTimelinePage() {
 
                 const combined: TimelineItem[] = [];
 
-                salesRes.data?.forEach(item => combined.push({
+                salesRes.data?.forEach((item: { id: string; project_name: string; company_name: string; start_date: string; end_date: string; progress: number }) => combined.push({
                     id: `sales-${item.id}`, name: item.project_name, company: item.company_name,
                     category: 'sales', start_date: item.start_date, end_date: item.end_date, progress: item.progress
                 }));
-                leadsRes.data?.forEach(item => combined.push({
+                leadsRes.data?.forEach((item: { id: string; company_name: string; start_date: string; end_date: string; progress: number }) => combined.push({
                     id: `leads-${item.id}`, name: item.company_name, company: item.company_name,
                     category: 'leads', start_date: item.start_date, end_date: item.end_date, progress: item.progress
                 }));
-                proposalsRes.data?.forEach(item => combined.push({
+                proposalsRes.data?.forEach((item: { id: string; proposal_title: string; company_name: string; start_date: string; end_date: string; progress: number }) => combined.push({
                     id: `proposals-${item.id}`, name: item.proposal_title, company: item.company_name,
                     category: 'proposals', start_date: item.start_date, end_date: item.end_date, progress: item.progress
                 }));
-                prospectsRes.data?.forEach(item => combined.push({
+                prospectsRes.data?.forEach((item: { id: string; company_name: string; start_date: string; end_date: string; progress: number }) => combined.push({
                     id: `prospects-${item.id}`, name: item.company_name, company: item.company_name,
                     category: 'prospects', start_date: item.start_date, end_date: item.end_date, progress: item.progress
                 }));

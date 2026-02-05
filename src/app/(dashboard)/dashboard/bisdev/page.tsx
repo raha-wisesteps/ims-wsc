@@ -45,7 +45,7 @@ export default function BisDevDashboardPage() {
                     .select('contract_value, status')
                     .in('status', ['running', 'paid', 'partial']);
 
-                const totalRevenue = salesData?.reduce((acc, item) => acc + (item.contract_value || 0), 0) || 0;
+                const totalRevenue = salesData?.reduce((acc: number, item: { contract_value: number | null }) => acc + (item.contract_value || 0), 0) || 0;
 
                 // Fetch proposals count (sent/negotiation)
                 const { count: proposalCount } = await supabase
@@ -80,9 +80,9 @@ export default function BisDevDashboardPage() {
                 ]);
 
                 const activities: Array<{ type: string; title: string; company: string; date: string }> = [];
-                latestSales.data?.forEach(s => activities.push({ type: 'sales', title: s.project_name, company: s.company_name, date: s.created_at }));
-                latestLeads.data?.forEach(l => activities.push({ type: 'lead', title: 'New Lead', company: l.company_name, date: l.created_at }));
-                latestProposals.data?.forEach(p => activities.push({ type: 'proposal', title: p.proposal_title, company: p.company_name, date: p.created_at }));
+                latestSales.data?.forEach((s: { project_name: string; company_name: string; created_at: string }) => activities.push({ type: 'sales', title: s.project_name, company: s.company_name, date: s.created_at }));
+                latestLeads.data?.forEach((l: { company_name: string; created_at: string }) => activities.push({ type: 'lead', title: 'New Lead', company: l.company_name, date: l.created_at }));
+                latestProposals.data?.forEach((p: { proposal_title: string; company_name: string; created_at: string }) => activities.push({ type: 'proposal', title: p.proposal_title, company: p.company_name, date: p.created_at }));
 
                 // Sort by date and take top 5
                 activities.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
@@ -314,8 +314,8 @@ export default function BisDevDashboardPage() {
                                 recentActivity.map((activity, idx) => (
                                     <div key={idx} className="relative pl-6 border-l-2 border-[var(--glass-border)]">
                                         <div className={`absolute -left-[5px] top-1 w-2 h-2 rounded-full ${activity.type === 'sales' ? 'bg-emerald-500' :
-                                                activity.type === 'lead' ? 'bg-blue-500' :
-                                                    'bg-purple-500'
+                                            activity.type === 'lead' ? 'bg-blue-500' :
+                                                'bg-purple-500'
                                             }`}></div>
                                         <p className="text-xs text-[var(--text-muted)] mb-0.5">{formatTimeAgo(activity.date)}</p>
                                         <p className="text-sm text-[var(--text-primary)] font-medium">{activity.title}</p>
