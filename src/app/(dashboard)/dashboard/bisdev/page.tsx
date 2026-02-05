@@ -1,46 +1,102 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import {
     LayoutDashboard,
-    Briefcase,
     FileText,
-    Users,
     TrendingUp,
     Target,
     ArrowRight,
-    Search,
     Bell,
-    ShieldAlert
+    ShieldAlert,
+    Users,
+    Calendar,
+    ChevronRight,
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
-
-// Mock Data for Summary
-const summaryStats = {
-    revenue: 450000000,
-    proposalsSent: 12,
-    conversionRate: 68,
-    hotLeads: 8,
-};
+import { createClient } from "@/lib/supabase/client";
 
 const formatCurrency = (value: number) => {
     return new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0 }).format(value);
 };
 
-// Mock Data for Revenue Chart
-const revenueData = [
-    { month: "Jul", amount: 320000000 },
-    { month: "Aug", amount: 350000000 },
-    { month: "Sep", amount: 280000000 },
-    { month: "Oct", amount: 420000000 },
-    { month: "Nov", amount: 380000000 },
-    { month: "Dec", amount: 450000000 },
-];
-
 export default function BisDevDashboardPage() {
     const { canAccessBisdev, isLoading } = useAuth();
-    const [selectedPeriod, setSelectedPeriod] = useState("year");
+    const supabase = createClient();
+
+    const [stats, setStats] = useState({
+        totalRevenue: 0,
+        proposalsSent: 0,
+        hotLeads: 0,
+        activeProspects: 0,
+    });
+    const [recentActivity, setRecentActivity] = useState<Array<{ type: string; title: string; company: string; date: string }>>([]);
+    const [isLoadingData, setIsLoadingData] = useState(true);
+
+    useEffect(() => {
+        const fetchStats = async () => {
+            if (!canAccessBisdev) return;
+
+            try {
+                // Fetch sales total (running/partial status)
+                const { data: salesData } = await supabase
+                    .from('bisdev_sales')
+                    .select('contract_value, status')
+                    .in('status', ['running', 'paid', 'partial']);
+
+                const totalRevenue = salesData?.reduce((acc, item) => acc + (item.contract_value || 0), 0) || 0;
+
+                // Fetch proposals count (sent/negotiation)
+                const { count: proposalCount } = await supabase
+                    .from('bisdev_proposals')
+                    .select('*', { count: 'exact', head: true })
+                    .in('status', ['sent', 'negotiation']);
+
+                // Fetch hot leads count
+                const { count: hotLeadsCount } = await supabase
+                    .from('bisdev_leads')
+                    .select('*', { count: 'exact', head: true })
+                    .eq('status', 'hot');
+
+                // Fetch active prospects
+                const { count: prospectsCount } = await supabase
+                    .from('bisdev_prospects')
+                    .select('*', { count: 'exact', head: true })
+                    .neq('status', 'not_interested');
+
+                setStats({
+                    totalRevenue,
+                    proposalsSent: proposalCount || 0,
+                    hotLeads: hotLeadsCount || 0,
+                    activeProspects: prospectsCount || 0,
+                });
+
+                // Fetch recent activity (latest items from all tables)
+                const [latestSales, latestLeads, latestProposals] = await Promise.all([
+                    supabase.from('bisdev_sales').select('project_name, company_name, created_at').order('created_at', { ascending: false }).limit(2),
+                    supabase.from('bisdev_leads').select('company_name, created_at').order('created_at', { ascending: false }).limit(2),
+                    supabase.from('bisdev_proposals').select('proposal_title, company_name, created_at').order('created_at', { ascending: false }).limit(2),
+                ]);
+
+                const activities: Array<{ type: string; title: string; company: string; date: string }> = [];
+                latestSales.data?.forEach(s => activities.push({ type: 'sales', title: s.project_name, company: s.company_name, date: s.created_at }));
+                latestLeads.data?.forEach(l => activities.push({ type: 'lead', title: 'New Lead', company: l.company_name, date: l.created_at }));
+                latestProposals.data?.forEach(p => activities.push({ type: 'proposal', title: p.proposal_title, company: p.company_name, date: p.created_at }));
+
+                // Sort by date and take top 5
+                activities.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+                setRecentActivity(activities.slice(0, 5));
+
+            } catch (error) {
+                console.error('Error fetching stats:', error);
+            } finally {
+                setIsLoadingData(false);
+            }
+        };
+
+        fetchStats();
+    }, [canAccessBisdev]);
 
     if (isLoading) {
         return (
@@ -67,99 +123,118 @@ export default function BisDevDashboardPage() {
         );
     }
 
+    const formatTimeAgo = (dateStr: string) => {
+        const date = new Date(dateStr);
+        const now = new Date();
+        const diffMs = now.getTime() - date.getTime();
+        const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+        const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+
+        if (diffHours < 1) return 'Just now';
+        if (diffHours < 24) return `${diffHours}h ago`;
+        if (diffDays === 1) return 'Yesterday';
+        return `${diffDays} days ago`;
+    };
+
     return (
         <div className="space-y-8 pb-20">
             {/* Header */}
-            <header className="flex flex-col gap-4 md:flex-row md:items-end justify-between">
-                <div className="flex items-center gap-3">
-                    <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-[#3f545f] to-[#5f788e] dark:from-[#e8c559] dark:to-[#dcb33e] flex items-center justify-center">
-                        <TrendingUp className="w-6 h-6 text-white dark:text-[#171611]" />
+            <header className="flex flex-col gap-4 md:flex-row md:items-center justify-between">
+                <div className="flex items-center gap-4">
+                    <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-[#e8c559] to-[#d4b44a] flex items-center justify-center shadow-lg shadow-[#e8c559]/20">
+                        <TrendingUp className="w-6 h-6 text-[#171611]" />
                     </div>
                     <div>
-                        <h1 className="text-2xl font-bold text-[var(--text-primary)]">Business Dev</h1>
+                        <div className="flex items-center gap-2 mb-1 text-sm text-[var(--text-secondary)]">
+                            <Link href="/dashboard" className="hover:text-[var(--text-primary)] transition-colors">Dashboard</Link>
+                            <ChevronRight className="h-4 w-4" />
+                            <span className="text-[var(--text-primary)]">Bisdev</span>
+                        </div>
+                        <h1 className="text-2xl font-bold text-[var(--text-primary)]">Business Development</h1>
                         <p className="text-sm text-[var(--text-secondary)]">Growth, Sales Pipeline & Revenue</p>
                     </div>
                 </div>
-                <div className="flex items-center gap-3">
-                    <select
-                        value={selectedPeriod}
-                        onChange={(e) => setSelectedPeriod(e.target.value)}
-                        className="px-4 py-2 rounded-lg bg-white/5 border border-white/10 text-white text-sm focus:border-blue-500 outline-none"
-                    >
-                        <option value="month">This Month</option>
-                        <option value="quarter">This Quarter</option>
-                        <option value="year">This Year</option>
-                    </select>
-                </div>
+                {/* Timeline Quick Action */}
+                <Link
+                    href="/dashboard/bisdev/timeline"
+                    className="flex items-center gap-2 px-5 py-3 rounded-xl bg-gradient-to-r from-[#e8c559] to-[#d4b44a] text-[#171611] font-bold shadow-lg shadow-[#e8c559]/20 hover:shadow-xl hover:shadow-[#e8c559]/30 transition-all"
+                >
+                    <Calendar className="w-5 h-5" />
+                    <span>View Timeline</span>
+                    <ArrowRight className="w-4 h-4" />
+                </Link>
             </header>
 
-            {/* Overview Stats Grid */}
+            {/* Stats Cards */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                 {/* Total Revenue */}
-                <div className="glass-panel p-5 rounded-xl border-l-4 border-emerald-500">
+                <div className="p-5 rounded-2xl bg-white dark:bg-[#1c2120] border border-[var(--glass-border)] border-l-4 border-l-emerald-500">
                     <div className="flex justify-between items-start mb-2">
-                        <p className="text-xs text-gray-500 uppercase tracking-wider">Total Revenue</p>
+                        <p className="text-xs text-[var(--text-muted)] uppercase tracking-wider">Total Revenue</p>
                         <TrendingUp className="w-4 h-4 text-emerald-500" />
                     </div>
-                    <p className="text-3xl font-black text-white">{formatCurrency(summaryStats.revenue)}</p>
-                    <p className="text-xs text-gray-400 mt-1 flex items-center gap-1">
-                        <span className="text-emerald-400 font-bold">+12%</span> vs last month
+                    <p className="text-2xl font-black text-[var(--text-primary)]">
+                        {isLoadingData ? '...' : formatCurrency(stats.totalRevenue)}
                     </p>
+                    <p className="text-xs text-[var(--text-muted)] mt-1">From active contracts</p>
                 </div>
 
-                {/* Proposals Sent */}
-                <div className="glass-panel p-5 rounded-xl border-l-4 border-blue-500">
+                {/* Proposals */}
+                <div className="p-5 rounded-2xl bg-white dark:bg-[#1c2120] border border-[var(--glass-border)] border-l-4 border-l-blue-500">
                     <div className="flex justify-between items-start mb-2">
-                        <p className="text-xs text-gray-500 uppercase tracking-wider">Proposals</p>
+                        <p className="text-xs text-[var(--text-muted)] uppercase tracking-wider">Active Proposals</p>
                         <FileText className="w-4 h-4 text-blue-500" />
                     </div>
-                    <p className="text-3xl font-black text-white">{summaryStats.proposalsSent}</p>
-                    <p className="text-xs text-gray-400 mt-1">Sent this month</p>
-                </div>
-
-                {/* Conversion Rate */}
-                <div className="glass-panel p-5 rounded-xl border-l-4 border-[#e8c559]">
-                    <div className="flex justify-between items-start mb-2">
-                        <p className="text-xs text-gray-500 uppercase tracking-wider">Win Rate</p>
-                        <Target className="w-4 h-4 text-[#e8c559]" />
-                    </div>
-                    <p className="text-3xl font-black text-white">{summaryStats.conversionRate}%</p>
-                    <p className="text-xs text-emerald-400 mt-1 flex items-center gap-1">
-                        <span className="text-emerald-400 font-bold">+5%</span> vs last quarter
+                    <p className="text-2xl font-black text-[var(--text-primary)]">
+                        {isLoadingData ? '...' : stats.proposalsSent}
                     </p>
+                    <p className="text-xs text-[var(--text-muted)] mt-1">Sent & in negotiation</p>
                 </div>
 
                 {/* Hot Leads */}
-                <div className="glass-panel p-5 rounded-xl border-l-4 border-rose-500">
+                <div className="p-5 rounded-2xl bg-white dark:bg-[#1c2120] border border-[var(--glass-border)] border-l-4 border-l-rose-500">
                     <div className="flex justify-between items-start mb-2">
-                        <p className="text-xs text-gray-500 uppercase tracking-wider">Hot Leads</p>
+                        <p className="text-xs text-[var(--text-muted)] uppercase tracking-wider">Hot Leads</p>
                         <Bell className="w-4 h-4 text-rose-500" />
                     </div>
-                    <p className="text-3xl font-black text-white">{summaryStats.hotLeads}</p>
-                    <p className="text-xs text-rose-400 mt-1">Require immediate follow-up</p>
+                    <p className="text-2xl font-black text-[var(--text-primary)]">
+                        {isLoadingData ? '...' : stats.hotLeads}
+                    </p>
+                    <p className="text-xs text-rose-500 mt-1">Require immediate action</p>
+                </div>
+
+                {/* Active Prospects */}
+                <div className="p-5 rounded-2xl bg-white dark:bg-[#1c2120] border border-[var(--glass-border)] border-l-4 border-l-cyan-500">
+                    <div className="flex justify-between items-start mb-2">
+                        <p className="text-xs text-[var(--text-muted)] uppercase tracking-wider">Prospects</p>
+                        <Target className="w-4 h-4 text-cyan-500" />
+                    </div>
+                    <p className="text-2xl font-black text-[var(--text-primary)]">
+                        {isLoadingData ? '...' : stats.activeProspects}
+                    </p>
+                    <p className="text-xs text-[var(--text-muted)] mt-1">Active potential clients</p>
                 </div>
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                {/* Main Content: Quick Actions & Charts */}
+                {/* Main Content */}
                 <div className="lg:col-span-2 space-y-6">
-                    {/* Quick Actions Group */}
-                    <h2 className="text-xl font-bold text-white flex items-center gap-2">
+                    <h2 className="text-xl font-bold text-[var(--text-primary)] flex items-center gap-2">
                         <LayoutDashboard className="w-5 h-5 text-blue-500" /> Quick Actions
                     </h2>
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <Link
                             href="/dashboard/bisdev/sales"
-                            className="glass-panel p-6 rounded-xl border border-white/10 hover:border-emerald-500 group transition-all"
+                            className="p-6 rounded-2xl bg-white dark:bg-[#1c2120] border border-[var(--glass-border)] hover:border-emerald-500 group transition-all"
                         >
                             <div className="flex items-center gap-4 mb-4">
                                 <div className="p-3 rounded-full bg-emerald-500/20 text-emerald-500">
                                     <TrendingUp className="w-6 h-6" />
                                 </div>
                                 <div>
-                                    <h3 className="font-bold text-lg text-white group-hover:text-emerald-500 transition-colors">Sales Pipeline</h3>
-                                    <p className="text-sm text-gray-400">Track Active Contracts</p>
+                                    <h3 className="font-bold text-lg text-[var(--text-primary)] group-hover:text-emerald-500 transition-colors">Sales</h3>
+                                    <p className="text-sm text-[var(--text-secondary)]">Track contracts</p>
                                 </div>
                             </div>
                             <div className="flex items-center gap-2 text-sm text-emerald-500 font-medium">
@@ -169,134 +244,102 @@ export default function BisDevDashboardPage() {
 
                         <Link
                             href="/dashboard/bisdev/leads"
-                            className="glass-panel p-6 rounded-xl border border-white/10 hover:border-rose-500 group transition-all"
+                            className="p-6 rounded-2xl bg-white dark:bg-[#1c2120] border border-[var(--glass-border)] hover:border-blue-500 group transition-all"
                         >
                             <div className="flex items-center gap-4 mb-4">
-                                <div className="p-3 rounded-full bg-rose-500/20 text-rose-500">
-                                    <Target className="w-6 h-6" />
+                                <div className="p-3 rounded-full bg-blue-500/20 text-blue-500">
+                                    <Users className="w-6 h-6" />
                                 </div>
                                 <div>
-                                    <h3 className="font-bold text-lg text-white group-hover:text-rose-500 transition-colors">Lead Management</h3>
-                                    <p className="text-sm text-gray-400">Manage Prospects</p>
+                                    <h3 className="font-bold text-lg text-[var(--text-primary)] group-hover:text-blue-500 transition-colors">Leads</h3>
+                                    <p className="text-sm text-[var(--text-secondary)]">Manage prospects</p>
                                 </div>
                             </div>
-                            <div className="flex items-center gap-2 text-sm text-rose-500 font-medium">
+                            <div className="flex items-center gap-2 text-sm text-blue-500 font-medium">
                                 View Leads <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
                             </div>
                         </Link>
 
                         <Link
                             href="/dashboard/bisdev/proposals"
-                            className="glass-panel p-6 rounded-xl border border-white/10 hover:border-amber-500 group transition-all"
+                            className="p-6 rounded-2xl bg-white dark:bg-[#1c2120] border border-[var(--glass-border)] hover:border-purple-500 group transition-all"
                         >
                             <div className="flex items-center gap-4 mb-4">
-                                <div className="p-3 rounded-full bg-amber-500/20 text-amber-500">
+                                <div className="p-3 rounded-full bg-purple-500/20 text-purple-500">
                                     <FileText className="w-6 h-6" />
                                 </div>
                                 <div>
-                                    <h3 className="font-bold text-lg text-white group-hover:text-amber-500 transition-colors">Proposals</h3>
-                                    <p className="text-sm text-gray-400">Drafts & Contracts</p>
+                                    <h3 className="font-bold text-lg text-[var(--text-primary)] group-hover:text-purple-500 transition-colors">Proposals</h3>
+                                    <p className="text-sm text-[var(--text-secondary)]">Drafts & contracts</p>
                                 </div>
                             </div>
-                            <div className="flex items-center gap-2 text-sm text-amber-500 font-medium">
-                                Create Proposal <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+                            <div className="flex items-center gap-2 text-sm text-purple-500 font-medium">
+                                View Proposals <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
                             </div>
                         </Link>
 
                         <Link
                             href="/dashboard/bisdev/prospects"
-                            className="glass-panel p-6 rounded-xl border border-white/10 hover:border-purple-500 group transition-all"
+                            className="p-6 rounded-2xl bg-white dark:bg-[#1c2120] border border-[var(--glass-border)] hover:border-cyan-500 group transition-all"
                         >
                             <div className="flex items-center gap-4 mb-4">
-                                <div className="p-3 rounded-full bg-purple-500/20 text-purple-500">
-                                    <Search className="w-6 h-6" />
+                                <div className="p-3 rounded-full bg-cyan-500/20 text-cyan-500">
+                                    <Target className="w-6 h-6" />
                                 </div>
                                 <div>
-                                    <h3 className="font-bold text-lg text-white group-hover:text-purple-500 transition-colors">Market Research</h3>
-                                    <p className="text-sm text-gray-400">Analyze Prospects</p>
+                                    <h3 className="font-bold text-lg text-[var(--text-primary)] group-hover:text-cyan-500 transition-colors">Prospects</h3>
+                                    <p className="text-sm text-[var(--text-secondary)]">Market research</p>
                                 </div>
                             </div>
-                            <div className="flex items-center gap-2 text-sm text-purple-500 font-medium">
-                                Find Prospects <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+                            <div className="flex items-center gap-2 text-sm text-cyan-500 font-medium">
+                                View Prospects <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
                             </div>
                         </Link>
-                    </div>
-
-                    {/* Revenue Trend Chart */}
-                    <div className="glass-panel p-6 rounded-xl border border-white/10">
-                        <div className="flex items-center justify-between mb-6">
-                            <h3 className="font-bold text-white">Revenue Trend</h3>
-                            <Link href="/dashboard/bisdev/sales" className="text-xs text-blue-500 hover:underline">
-                                Detailed Report →
-                            </Link>
-                        </div>
-                        <div className="h-48 flex items-end justify-between gap-4">
-                            {revenueData.map((item, idx) => (
-                                <div key={idx} className="flex-1 flex flex-col items-center gap-2 group">
-                                    <div className="w-full bg-white/5 rounded-t-lg relative h-40 overflow-hidden flex items-end">
-                                        <div
-                                            className="w-full bg-gradient-to-t from-blue-600 to-blue-400 opacity-80 group-hover:opacity-100 transition-opacity"
-                                            style={{ height: `${(item.amount / 500000000) * 100}%` }}
-                                        ></div>
-                                    </div>
-                                    <span className="text-xs text-gray-500">{item.month}</span>
-                                </div>
-                            ))}
-                        </div>
                     </div>
                 </div>
 
                 {/* Right Sidebar */}
                 <div className="space-y-6">
-                    <h2 className="text-xl font-bold text-white flex items-center gap-2">
+                    <h2 className="text-xl font-bold text-[var(--text-primary)] flex items-center gap-2">
                         <Bell className="w-5 h-5 text-[#e8c559]" /> Recent Activity
                     </h2>
 
-                    <div className="glass-panel p-6 rounded-xl border border-white/10">
-                        <div className="space-y-6">
-                            <div className="relative pl-6 border-l-2 border-white/10">
-                                <div className="absolute -left-[9px] top-0 w-4 h-4 rounded-full bg-emerald-500 animate-pulse"></div>
-                                <p className="text-xs text-gray-400 mb-1">Today, 10:30 AM</p>
-                                <p className="text-sm text-white font-medium">Proposal Signed</p>
-                                <p className="text-xs text-gray-500">PT Maju Mundur approved the "Digital Transformation" proposal.</p>
-                            </div>
-                            <div className="relative pl-6 border-l-2 border-white/10">
-                                <div className="absolute -left-[5px] top-0 w-2 h-2 rounded-full bg-blue-500"></div>
-                                <p className="text-xs text-gray-400 mb-1">Yesterday, 14:00 PM</p>
-                                <p className="text-sm text-white font-medium">New Lead Added</p>
-                                <p className="text-xs text-gray-500">Contacted by CV Sejahtera regarding HR Audit.</p>
-                            </div>
-                            <div className="relative pl-6 border-l-2 border-white/10">
-                                <div className="absolute -left-[5px] top-0 w-2 h-2 rounded-full bg-[#e8c559]"></div>
-                                <p className="text-xs text-gray-400 mb-1">2 days ago</p>
-                                <p className="text-sm text-white font-medium">Meeting Schedule</p>
-                                <p className="text-xs text-gray-500">Lunch meeting with Pak Budi (Dinas Pariwisata).</p>
-                            </div>
+                    <div className="p-6 rounded-2xl bg-white dark:bg-[#1c2120] border border-[var(--glass-border)]">
+                        <div className="space-y-4">
+                            {isLoadingData ? (
+                                <div className="text-center text-[var(--text-muted)]">Loading...</div>
+                            ) : recentActivity.length === 0 ? (
+                                <div className="text-center text-[var(--text-muted)]">No recent activity</div>
+                            ) : (
+                                recentActivity.map((activity, idx) => (
+                                    <div key={idx} className="relative pl-6 border-l-2 border-[var(--glass-border)]">
+                                        <div className={`absolute -left-[5px] top-1 w-2 h-2 rounded-full ${activity.type === 'sales' ? 'bg-emerald-500' :
+                                                activity.type === 'lead' ? 'bg-blue-500' :
+                                                    'bg-purple-500'
+                                            }`}></div>
+                                        <p className="text-xs text-[var(--text-muted)] mb-0.5">{formatTimeAgo(activity.date)}</p>
+                                        <p className="text-sm text-[var(--text-primary)] font-medium">{activity.title}</p>
+                                        <p className="text-xs text-[var(--text-secondary)]">{activity.company}</p>
+                                    </div>
+                                ))
+                            )}
                         </div>
                     </div>
 
-                    <div className="glass-panel p-6 rounded-xl bg-gradient-to-b from-rose-500/10 to-transparent border border-rose-500/20">
-                        <h3 className="font-bold text-rose-500 mb-4">🔥 Hot Leads</h3>
-                        <div className="space-y-3">
-                            {[1, 2, 3].map((_, i) => (
-                                <div key={i} className="flex items-center justify-between p-3 rounded-lg bg-white/5 hover:bg-white/10 cursor-pointer">
-                                    <div className="flex items-center gap-3">
-                                        <div className="w-8 h-8 rounded-full bg-rose-500/20 flex items-center justify-center text-xs font-bold text-rose-500">
-                                            HL
-                                        </div>
-                                        <div>
-                                            <p className="text-sm font-bold text-white">Client #{i + 140}</p>
-                                            <p className="text-xs text-gray-400">Tourism Project</p>
-                                        </div>
-                                    </div>
-                                    <ArrowRight className="w-4 h-4 text-gray-500" />
-                                </div>
-                            ))}
-                            <Link href="/dashboard/bisdev/leads" className="block text-center text-xs text-rose-400 mt-2 hover:underline">
-                                View all Leads →
-                            </Link>
+                    {/* Timeline CTA */}
+                    <Link
+                        href="/dashboard/bisdev/timeline"
+                        className="block p-6 rounded-2xl bg-gradient-to-br from-[#e8c559]/20 to-[#e8c559]/5 border border-[#e8c559]/30 hover:border-[#e8c559] transition-all group"
+                    >
+                        <div className="flex items-center gap-3 mb-3">
+                            <Calendar className="w-6 h-6 text-[#e8c559]" />
+                            <h3 className="font-bold text-[var(--text-primary)]">Business Timeline</h3>
                         </div>
-                    </div>
+                        <p className="text-sm text-[var(--text-secondary)] mb-3">View all activities in a Gantt chart</p>
+                        <div className="flex items-center gap-2 text-sm text-[#e8c559] font-medium">
+                            Open Timeline <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+                        </div>
+                    </Link>
                 </div>
             </div>
         </div>

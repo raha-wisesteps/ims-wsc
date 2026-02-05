@@ -2212,7 +2212,9 @@ export default function DashboardPage() {
                                                             key={task.id}
                                                             value={task}
                                                             onDragEnd={handleDragEnd}
-                                                            dragTransition={{ bounceStiffness: 300, bounceDamping: 30 }}
+                                                            dragTransition={{ bounceStiffness: 600, bounceDamping: 20 }}
+                                                            whileDrag={{ scale: 1.02, boxShadow: "0 8px 20px rgba(0,0,0,0.15)", cursor: "grabbing" }}
+                                                            layout
                                                             onClick={(e) => {
                                                                 handleToggleTask(task.id);
                                                             }}

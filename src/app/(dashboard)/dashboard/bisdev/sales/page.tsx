@@ -1,306 +1,718 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useMemo } from "react";
+import Link from "next/link";
+import { createClient } from "@/lib/supabase/client";
+import { useAuth } from "@/contexts/AuthContext";
+import {
+    TrendingUp,
+    ChevronRight,
+    LayoutGrid,
+    List,
+    Plus,
+    X,
+    Calendar,
+    Trash2,
+    Edit3,
+    Clock,
+    Eye,
+    GripVertical,
+} from "lucide-react";
 
-interface SalesData {
-    id: number;
-    no: number;
-    tahunBulan: string;
-    perusahaan: string;
-    namaProyek: string;
-    tipe: string;
-    nilaiKontrak: number;
-    cashIn: number;
-    totalAR: number;
-    estimasiLunas: string;
-    pic: string;
-    posisi: string;
-    kontak: string;
-    status: string;
-    wscSales: string;
+// Jira and Drive icons as SVGs
+const JiraIcon = () => (
+    <svg viewBox="0 0 24 24" className="w-4 h-4" fill="currentColor">
+        <path d="M11.571 11.513H0a5.218 5.218 0 0 0 5.232 5.215h2.13v2.057A5.215 5.215 0 0 0 12.575 24V12.518a1.005 1.005 0 0 0-1.005-1.005zm5.723-5.756H5.736a5.215 5.215 0 0 0 5.215 5.214h2.129v2.058a5.218 5.218 0 0 0 5.215 5.214V6.758a1.001 1.001 0 0 0-1.001-1.001zM23.013 0H11.455a5.215 5.215 0 0 0 5.215 5.215h2.129v2.057A5.215 5.215 0 0 0 24 12.483V1.005A1.005 1.005 0 0 0 23.013 0z" />
+    </svg>
+);
+
+const DriveIcon = () => (
+    <svg viewBox="0 0 24 24" className="w-4 h-4" fill="currentColor">
+        <path d="M4.433 22.396l4-6.929H24l-4 6.929H4.433zm3.566-6.929l-3.998 6.929L0 15.467 7.785 1.98l3.999 6.931-3.785 6.556zm15.784-.001H7.784L11.783 8.91h15.999l-3.999 6.556z" />
+    </svg>
+);
+
+// Status configurations
+const STATUS_CONFIG = {
+    running: { label: "Running", bgClass: "bg-blue-500/10", textClass: "text-blue-600 dark:text-blue-400", barClass: "bg-blue-500" },
+    partial: { label: "Partial", bgClass: "bg-amber-500/10", textClass: "text-amber-600 dark:text-amber-400", barClass: "bg-amber-500" },
+    paid: { label: "Paid", bgClass: "bg-emerald-500/10", textClass: "text-emerald-600 dark:text-emerald-400", barClass: "bg-emerald-500" },
+    unpaid: { label: "Unpaid", bgClass: "bg-rose-500/10", textClass: "text-rose-600 dark:text-rose-400", barClass: "bg-rose-500" },
+};
+
+type SalesStatus = keyof typeof STATUS_CONFIG;
+
+interface SalesItem {
+    id: string;
+    project_name: string;
+    company_name: string;
+    pic_name: string | null;
+    pic_position: string | null;
+    pic_contact: string | null;
+    contract_value: number;
+    contract_start: string | null;
+    contract_end: string | null;
+    status: SalesStatus;
+    sales_person: string | null;
+    jira_link: string | null;
+    drive_link: string | null;
+    start_date: string | null;
+    end_date: string | null;
+    progress: number;
+    notes: string | null;
+    created_at: string;
+    created_by: string;
+    sales_person_name?: string;
 }
 
-const mockSalesData: SalesData[] = [
-    {
-        id: 1,
-        no: 1,
-        tahunBulan: "2024-01",
-        perusahaan: "PT Maju Sejahtera",
-        namaProyek: "Digital Transformation",
-        tipe: "Project",
-        nilaiKontrak: 250000000,
-        cashIn: 100000000,
-        totalAR: 150000000,
-        estimasiLunas: "2024-03-31",
-        pic: "Budi Santoso",
-        posisi: "IT Manager",
-        kontak: "08123456789",
-        status: "Running",
-        wscSales: "Rega"
-    },
-    {
-        id: 2,
-        no: 2,
-        tahunBulan: "2024-02",
-        perusahaan: "CV Berkah Abadi",
-        namaProyek: "Website Redesign",
-        tipe: "Project",
-        nilaiKontrak: 75000000,
-        cashIn: 75000000,
-        totalAR: 0,
-        estimasiLunas: "-",
-        pic: "Siti Rahma",
-        posisi: "Marketing Lead",
-        kontak: "08198765432",
-        status: "Paid",
-        wscSales: "Rega"
-    },
-    {
-        id: 3,
-        no: 3,
-        tahunBulan: "2024-02",
-        perusahaan: "PT Global Tech",
-        namaProyek: "IT Consultation",
-        tipe: "Retainer",
-        nilaiKontrak: 15000000,
-        cashIn: 15000000,
-        totalAR: 0,
-        estimasiLunas: "-",
-        pic: "John Doe",
-        posisi: "CTO",
-        kontak: "08122334455",
-        status: "Paid",
-        wscSales: "Rahadian"
-    },
-    {
-        id: 4,
-        no: 4,
-        tahunBulan: "2024-03",
-        perusahaan: "Koperasi Unit Desa",
-        namaProyek: "System ERP",
-        tipe: "Project",
-        nilaiKontrak: 120000000,
-        cashIn: 36000000,
-        totalAR: 84000000,
-        estimasiLunas: "2024-06-30",
-        pic: "Haji Ahmad",
-        posisi: "Ketua",
-        kontak: "08567890123",
-        status: "Partial",
-        wscSales: "Rega"
-    },
-    {
-        id: 5,
-        no: 5,
-        tahunBulan: "2024-03",
-        perusahaan: "Startup Kita",
-        namaProyek: "Mobile App Dev",
-        tipe: "Project",
-        nilaiKontrak: 180000000,
-        cashIn: 54000000,
-        totalAR: 126000000,
-        estimasiLunas: "2024-05-15",
-        pic: "Kevin",
-        posisi: "Product Owner",
-        kontak: "0811223344",
-        status: "Running",
-        wscSales: "Rahadian"
-    }
-];
-
 const formatCurrency = (value: number) => {
-    return new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0 }).format(value);
+    return new Intl.NumberFormat('id-ID', {
+        style: 'currency',
+        currency: 'IDR',
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 0,
+    }).format(value);
 };
 
 export default function SalesPage() {
-    const [data, setData] = useState<SalesData[]>(mockSalesData);
+    const supabase = createClient();
+    const { profile, canAccessBisdev, isLoading: authLoading } = useAuth();
+
+    const [salesData, setSalesData] = useState<SalesItem[]>([]);
+    const [isLoading, setIsLoading] = useState(true);
+    const [viewMode, setViewMode] = useState<"board" | "list">("board");
     const [showForm, setShowForm] = useState(false);
-    const [formData, setFormData] = useState<Partial<SalesData>>({});
+    const [editingItem, setEditingItem] = useState<SalesItem | null>(null);
+    const [detailItem, setDetailItem] = useState<SalesItem | null>(null);
+    const [draggedItem, setDraggedItem] = useState<SalesItem | null>(null);
+    const [dragOverStatus, setDragOverStatus] = useState<SalesStatus | null>(null);
 
-    const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
-        const { name, value } = e.target;
-        setFormData(prev => ({ ...prev, [name]: value }));
+    // Check if user has full access (can delete)
+    const hasFullAccess = useMemo(() => {
+        if (!profile) return false;
+        return profile.job_type === 'bisdev' || profile.role === 'ceo' || profile.role === 'super_admin';
+    }, [profile]);
+
+    // Fetch sales data
+    const fetchSalesData = async () => {
+        try {
+            const { data, error } = await supabase
+                .from('bisdev_sales')
+                .select(`
+                    *,
+                    sales_person_profile:profiles!sales_person(full_name)
+                `)
+                .order('created_at', { ascending: false });
+
+            if (error) throw error;
+
+            const formattedData = data?.map((item: any) => ({
+                ...item,
+                sales_person_name: item.sales_person_profile?.full_name || null,
+            })) || [];
+
+            setSalesData(formattedData);
+        } catch (error) {
+            console.error('Error fetching sales data:', error);
+        } finally {
+            setIsLoading(false);
+        }
     };
 
-    const handleSubmit = (e: React.FormEvent) => {
+    useEffect(() => {
+        if (canAccessBisdev) {
+            fetchSalesData();
+        }
+    }, [canAccessBisdev]);
+
+    // Handle status change (for both quick update and drag-drop)
+    const handleStatusChange = async (id: string, newStatus: SalesStatus) => {
+        try {
+            const { error } = await supabase
+                .from('bisdev_sales')
+                .update({ status: newStatus, updated_at: new Date().toISOString() })
+                .eq('id', id);
+
+            if (error) throw error;
+
+            setSalesData(prev => prev.map(item =>
+                item.id === id ? { ...item, status: newStatus } : item
+            ));
+        } catch (error) {
+            console.error('Error updating status:', error);
+        }
+    };
+
+    // Drag and Drop handlers
+    const handleDragStart = (e: React.DragEvent, item: SalesItem) => {
+        setDraggedItem(item);
+        e.dataTransfer.effectAllowed = 'move';
+        e.dataTransfer.setData('text/plain', item.id);
+    };
+
+    const handleDragEnd = () => {
+        setDraggedItem(null);
+        setDragOverStatus(null);
+    };
+
+    const handleDragOver = (e: React.DragEvent, status: SalesStatus) => {
         e.preventDefault();
-        const newEntry: SalesData = {
-            id: Date.now(),
-            no: data.length + 1,
-            tahunBulan: formData.tahunBulan || "",
-            perusahaan: formData.perusahaan || "",
-            namaProyek: formData.namaProyek || "",
-            tipe: formData.tipe || "",
-            nilaiKontrak: Number(formData.nilaiKontrak) || 0,
-            cashIn: Number(formData.cashIn) || 0,
-            totalAR: Number(formData.totalAR) || 0,
-            estimasiLunas: formData.estimasiLunas || "",
-            pic: formData.pic || "",
-            posisi: formData.posisi || "",
-            kontak: formData.kontak || "",
-            status: formData.status || "Pending",
-            wscSales: formData.wscSales || "",
-        };
-        setData([...data, newEntry]);
-        setShowForm(false);
-        setFormData({});
+        e.dataTransfer.dropEffect = 'move';
+        setDragOverStatus(status);
     };
+
+    const handleDragLeave = () => {
+        setDragOverStatus(null);
+    };
+
+    const handleDrop = async (e: React.DragEvent, newStatus: SalesStatus) => {
+        e.preventDefault();
+        setDragOverStatus(null);
+
+        if (draggedItem && draggedItem.status !== newStatus) {
+            await handleStatusChange(draggedItem.id, newStatus);
+        }
+        setDraggedItem(null);
+    };
+
+    // Handle delete
+    const handleDelete = async (id: string) => {
+        if (!confirm('Yakin ingin menghapus data ini?')) return;
+
+        try {
+            const { error } = await supabase
+                .from('bisdev_sales')
+                .delete()
+                .eq('id', id);
+
+            if (error) throw error;
+            setSalesData(prev => prev.filter(item => item.id !== id));
+        } catch (error) {
+            console.error('Error deleting:', error);
+        }
+    };
+
+    // Handle form submit
+    const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+        e.preventDefault();
+        const formData = new FormData(e.currentTarget);
+
+        const payload = {
+            project_name: formData.get('project_name') as string,
+            company_name: formData.get('company_name') as string,
+            pic_name: formData.get('pic_name') as string || null,
+            pic_position: formData.get('pic_position') as string || null,
+            pic_contact: formData.get('pic_contact') as string || null,
+            contract_value: parseFloat(formData.get('contract_value') as string) || 0,
+            contract_start: formData.get('contract_start') as string || null,
+            contract_end: formData.get('contract_end') as string || null,
+            status: formData.get('status') as SalesStatus,
+            jira_link: formData.get('jira_link') as string || null,
+            drive_link: formData.get('drive_link') as string || null,
+            start_date: formData.get('start_date') as string || null,
+            end_date: formData.get('end_date') as string || null,
+            progress: parseInt(formData.get('progress') as string) || 0,
+            notes: formData.get('notes') as string || null,
+            created_by: profile?.id,
+            updated_at: new Date().toISOString(),
+        };
+
+        try {
+            if (editingItem) {
+                const { error } = await supabase
+                    .from('bisdev_sales')
+                    .update(payload)
+                    .eq('id', editingItem.id);
+                if (error) throw error;
+            } else {
+                const { error } = await supabase
+                    .from('bisdev_sales')
+                    .insert([payload]);
+                if (error) throw error;
+            }
+
+            setShowForm(false);
+            setEditingItem(null);
+            fetchSalesData();
+        } catch (error) {
+            console.error('Error saving:', error);
+            alert('Gagal menyimpan data');
+        }
+    };
+
+    // Group by status for board view
+    const groupedByStatus = useMemo(() => {
+        const grouped: Record<SalesStatus, SalesItem[]> = {
+            running: [],
+            partial: [],
+            paid: [],
+            unpaid: [],
+        };
+        salesData.forEach(item => {
+            if (grouped[item.status]) {
+                grouped[item.status].push(item);
+            }
+        });
+        return grouped;
+    }, [salesData]);
+
+    if (authLoading || isLoading) {
+        return (
+            <div className="flex items-center justify-center h-64">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#e8c559]"></div>
+            </div>
+        );
+    }
+
+    if (!canAccessBisdev) {
+        return (
+            <div className="flex flex-col items-center justify-center h-64 text-center">
+                <div className="text-6xl mb-4">🔒</div>
+                <h2 className="text-2xl font-bold text-[var(--text-primary)] mb-2">Access Denied</h2>
+                <p className="text-[var(--text-secondary)]">Anda tidak memiliki akses ke halaman ini.</p>
+            </div>
+        );
+    }
 
     return (
-        <div className="flex flex-col gap-6">
-            <div className="flex items-center justify-between">
-                <div>
-                    <h1 className="text-2xl font-bold text-white">Sales Tracker</h1>
-                    <p className="text-sm text-gray-400">Manage contracts and revenue tracking</p>
+        <div className="flex flex-col h-full">
+            {/* Header */}
+            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
+                <div className="flex items-center gap-4">
+                    <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-emerald-500 to-emerald-600 flex items-center justify-center shadow-lg shadow-emerald-500/20">
+                        <TrendingUp className="h-6 w-6 text-white" />
+                    </div>
+                    <div>
+                        <div className="flex items-center gap-2 mb-1 text-sm text-[var(--text-secondary)]">
+                            <Link href="/dashboard" className="hover:text-[var(--text-primary)] transition-colors">Dashboard</Link>
+                            <ChevronRight className="h-4 w-4" />
+                            <Link href="/dashboard/bisdev" className="hover:text-[var(--text-primary)] transition-colors">Bisdev</Link>
+                            <ChevronRight className="h-4 w-4" />
+                            <span className="text-[var(--text-primary)]">Sales</span>
+                        </div>
+                        <h1 className="text-2xl font-bold text-[var(--text-primary)]">Sales Pipeline</h1>
+                        <p className="text-sm text-[var(--text-secondary)]">Track and manage sales contracts</p>
+                    </div>
                 </div>
-                <button
-                    onClick={() => setShowForm(true)}
-                    className="bg-[#e8c559] hover:bg-[#d4a843] text-[#171611] px-4 py-2 rounded-lg font-bold transition-colors shadow-lg"
-                >
-                    + Add New Sales
-                </button>
+
+                <div className="flex items-center gap-3">
+                    <Link
+                        href="/dashboard/bisdev/sales/timeline"
+                        className="flex items-center gap-2 px-4 py-2 rounded-lg border border-[var(--glass-border)] bg-[var(--glass-bg)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--glass-bg-hover)] transition-all"
+                    >
+                        <Calendar className="h-4 w-4" />
+                        <span className="text-sm font-medium">Timeline</span>
+                    </Link>
+
+                    <div className="flex rounded-lg bg-[var(--glass-bg)] p-1 border border-[var(--glass-border)]">
+                        <button
+                            onClick={() => setViewMode("board")}
+                            className={`p-2 rounded-md transition-all ${viewMode === "board" ? "bg-[#e8c559] text-[#171611]" : "text-[var(--text-secondary)] hover:text-[var(--text-primary)]"}`}
+                        >
+                            <LayoutGrid className="h-4 w-4" />
+                        </button>
+                        <button
+                            onClick={() => setViewMode("list")}
+                            className={`p-2 rounded-md transition-all ${viewMode === "list" ? "bg-[#e8c559] text-[#171611]" : "text-[var(--text-secondary)] hover:text-[var(--text-primary)]"}`}
+                        >
+                            <List className="h-4 w-4" />
+                        </button>
+                    </div>
+
+                    <button
+                        onClick={() => { setEditingItem(null); setShowForm(true); }}
+                        className="flex items-center gap-2 px-4 py-2 rounded-lg bg-gradient-to-r from-[#e8c559] to-[#d4b44a] text-[#171611] font-semibold hover:shadow-lg hover:shadow-[#e8c559]/20 transition-all"
+                    >
+                        <Plus className="h-4 w-4" />
+                        <span>Tambah</span>
+                    </button>
+                </div>
             </div>
 
-            {/* Table */}
-            <div className="glass-panel rounded-xl overflow-hidden overflow-x-auto shadow-xl border border-white/5">
-                <table className="w-full text-left border-collapse">
-                    <thead>
-                        <tr className="bg-black/40 text-xs text-gray-400 uppercase border-b border-white/10">
-                            <th className="p-4 text-center w-12 font-semibold">No</th>
-                            <th className="p-4 font-semibold">Tahun/Bulan</th>
-                            <th className="p-4 font-semibold">Perusahaan</th>
-                            <th className="p-4 font-semibold">Nama Proyek</th>
-                            <th className="p-4 font-semibold">Tipe</th>
-                            <th className="p-4 text-right font-semibold">Nilai Kontrak</th>
-                            <th className="p-4 text-right font-semibold">Cash In</th>
-                            <th className="p-4 text-right font-semibold">Total AR</th>
-                            <th className="p-4 font-semibold">Est. Lunas</th>
-                            <th className="p-4 font-semibold">PIC</th>
-                            <th className="p-4 font-semibold">Posisi</th>
-                            <th className="p-4 font-semibold">Kontak</th>
-                            <th className="p-4 font-semibold">Status</th>
-                            <th className="p-4 font-semibold">WSC Sales</th>
-                        </tr>
-                    </thead>
-                    <tbody className="divide-y divide-white/5 text-sm bg-black/20">
-                        {data.length === 0 ? (
-                            <tr>
-                                <td colSpan={14} className="p-8 text-center text-gray-500">
-                                    No data available. Click "Add New Sales" to insert data.
-                                </td>
-                            </tr>
-                        ) : (
-                            data.map((item) => (
-                                <tr key={item.id} className="hover:bg-white/5 transition-colors group">
-                                    <td className="p-4 text-center text-gray-400 group-hover:text-white transition-colors">{item.no}</td>
-                                    <td className="p-4 text-gray-300 group-hover:text-white transition-colors">{item.tahunBulan}</td>
-                                    <td className="p-4 text-white font-bold">{item.perusahaan}</td>
-                                    <td className="p-4 text-gray-300">{item.namaProyek}</td>
-                                    <td className="p-4 text-gray-400">
-                                        <span className="px-2 py-0.5 rounded text-xs border border-white/10 bg-white/5">{item.tipe}</span>
-                                    </td>
-                                    <td className="p-4 text-right text-emerald-400 font-bold tracking-tight">{formatCurrency(item.nilaiKontrak)}</td>
-                                    <td className="p-4 text-right text-sky-400 font-medium">{formatCurrency(item.cashIn)}</td>
-                                    <td className="p-4 text-right text-rose-400 font-medium">{formatCurrency(item.totalAR)}</td>
-                                    <td className="p-4 text-gray-400">{item.estimasiLunas}</td>
-                                    <td className="p-4 text-white">{item.pic}</td>
-                                    <td className="p-4 text-gray-400">{item.posisi}</td>
-                                    <td className="p-4 text-gray-400">{item.kontak}</td>
-                                    <td className="p-4">
-                                        <span className={`px-2 py-1 rounded text-xs font-bold border ${item.status === 'Paid' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' :
-                                                item.status === 'Partial' ? 'bg-sky-500/10 text-sky-400 border-sky-500/20' :
-                                                    item.status === 'Running' ? 'bg-amber-500/10 text-amber-400 border-amber-500/20' :
-                                                        'bg-gray-500/10 text-gray-400 border-gray-500/20'
-                                            }`}>
-                                            {item.status}
-                                        </span>
-                                    </td>
-                                    <td className="p-4 text-[#e8c559] font-medium">{item.wscSales}</td>
+            {/* Drag hint */}
+            {viewMode === "board" && (
+                <div className="mb-4 p-3 rounded-lg bg-blue-500/10 border border-blue-500/20">
+                    <p className="text-sm text-blue-600 dark:text-blue-400 flex items-center gap-2">
+                        <GripVertical className="h-4 w-4" />
+                        Tip: Drag kartu untuk mengubah status dengan cepat
+                    </p>
+                </div>
+            )}
+
+            {/* Board View */}
+            {viewMode === "board" && (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 flex-1">
+                    {(Object.keys(STATUS_CONFIG) as SalesStatus[]).map((status) => (
+                        <div
+                            key={status}
+                            className="flex flex-col"
+                            onDragOver={(e) => handleDragOver(e, status)}
+                            onDragLeave={handleDragLeave}
+                            onDrop={(e) => handleDrop(e, status)}
+                        >
+                            {/* Column Header */}
+                            <div className={`flex items-center gap-2 p-3 rounded-t-xl ${STATUS_CONFIG[status].bgClass} border-b-2 ${STATUS_CONFIG[status].barClass.replace('bg-', 'border-')}`}>
+                                <span className={`text-sm font-bold ${STATUS_CONFIG[status].textClass}`}>
+                                    {STATUS_CONFIG[status].label}
+                                </span>
+                                <span className={`text-xs px-2 py-0.5 rounded-full ${STATUS_CONFIG[status].bgClass} ${STATUS_CONFIG[status].textClass}`}>
+                                    {groupedByStatus[status].length}
+                                </span>
+                            </div>
+
+                            {/* Drop Zone */}
+                            <div className={`flex-1 space-y-3 p-3 rounded-b-xl min-h-[200px] transition-all ${dragOverStatus === status
+                                    ? 'bg-blue-500/20 border-2 border-dashed border-blue-500'
+                                    : 'bg-black/5 dark:bg-white/5'
+                                }`}>
+                                {groupedByStatus[status].map((item) => (
+                                    <div
+                                        key={item.id}
+                                        draggable
+                                        onDragStart={(e) => handleDragStart(e, item)}
+                                        onDragEnd={handleDragEnd}
+                                        className={`p-4 rounded-xl bg-white dark:bg-[#1c2120] border border-[var(--glass-border)] shadow-sm hover:shadow-md transition-all group cursor-grab active:cursor-grabbing ${draggedItem?.id === item.id ? 'opacity-50 scale-95' : ''
+                                            }`}
+                                    >
+                                        <div className="flex items-start justify-between mb-2">
+                                            <h4 className="font-bold text-[var(--text-primary)] text-sm line-clamp-2">{item.project_name}</h4>
+                                            <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                {/* Eye icon for detail */}
+                                                <button
+                                                    onClick={() => setDetailItem(item)}
+                                                    className="p-1 rounded hover:bg-blue-500/10"
+                                                    title="Lihat Detail"
+                                                >
+                                                    <Eye className="h-3 w-3 text-blue-500" />
+                                                </button>
+                                                <button
+                                                    onClick={() => { setEditingItem(item); setShowForm(true); }}
+                                                    className="p-1 rounded hover:bg-black/10 dark:hover:bg-white/10"
+                                                >
+                                                    <Edit3 className="h-3 w-3 text-[var(--text-secondary)]" />
+                                                </button>
+                                                {hasFullAccess && (
+                                                    <button
+                                                        onClick={() => handleDelete(item.id)}
+                                                        className="p-1 rounded hover:bg-rose-500/10"
+                                                    >
+                                                        <Trash2 className="h-3 w-3 text-rose-500" />
+                                                    </button>
+                                                )}
+                                            </div>
+                                        </div>
+                                        <p className="text-xs text-[var(--text-secondary)] mb-1">{item.company_name}</p>
+                                        <p className="text-sm font-semibold text-[#e8c559] mb-3">{formatCurrency(item.contract_value)}</p>
+
+                                        {/* Progress Bar */}
+                                        {item.progress > 0 && (
+                                            <div className="mb-3">
+                                                <div className="flex justify-between text-xs text-[var(--text-secondary)] mb-1">
+                                                    <span>Progress</span>
+                                                    <span>{item.progress}%</span>
+                                                </div>
+                                                <div className="h-1.5 bg-black/10 dark:bg-white/10 rounded-full overflow-hidden">
+                                                    <div className={`h-full ${STATUS_CONFIG[status].barClass}`} style={{ width: `${item.progress}%` }}></div>
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {/* Links */}
+                                        <div className="flex items-center gap-2">
+                                            {item.jira_link && (
+                                                <a href={item.jira_link} target="_blank" rel="noopener noreferrer" className="p-1.5 rounded-lg bg-blue-500/10 text-blue-600 hover:bg-blue-500/20 transition-colors" title="Open Jira">
+                                                    <JiraIcon />
+                                                </a>
+                                            )}
+                                            {item.drive_link && (
+                                                <a href={item.drive_link} target="_blank" rel="noopener noreferrer" className="p-1.5 rounded-lg bg-green-500/10 text-green-600 hover:bg-green-500/20 transition-colors" title="Open Drive">
+                                                    <DriveIcon />
+                                                </a>
+                                            )}
+                                            {item.contract_end && (
+                                                <span className="text-xs text-[var(--text-muted)] flex items-center gap-1 ml-auto">
+                                                    <Clock className="h-3 w-3" />
+                                                    {new Date(item.contract_end).toLocaleDateString('id-ID', { day: 'numeric', month: 'short' })}
+                                                </span>
+                                            )}
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            )}
+
+            {/* List View */}
+            {viewMode === "list" && (
+                <div className="rounded-2xl border border-[var(--glass-border)] bg-white dark:bg-[#1c2120] overflow-hidden">
+                    <div className="overflow-x-auto">
+                        <table className="w-full">
+                            <thead>
+                                <tr className="border-b border-[var(--glass-border)] bg-black/5 dark:bg-white/5">
+                                    <th className="text-left p-4 text-xs font-bold text-[var(--text-muted)] uppercase">Project</th>
+                                    <th className="text-left p-4 text-xs font-bold text-[var(--text-muted)] uppercase">Company</th>
+                                    <th className="text-right p-4 text-xs font-bold text-[var(--text-muted)] uppercase">Value</th>
+                                    <th className="text-center p-4 text-xs font-bold text-[var(--text-muted)] uppercase">Status</th>
+                                    <th className="text-center p-4 text-xs font-bold text-[var(--text-muted)] uppercase">Links</th>
+                                    <th className="text-center p-4 text-xs font-bold text-[var(--text-muted)] uppercase">Aksi</th>
                                 </tr>
-                            ))
-                        )}
-                    </tbody>
-                </table>
-            </div>
+                            </thead>
+                            <tbody className="divide-y divide-[var(--glass-border)]">
+                                {salesData.map((item) => (
+                                    <tr key={item.id} className="hover:bg-black/5 dark:hover:bg-white/5 transition-colors">
+                                        <td className="p-4 text-sm text-[var(--text-primary)] font-medium">{item.project_name}</td>
+                                        <td className="p-4 text-sm text-[var(--text-secondary)]">{item.company_name}</td>
+                                        <td className="p-4 text-sm text-[#e8c559] font-semibold text-right">{formatCurrency(item.contract_value)}</td>
+                                        <td className="p-4">
+                                            <div className="flex justify-center">
+                                                <select
+                                                    value={item.status}
+                                                    onChange={(e) => handleStatusChange(item.id, e.target.value as SalesStatus)}
+                                                    className={`text-xs font-bold px-3 py-1.5 rounded-full border-0 cursor-pointer ${STATUS_CONFIG[item.status].bgClass} ${STATUS_CONFIG[item.status].textClass}`}
+                                                >
+                                                    {(Object.keys(STATUS_CONFIG) as SalesStatus[]).map((s) => (
+                                                        <option key={s} value={s}>{STATUS_CONFIG[s].label}</option>
+                                                    ))}
+                                                </select>
+                                            </div>
+                                        </td>
+                                        <td className="p-4">
+                                            <div className="flex items-center justify-center gap-2">
+                                                {item.jira_link && (
+                                                    <a href={item.jira_link} target="_blank" rel="noopener noreferrer" className="p-1.5 rounded-lg bg-blue-500/10 text-blue-600 hover:bg-blue-500/20">
+                                                        <JiraIcon />
+                                                    </a>
+                                                )}
+                                                {item.drive_link && (
+                                                    <a href={item.drive_link} target="_blank" rel="noopener noreferrer" className="p-1.5 rounded-lg bg-green-500/10 text-green-600 hover:bg-green-500/20">
+                                                        <DriveIcon />
+                                                    </a>
+                                                )}
+                                            </div>
+                                        </td>
+                                        <td className="p-4">
+                                            <div className="flex items-center justify-center gap-2">
+                                                <button onClick={() => setDetailItem(item)} className="p-2 rounded-lg hover:bg-blue-500/10" title="Lihat Detail">
+                                                    <Eye className="h-4 w-4 text-blue-500" />
+                                                </button>
+                                                <button onClick={() => { setEditingItem(item); setShowForm(true); }} className="p-2 rounded-lg hover:bg-black/10 dark:hover:bg-white/10">
+                                                    <Edit3 className="h-4 w-4 text-[var(--text-secondary)]" />
+                                                </button>
+                                                {hasFullAccess && (
+                                                    <button onClick={() => handleDelete(item.id)} className="p-2 rounded-lg hover:bg-rose-500/10">
+                                                        <Trash2 className="h-4 w-4 text-rose-500" />
+                                                    </button>
+                                                )}
+                                            </div>
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            )}
 
-            {/* Modal Form */}
-            {showForm && (
-                <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-in fade-in duration-200">
-                    <div className="glass-panel rounded-2xl p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto border border-white/10 shadow-2xl">
-                        <div className="flex justify-between items-center mb-6 border-b border-white/10 pb-4">
-                            <h2 className="text-xl font-bold text-white">Add New Sales</h2>
-                            <button onClick={() => setShowForm(false)} className="text-gray-400 hover:text-white p-1 rounded-lg hover:bg-white/10 transition-colors">
-                                <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                                </svg>
+            {/* Detail Modal */}
+            {detailItem && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4" onClick={() => setDetailItem(null)}>
+                    <div className="w-full max-w-2xl bg-white dark:bg-[#1c2120] rounded-2xl shadow-2xl" onClick={(e) => e.stopPropagation()}>
+                        <div className="flex items-center justify-between p-6 border-b border-[var(--glass-border)]">
+                            <div>
+                                <h2 className="text-xl font-bold text-[var(--text-primary)]">{detailItem.project_name}</h2>
+                                <p className="text-sm text-[var(--text-secondary)]">{detailItem.company_name}</p>
+                            </div>
+                            <button onClick={() => setDetailItem(null)} className="p-2 rounded-lg hover:bg-black/10 dark:hover:bg-white/10">
+                                <X className="h-5 w-5 text-[var(--text-secondary)]" />
                             </button>
                         </div>
-                        <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                            <div className="space-y-1.5">
-                                <label className="text-xs font-medium text-gray-400 uppercase tracking-wide">Tahun/Bulan</label>
-                                <input name="tahunBulan" type="month" required onChange={handleInputChange} className="w-full bg-black/40 border border-white/10 rounded-lg p-2.5 text-white focus:border-[#e8c559] focus:ring-1 focus:ring-[#e8c559] outline-none transition-all" />
+
+                        <div className="p-6 space-y-6">
+                            {/* Status & Value */}
+                            <div className="flex items-center gap-4">
+                                <span className={`px-4 py-2 rounded-full text-sm font-bold ${STATUS_CONFIG[detailItem.status].bgClass} ${STATUS_CONFIG[detailItem.status].textClass}`}>
+                                    {STATUS_CONFIG[detailItem.status].label}
+                                </span>
+                                <span className="text-2xl font-bold text-[#e8c559]">{formatCurrency(detailItem.contract_value)}</span>
                             </div>
-                            <div className="space-y-1.5">
-                                <label className="text-xs font-medium text-gray-400 uppercase tracking-wide">Perusahaan</label>
-                                <input name="perusahaan" type="text" required onChange={handleInputChange} className="w-full bg-black/40 border border-white/10 rounded-lg p-2.5 text-white focus:border-[#e8c559] focus:ring-1 focus:ring-[#e8c559] outline-none transition-all" />
+
+                            {/* PIC Info */}
+                            {detailItem.pic_name && (
+                                <div className="p-4 rounded-xl bg-black/5 dark:bg-white/5">
+                                    <h4 className="text-xs font-bold text-[var(--text-muted)] uppercase mb-2">PIC Information</h4>
+                                    <p className="font-bold text-[var(--text-primary)]">{detailItem.pic_name}</p>
+                                    {detailItem.pic_position && <p className="text-sm text-[var(--text-secondary)]">{detailItem.pic_position}</p>}
+                                    {detailItem.pic_contact && <p className="text-sm text-[var(--text-muted)]">{detailItem.pic_contact}</p>}
+                                </div>
+                            )}
+
+                            {/* Contract Period */}
+                            <div className="grid grid-cols-2 gap-4">
+                                <div className="p-4 rounded-xl bg-black/5 dark:bg-white/5">
+                                    <h4 className="text-xs font-bold text-[var(--text-muted)] uppercase mb-1">Contract Start</h4>
+                                    <p className="font-medium text-[var(--text-primary)]">
+                                        {detailItem.contract_start ? new Date(detailItem.contract_start).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' }) : '-'}
+                                    </p>
+                                </div>
+                                <div className="p-4 rounded-xl bg-black/5 dark:bg-white/5">
+                                    <h4 className="text-xs font-bold text-[var(--text-muted)] uppercase mb-1">Contract End</h4>
+                                    <p className="font-medium text-[var(--text-primary)]">
+                                        {detailItem.contract_end ? new Date(detailItem.contract_end).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' }) : '-'}
+                                    </p>
+                                </div>
                             </div>
-                            <div className="space-y-1.5">
-                                <label className="text-xs font-medium text-gray-400 uppercase tracking-wide">Nama Proyek</label>
-                                <input name="namaProyek" type="text" required onChange={handleInputChange} className="w-full bg-black/40 border border-white/10 rounded-lg p-2.5 text-white focus:border-[#e8c559] focus:ring-1 focus:ring-[#e8c559] outline-none transition-all" />
+
+                            {/* Progress */}
+                            <div>
+                                <h4 className="text-xs font-bold text-[var(--text-muted)] uppercase mb-2">Progress</h4>
+                                <div className="flex items-center gap-4">
+                                    <div className="flex-1 h-3 bg-black/10 dark:bg-white/10 rounded-full overflow-hidden">
+                                        <div className={`h-full ${STATUS_CONFIG[detailItem.status].barClass}`} style={{ width: `${detailItem.progress}%` }}></div>
+                                    </div>
+                                    <span className="text-lg font-bold text-[var(--text-primary)]">{detailItem.progress}%</span>
+                                </div>
                             </div>
-                            <div className="space-y-1.5">
-                                <label className="text-xs font-medium text-gray-400 uppercase tracking-wide">Tipe</label>
-                                <select name="tipe" onChange={handleInputChange} className="w-full bg-black/40 border border-white/10 rounded-lg p-2.5 text-white focus:border-[#e8c559] focus:ring-1 focus:ring-[#e8c559] outline-none transition-all">
-                                    <option value="">Select Type</option>
-                                    <option value="Project">Project</option>
-                                    <option value="Retainer">Retainer</option>
-                                    <option value="Ad-hoc">Ad-hoc</option>
-                                </select>
+
+                            {/* Notes */}
+                            {detailItem.notes && (
+                                <div>
+                                    <h4 className="text-xs font-bold text-[var(--text-muted)] uppercase mb-2">Notes</h4>
+                                    <p className="text-sm text-[var(--text-secondary)]">{detailItem.notes}</p>
+                                </div>
+                            )}
+
+                            {/* Links */}
+                            <div className="flex items-center gap-3">
+                                {detailItem.jira_link && (
+                                    <a href={detailItem.jira_link} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-500/10 text-blue-600 hover:bg-blue-500/20 transition-colors">
+                                        <JiraIcon /> Open Jira
+                                    </a>
+                                )}
+                                {detailItem.drive_link && (
+                                    <a href={detailItem.drive_link} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 px-4 py-2 rounded-lg bg-green-500/10 text-green-600 hover:bg-green-500/20 transition-colors">
+                                        <DriveIcon /> Open Drive
+                                    </a>
+                                )}
                             </div>
-                            <div className="space-y-1.5">
-                                <label className="text-xs font-medium text-gray-400 uppercase tracking-wide">Nilai Kontrak</label>
-                                <input name="nilaiKontrak" type="number" onChange={handleInputChange} className="w-full bg-black/40 border border-white/10 rounded-lg p-2.5 text-white focus:border-[#e8c559] focus:ring-1 focus:ring-[#e8c559] outline-none transition-all" />
+                        </div>
+
+                        <div className="flex justify-end gap-3 p-6 border-t border-[var(--glass-border)]">
+                            <button
+                                onClick={() => { setDetailItem(null); setEditingItem(detailItem); setShowForm(true); }}
+                                className="px-4 py-2 rounded-lg bg-gradient-to-r from-[#e8c559] to-[#d4b44a] text-[#171611] font-semibold"
+                            >
+                                Edit
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Form Modal */}
+            {showForm && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+                    <div className="w-full max-w-2xl max-h-[90vh] overflow-y-auto bg-white dark:bg-[#1c2120] rounded-2xl shadow-2xl">
+                        <div className="sticky top-0 z-10 flex items-center justify-between p-6 border-b border-[var(--glass-border)] bg-white dark:bg-[#1c2120]">
+                            <h2 className="text-xl font-bold text-[var(--text-primary)]">
+                                {editingItem ? 'Edit Sales' : 'Tambah Sales'}
+                            </h2>
+                            <button onClick={() => { setShowForm(false); setEditingItem(null); }} className="p-2 rounded-lg hover:bg-black/10 dark:hover:bg-white/10">
+                                <X className="h-5 w-5 text-[var(--text-secondary)]" />
+                            </button>
+                        </div>
+
+                        <form onSubmit={handleSubmit} className="p-6 space-y-4">
+                            <div>
+                                <label className="block text-sm font-medium text-[var(--text-secondary)] mb-1">Nama Project *</label>
+                                <input type="text" name="project_name" defaultValue={editingItem?.project_name || ''} required className="w-full px-4 py-2 rounded-lg border border-[var(--glass-border)] bg-transparent text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-[#e8c559]" />
                             </div>
-                            <div className="space-y-1.5">
-                                <label className="text-xs font-medium text-gray-400 uppercase tracking-wide">Cash In Revenue</label>
-                                <input name="cashIn" type="number" onChange={handleInputChange} className="w-full bg-black/40 border border-white/10 rounded-lg p-2.5 text-white focus:border-[#e8c559] focus:ring-1 focus:ring-[#e8c559] outline-none transition-all" />
+
+                            <div>
+                                <label className="block text-sm font-medium text-[var(--text-secondary)] mb-1">Nama Perusahaan *</label>
+                                <input type="text" name="company_name" defaultValue={editingItem?.company_name || ''} required className="w-full px-4 py-2 rounded-lg border border-[var(--glass-border)] bg-transparent text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-[#e8c559]" />
                             </div>
-                            <div className="space-y-1.5">
-                                <label className="text-xs font-medium text-gray-400 uppercase tracking-wide">Total AR</label>
-                                <input name="totalAR" type="number" onChange={handleInputChange} className="w-full bg-black/40 border border-white/10 rounded-lg p-2.5 text-white focus:border-[#e8c559] focus:ring-1 focus:ring-[#e8c559] outline-none transition-all" />
+
+                            <div className="grid grid-cols-3 gap-4">
+                                <div>
+                                    <label className="block text-sm font-medium text-[var(--text-secondary)] mb-1">PIC Name</label>
+                                    <input type="text" name="pic_name" defaultValue={editingItem?.pic_name || ''} className="w-full px-4 py-2 rounded-lg border border-[var(--glass-border)] bg-transparent text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-[#e8c559]" />
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-[var(--text-secondary)] mb-1">PIC Position</label>
+                                    <input type="text" name="pic_position" defaultValue={editingItem?.pic_position || ''} className="w-full px-4 py-2 rounded-lg border border-[var(--glass-border)] bg-transparent text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-[#e8c559]" />
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-[var(--text-secondary)] mb-1">PIC Contact</label>
+                                    <input type="text" name="pic_contact" defaultValue={editingItem?.pic_contact || ''} className="w-full px-4 py-2 rounded-lg border border-[var(--glass-border)] bg-transparent text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-[#e8c559]" />
+                                </div>
                             </div>
-                            <div className="space-y-1.5">
-                                <label className="text-xs font-medium text-gray-400 uppercase tracking-wide">Estimasi Lunas</label>
-                                <input name="estimasiLunas" type="date" onChange={handleInputChange} className="w-full bg-black/40 border border-white/10 rounded-lg p-2.5 text-white focus:border-[#e8c559] focus:ring-1 focus:ring-[#e8c559] outline-none transition-all" />
+
+                            <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label className="block text-sm font-medium text-[var(--text-secondary)] mb-1">Nilai Kontrak</label>
+                                    <input type="number" name="contract_value" defaultValue={editingItem?.contract_value || 0} className="w-full px-4 py-2 rounded-lg border border-[var(--glass-border)] bg-transparent text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-[#e8c559]" />
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-[var(--text-secondary)] mb-1">Status</label>
+                                    <select name="status" defaultValue={editingItem?.status || 'running'} className="w-full px-4 py-2 rounded-lg border border-[var(--glass-border)] bg-transparent text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-[#e8c559]">
+                                        {(Object.keys(STATUS_CONFIG) as SalesStatus[]).map((s) => (
+                                            <option key={s} value={s}>{STATUS_CONFIG[s].label}</option>
+                                        ))}
+                                    </select>
+                                </div>
                             </div>
-                            <div className="space-y-1.5">
-                                <label className="text-xs font-medium text-gray-400 uppercase tracking-wide">PIC Client</label>
-                                <input name="pic" type="text" onChange={handleInputChange} className="w-full bg-black/40 border border-white/10 rounded-lg p-2.5 text-white focus:border-[#e8c559] focus:ring-1 focus:ring-[#e8c559] outline-none transition-all" />
+
+                            <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label className="block text-sm font-medium text-[var(--text-secondary)] mb-1">Contract Start</label>
+                                    <input type="date" name="contract_start" defaultValue={editingItem?.contract_start || ''} className="w-full px-4 py-2 rounded-lg border border-[var(--glass-border)] bg-transparent text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-[#e8c559]" />
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-[var(--text-secondary)] mb-1">Contract End</label>
+                                    <input type="date" name="contract_end" defaultValue={editingItem?.contract_end || ''} className="w-full px-4 py-2 rounded-lg border border-[var(--glass-border)] bg-transparent text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-[#e8c559]" />
+                                </div>
                             </div>
-                            <div className="space-y-1.5">
-                                <label className="text-xs font-medium text-gray-400 uppercase tracking-wide">Posisi</label>
-                                <input name="posisi" type="text" onChange={handleInputChange} className="w-full bg-black/40 border border-white/10 rounded-lg p-2.5 text-white focus:border-[#e8c559] focus:ring-1 focus:ring-[#e8c559] outline-none transition-all" />
+
+                            <div className="grid grid-cols-3 gap-4">
+                                <div>
+                                    <label className="block text-sm font-medium text-[var(--text-secondary)] mb-1">Start Date (Timeline)</label>
+                                    <input type="date" name="start_date" defaultValue={editingItem?.start_date || ''} className="w-full px-4 py-2 rounded-lg border border-[var(--glass-border)] bg-transparent text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-[#e8c559]" />
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-[var(--text-secondary)] mb-1">End Date (Timeline)</label>
+                                    <input type="date" name="end_date" defaultValue={editingItem?.end_date || ''} className="w-full px-4 py-2 rounded-lg border border-[var(--glass-border)] bg-transparent text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-[#e8c559]" />
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-[var(--text-secondary)] mb-1">Progress (%)</label>
+                                    <input type="number" name="progress" min="0" max="100" defaultValue={editingItem?.progress || 0} className="w-full px-4 py-2 rounded-lg border border-[var(--glass-border)] bg-transparent text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-[#e8c559]" />
+                                </div>
                             </div>
-                            <div className="space-y-1.5">
-                                <label className="text-xs font-medium text-gray-400 uppercase tracking-wide">Kontak (HP)</label>
-                                <input name="kontak" type="text" onChange={handleInputChange} className="w-full bg-black/40 border border-white/10 rounded-lg p-2.5 text-white focus:border-[#e8c559] focus:ring-1 focus:ring-[#e8c559] outline-none transition-all" />
+
+                            <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label className="block text-sm font-medium text-[var(--text-secondary)] mb-1">Jira Link</label>
+                                    <input type="url" name="jira_link" defaultValue={editingItem?.jira_link || ''} placeholder="https://..." className="w-full px-4 py-2 rounded-lg border border-[var(--glass-border)] bg-transparent text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-[#e8c559]" />
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-[var(--text-secondary)] mb-1">Drive Link</label>
+                                    <input type="url" name="drive_link" defaultValue={editingItem?.drive_link || ''} placeholder="https://..." className="w-full px-4 py-2 rounded-lg border border-[var(--glass-border)] bg-transparent text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-[#e8c559]" />
+                                </div>
                             </div>
-                            <div className="space-y-1.5">
-                                <label className="text-xs font-medium text-gray-400 uppercase tracking-wide">Status</label>
-                                <select name="status" onChange={handleInputChange} className="w-full bg-black/40 border border-white/10 rounded-lg p-2.5 text-white focus:border-[#e8c559] focus:ring-1 focus:ring-[#e8c559] outline-none transition-all">
-                                    <option value="Paid">Paid</option>
-                                    <option value="Partial">Partial</option>
-                                    <option value="Unpaid">Unpaid</option>
-                                    <option value="Running">Running</option>
-                                </select>
+
+                            <div>
+                                <label className="block text-sm font-medium text-[var(--text-secondary)] mb-1">Notes</label>
+                                <textarea name="notes" rows={3} defaultValue={editingItem?.notes || ''} className="w-full px-4 py-2 rounded-lg border border-[var(--glass-border)] bg-transparent text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-[#e8c559] resize-none" />
                             </div>
-                            <div className="space-y-1.5 md:col-span-2">
-                                <label className="text-xs font-medium text-gray-400 uppercase tracking-wide">WSC Sales</label>
-                                <input name="wscSales" type="text" onChange={handleInputChange} className="w-full bg-black/40 border border-white/10 rounded-lg p-2.5 text-white focus:border-[#e8c559] focus:ring-1 focus:ring-[#e8c559] outline-none transition-all" />
-                            </div>
-                            <div className="md:col-span-2 flex gap-3 mt-6 pt-4 border-t border-white/10">
-                                <button type="button" onClick={() => setShowForm(false)} className="flex-1 py-3 rounded-xl border border-white/10 text-gray-300 font-medium hover:bg-white/5 transition-colors">Cancel</button>
-                                <button type="submit" className="flex-1 py-3 rounded-xl bg-[#e8c559] text-[#171611] font-bold hover:bg-[#d4a843] transition-colors shadow-lg">Save Sales Data</button>
+
+                            <div className="flex justify-end gap-3 pt-4">
+                                <button type="button" onClick={() => { setShowForm(false); setEditingItem(null); }} className="px-6 py-2 rounded-lg border border-[var(--glass-border)] text-[var(--text-secondary)] hover:bg-black/5 dark:hover:bg-white/5 transition-colors">
+                                    Batal
+                                </button>
+                                <button type="submit" className="px-6 py-2 rounded-lg bg-gradient-to-r from-[#e8c559] to-[#d4b44a] text-[#171611] font-semibold hover:shadow-lg hover:shadow-[#e8c559]/20 transition-all">
+                                    {editingItem ? 'Update' : 'Simpan'}
+                                </button>
                             </div>
                         </form>
                     </div>
