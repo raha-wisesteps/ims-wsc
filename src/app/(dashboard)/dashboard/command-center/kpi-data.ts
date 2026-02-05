@@ -353,6 +353,31 @@ export const SCORE_LEVELS = [
     { min: 4.5, max: 6, label: 'Excellent', color: 'text-blue-400', bgLight: 'bg-blue-100' }
 ];
 
+// Helper to calculate score
+export const calculateStaffScore = (staff: StaffKPI): number => {
+    if (!staff.pillars) return 0;
+    
+    let totalScore = 0;
+    // Get weights for this role
+    const roleWeights = ROLE_WEIGHTS[staff.role];
+    if (!roleWeights) return 0;
+
+    // Calculate weighted sum
+    Object.entries(staff.pillars).forEach(([key, pillar]) => {
+        const pillarKey = key as keyof typeof roleWeights;
+        const weight = roleWeights[pillarKey] || 0;
+        
+        if (weight > 0 && pillar.metrics.length > 0) {
+            // Average of metrics in this pillar
+            const pillarSum = pillar.metrics.reduce((sum, m) => sum + (m.score || 0), 0);
+            const pillarAvg = pillarSum / pillar.metrics.length;
+            totalScore += pillarAvg * weight;
+        }
+    });
+
+    return totalScore;
+};
+
 // MOCK DATA FOR DEVELOPMENT
 export const mockStaffData: StaffKPI[] = [
     {
@@ -361,10 +386,49 @@ export const mockStaffData: StaffKPI[] = [
         role: "analyst_staff",
         period: "2026-S1",
         pillars: {
-            knowledge: { ...KPI_CATEGORIES.KNOWLEDGE, metrics: [] },
-            people: { ...KPI_CATEGORIES.PEOPLE, metrics: [] },
-            service: { ...KPI_CATEGORIES.SERVICE, metrics: [] },
-            business: { ...KPI_CATEGORIES.BUSINESS, metrics: [] },
+            knowledge: { 
+                ...KPI_CATEGORIES.KNOWLEDGE, 
+                metrics: [
+                    { ...KPI_METRICS_DEFINITION[0], score: 5 }, // K1
+                    { ...KPI_METRICS_DEFINITION[1], score: 4 }  // K2
+                ] 
+            },
+            people: { 
+                ...KPI_CATEGORIES.PEOPLE, 
+                metrics: [
+                    { ...KPI_METRICS_DEFINITION[3], score: 5 }, // P1
+                    { ...KPI_METRICS_DEFINITION[4], score: 4 }  // P2
+                ] 
+            },
+            service: { 
+                ...KPI_CATEGORIES.SERVICE, 
+                metrics: [
+                    { ...KPI_METRICS_DEFINITION[6], score: 3 }, // S1
+                    { ...KPI_METRICS_DEFINITION[7], score: 4 }  // S2
+                ] 
+            },
+            business: { 
+                ...KPI_CATEGORIES.BUSINESS, 
+                metrics: [
+                    { ...KPI_METRICS_DEFINITION[11], score: 3 } // B2
+                ] 
+            },
+            leadership: { 
+                ...KPI_CATEGORIES.LEADERSHIP, 
+                metrics: [] 
+            }
+        }
+    },
+    {
+        id: "124",
+        employeeName: "Siti Sales",
+        role: "sales_staff",
+        period: "2026-S1",
+        pillars: {
+            knowledge: { ...KPI_CATEGORIES.KNOWLEDGE, metrics: [{ ...KPI_METRICS_DEFINITION[0], score: 3 }] },
+            people: { ...KPI_CATEGORIES.PEOPLE, metrics: [{ ...KPI_METRICS_DEFINITION[3], score: 5 }] },
+            service: { ...KPI_CATEGORIES.SERVICE, metrics: [{ ...KPI_METRICS_DEFINITION[6], score: 4 }] },
+            business: { ...KPI_CATEGORIES.BUSINESS, metrics: [{ ...KPI_METRICS_DEFINITION[10], score: 5 }, { ...KPI_METRICS_DEFINITION[12], score: 4 }] },
             leadership: { ...KPI_CATEGORIES.LEADERSHIP, metrics: [] }
         }
     }
