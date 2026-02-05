@@ -49,7 +49,7 @@ export default function KPIReportsPage() {
             if (sortBy === "score") {
                 return calculateStaffScore(b) - calculateStaffScore(a);
             }
-            return a.name.localeCompare(b.name);
+            return (a.name || '').localeCompare(b.name || '');
         });
 
     // Calculate team stats
@@ -100,14 +100,14 @@ export default function KPIReportsPage() {
                 {topPerformer && (
                     <Link href={`/dashboard/command-center/kpi-assessment/${topPerformer.id}`} className="glass-panel rounded-xl p-5 border-l-4 border-emerald-500 hover:bg-white/5 transition-colors">
                         <p className="text-xs text-gray-500 uppercase tracking-wider mb-1">🏆 Top Performer</p>
-                        <p className="text-xl font-bold text-white">{topPerformer.name}</p>
+                        <p className="text-xl font-bold text-white">{topPerformer.name || 'Unknown'}</p>
                         <p className="text-sm text-emerald-400">{getScorePercentage(topPerformer).toFixed(0)}% - {ROLE_NAMES[topPerformer.role].split(" ")[0]}</p>
                     </Link>
                 )}
                 {needsAttention && (
                     <Link href={`/dashboard/command-center/kpi-assessment/${needsAttention.id}`} className="glass-panel rounded-xl p-5 border-l-4 border-amber-500 hover:bg-white/5 transition-colors">
                         <p className="text-xs text-gray-500 uppercase tracking-wider mb-1">⚠️ Perlu Perhatian</p>
-                        <p className="text-xl font-bold text-white">{needsAttention.name}</p>
+                        <p className="text-xl font-bold text-white">{needsAttention.name || 'Unknown'}</p>
                         <p className="text-sm text-amber-400">{getScorePercentage(needsAttention).toFixed(0)}% - {ROLE_NAMES[needsAttention.role].split(" ")[0]}</p>
                     </Link>
                 )}
@@ -156,10 +156,10 @@ export default function KPIReportsPage() {
                             <div className="flex items-start justify-between mb-4">
                                 <div className="flex items-center gap-3">
                                     <div className="size-12 rounded-full bg-gradient-to-br from-[#e8c559]/30 to-[#b89530]/30 flex items-center justify-center text-[#e8c559] font-bold text-lg border border-white/10 group-hover:border-[#e8c559]/50 transition-colors">
-                                        {staff.name.split(" ").map(n => n[0]).join("")}
+                                        {(staff.name || '').split(" ").map(n => n[0]).join("")}
                                     </div>
                                     <div>
-                                        <p className="font-bold text-white group-hover:text-[#e8c559] transition-colors">{staff.name}</p>
+                                        <p className="font-bold text-white group-hover:text-[#e8c559] transition-colors">{staff.name || 'Unknown'}</p>
                                         <p className="text-xs text-gray-500">{ROLE_NAMES[staff.role].split(" ")[0]}</p>
                                     </div>
                                 </div>
@@ -182,7 +182,7 @@ export default function KPIReportsPage() {
                                 </div>
                                 <div>
                                     <p className={`font-semibold ${scoreLevel.color}`}>{scoreLevel.label}</p>
-                                    <p className="text-xs text-gray-500">{staff.department}</p>
+                                    <p className="text-xs text-gray-500">{ROLE_NAMES[staff.role]}</p>
                                 </div>
                             </div>
 
