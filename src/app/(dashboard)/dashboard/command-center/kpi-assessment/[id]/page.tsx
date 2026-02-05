@@ -143,7 +143,7 @@ export default function AssessmentPage() {
 
                 setStaff({
                     id: profile.id, // Use profile ID
-                    employeeName: profile.full_name || 'Unknown',
+                    name: profile.full_name || 'Unknown',
                     role: role,
                     period: "2026-S1",
                     pillars: pillars
@@ -387,7 +387,7 @@ export default function AssessmentPage() {
                                 {docStatus}
                             </span>
                         </div>
-                        <p className="text-gray-400">Detailed Grading for <span className="text-[#e8c559] font-bold">{staff.employeeName}</span></p>
+                        <p className="text-gray-400">Detailed Grading for <span className="text-[#e8c559] font-bold">{staff.name}</span></p>
                     </div>
                 </div>
 
