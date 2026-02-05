@@ -24,7 +24,7 @@ export interface KPIPillar {
 
 export interface StaffKPI {
     id?: string;
-    employeeName?: string;
+    name?: string; // Changed from employeeName to match page usage
     role: StaffRole;
     period?: string;
     pillars: Record<string, KPIPillar>;
@@ -116,7 +116,7 @@ export const getDepartmentLabel = (
     // Fallback based on job_type
     const type = (jobType || '').toLowerCase();
     if (type === 'bisdev' || type.includes('business')) return 'Business & Marketing';
-    if (type === 'sales') return 'Sales';
+    if (type === 'sales' || type.includes('sales')) return 'Sales';
     if (type === 'analyst') return 'Analyst';
     
     return 'General';
@@ -382,7 +382,7 @@ export const calculateStaffScore = (staff: StaffKPI): number => {
 export const mockStaffData: StaffKPI[] = [
     {
         id: "123",
-        employeeName: "Aditya Rahad",
+        name: "Aditya Rahad", // Changed from employeeName
         role: "analyst_staff",
         period: "2026-S1",
         pillars: {
@@ -421,7 +421,8 @@ export const mockStaffData: StaffKPI[] = [
     },
     {
         id: "124",
-        employeeName: "Siti Sales",
+        name: "Siti Sales", // Changed from employeeName
+
         role: "sales_staff",
         period: "2026-S1",
         pillars: {
