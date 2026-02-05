@@ -465,11 +465,18 @@ export default function DashboardPage() {
 
     const isIntern = profile?.job_type === 'intern';
 
-    // Compute current user's status from teamStatuses
+    // CEO status override - for immediate UI updates when CEO changes status
+    const [ceoStatusOverride, setCeoStatusOverride] = useState<string | null>(null);
+
+    // Compute current user's status from teamStatuses (or CEO override)
     const currentUserStatus = useMemo(() => {
+        // If CEO has set a local override, use that
+        if (profile?.role === 'ceo' && ceoStatusOverride) {
+            return ceoStatusOverride;
+        }
         const currentUser = teamStatuses.find(m => m.id === profile?.id);
         return currentUser?.status || 'office';
-    }, [teamStatuses, profile?.id]);
+    }, [teamStatuses, profile?.id, profile?.role, ceoStatusOverride]);
 
     // Announcements State
     const [announcements, setAnnouncements] = useState<Announcement[]>([]);
@@ -758,7 +765,7 @@ export default function DashboardPage() {
         const isLeftSwipe = distance > minSwipeDistance;
         const isRightSwipe = distance < -minSwipeDistance;
 
-        if (isLeftSwipe && activeSlide < (isIntern ? 1 : 2)) {
+        if (isLeftSwipe && activeSlide < (isIntern || profile?.role === 'ceo' ? 1 : 2)) {
             setActiveSlide(activeSlide + 1);
         }
         if (isRightSwipe && activeSlide > 0) {
@@ -784,7 +791,7 @@ export default function DashboardPage() {
         if (!isDragging) return;
         setIsDragging(false);
         const distance = dragStart - e.clientX;
-        if (distance > minSwipeDistance && activeSlide < (isIntern ? 1 : 2)) {
+        if (distance > minSwipeDistance && activeSlide < (isIntern || profile?.role === 'ceo' ? 1 : 2)) {
             setActiveSlide(activeSlide + 1);
         }
         if (distance < -minSwipeDistance && activeSlide > 0) {
@@ -940,6 +947,190 @@ export default function DashboardPage() {
             clockOutTime: clockOutTimeStr,
         });
     };
+
+    // ===============================================================
+    // CEO STATUS QUICK CHANGE HANDLER
+    // ===============================================================
+    const [showCeoStatusDropdown, setShowCeoStatusDropdown] = useState(false);
+    const [isUpdatingCeoStatus, setIsUpdatingCeoStatus] = useState(false);
+
+    // CEO-only status options (excluding office since they can just clock in for that)
+    const ceoStatusOptions = [
+        { id: 'office', label: 'Office', Icon: Building2, color: 'bg-emerald-500' },
+        { id: 'wfh', label: 'WFH', Icon: Home, color: 'bg-purple-500' },
+        { id: 'wfa', label: 'WFA', Icon: MapPin, color: 'bg-sky-500' },
+        { id: 'dinas', label: 'Dinas', Icon: Briefcase, color: 'bg-blue-500' },
+        { id: 'cuti', label: 'Cuti', Icon: Umbrella, color: 'bg-amber-500' },
+        { id: 'izin', label: 'Izin', Icon: ClipboardList, color: 'bg-rose-500' },
+        { id: 'sakit', label: 'Sakit', Icon: Stethoscope, color: 'bg-pink-500' },
+    ];
+
+    const handleCEOStatusChange = async (newStatus: string) => {
+        if (!profile || isUpdatingCeoStatus) return;
+        setIsUpdatingCeoStatus(true);
+        setShowCeoStatusDropdown(false);
+
+        // Use Local Date (WIB)
+        const now = new Date();
+        const offsetDate = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Jakarta' }));
+        const year = offsetDate.getFullYear();
+        const month = String(offsetDate.getMonth() + 1).padStart(2, '0');
+        const day = String(offsetDate.getDate()).padStart(2, '0');
+        const hours = String(offsetDate.getHours()).padStart(2, '0');
+        const minutes = String(offsetDate.getMinutes()).padStart(2, '0');
+        const seconds = String(offsetDate.getSeconds()).padStart(2, '0');
+
+        const clockInTimestamp = `${year}-${month}-${day}T${hours}:${minutes}:${seconds}`;
+        const today = `${year}-${month}-${day}`;
+
+        try {
+            console.log('[CEO Status] Starting status change to:', newStatus);
+            console.log('[CEO Status] profile.id:', profile.id);
+            console.log('[CEO Status] today:', today);
+
+            // First check if a record exists for today
+            const { data: existingRecord, error: selectError } = await supabase
+                .from('daily_checkins')
+                .select('id, profile_id, status')
+                .eq('profile_id', profile.id)
+                .eq('checkin_date', today)
+                .maybeSingle();
+
+            if (selectError) {
+                console.error('[CEO Status] Error checking existing record:', selectError);
+            }
+            console.log('[CEO Status] Existing record:', existingRecord);
+            console.log('[CEO Status] Does profile_id match?', existingRecord?.profile_id === profile.id);
+
+            let recordId = existingRecord?.id;
+
+            if (existingRecord) {
+                // Update existing record - add .select() to see if any rows are actually updated
+                const { data: updateData, error: updateError, count } = await supabase
+                    .from('daily_checkins')
+                    .update({
+                        status: newStatus,
+                        clock_in_time: clockInTimestamp,
+                        source: 'ceo_quick_set',
+                        notes: `Status set by CEO via quick edit`,
+                    })
+                    .eq('id', existingRecord.id)
+                    .select();
+
+                console.log('[CEO Status] Update result:', { updateData, updateError, count });
+
+                if (updateError) {
+                    console.error('Failed to update CEO status:', updateError);
+                    return;
+                }
+
+                if (!updateData || updateData.length === 0) {
+                    console.error('[CEO Status] Update returned no data - RLS may be blocking the update!');
+                    console.log('[CEO Status] Trying alternative update with profile_id...');
+
+                    // Try updating by profile_id and date instead
+                    const { data: altUpdateData, error: altError } = await supabase
+                        .from('daily_checkins')
+                        .update({
+                            status: newStatus,
+                            clock_in_time: clockInTimestamp,
+                            source: 'ceo_quick_set',
+                            notes: `Status set by CEO via quick edit`,
+                        })
+                        .eq('profile_id', profile.id)
+                        .eq('checkin_date', today)
+                        .select();
+
+                    console.log('[CEO Status] Alt update result:', { altUpdateData, altError });
+
+                    if (altError || !altUpdateData || altUpdateData.length === 0) {
+                        console.error('[CEO Status] All update attempts failed!');
+                        return;
+                    }
+                }
+
+                console.log('[CEO Status] Status successfully updated:', newStatus);
+            } else {
+                // Insert new record
+                const { data: insertData, error: insertError } = await supabase
+                    .from('daily_checkins')
+                    .insert({
+                        profile_id: profile.id,
+                        employee_id: profile.employee_id,
+                        checkin_date: today,
+                        status: newStatus,
+                        clock_in_time: clockInTimestamp,
+                        is_late: false,
+                        source: 'ceo_quick_set',
+                        notes: `Status set by CEO via quick edit`,
+                    })
+                    .select('id')
+                    .single();
+
+                if (insertError) {
+                    console.error('Failed to insert CEO status:', insertError);
+                    return;
+                }
+                recordId = insertData?.id;
+                console.log('CEO status created:', newStatus);
+            }
+
+            if (recordId) {
+                setTodayCheckinId(recordId);
+            }
+
+            // IMPORTANT: Also update the profiles.status column since team data reads from there!
+            const { error: profileUpdateError } = await supabase
+                .from('profiles')
+                .update({ status: newStatus })
+                .eq('id', profile.id);
+
+            if (profileUpdateError) {
+                console.error('[CEO Status] Failed to update profiles.status:', profileUpdateError);
+            } else {
+                console.log('[CEO Status] profiles.status updated successfully');
+            }
+
+            // Update local state for checkin
+            setCheckinState({
+                ...checkinState,
+                isClockedIn: true,
+                status: newStatus as AttendanceStatus,
+                clockInTime: `${hours}:${minutes}`,
+                isLate: false,
+                isForceMajeure: false,
+            });
+
+            // Update CEO status override for immediate UI update
+            setCeoStatusOverride(newStatus);
+
+            // Also update teamStatuses so Team Activity reflects the change
+            setTeamStatuses(prev => prev.map(member =>
+                member.id === profile.id
+                    ? { ...member, status: newStatus }
+                    : member
+            ));
+
+        } catch (err) {
+            console.error('CEO status update error:', err);
+        } finally {
+            setIsUpdatingCeoStatus(false);
+        }
+    };
+
+    // Click outside handler for CEO status dropdown
+    useEffect(() => {
+        const handleClickOutside = (e: MouseEvent) => {
+            if (showCeoStatusDropdown) {
+                const target = e.target as HTMLElement;
+                if (!target.closest('[data-ceo-dropdown]')) {
+                    setShowCeoStatusDropdown(false);
+                }
+            }
+        };
+        document.addEventListener('click', handleClickOutside);
+        return () => document.removeEventListener('click', handleClickOutside);
+    }, [showCeoStatusDropdown]);
     // ===============================================================
 
     // Fetch today's checkin status and approved WFH/WFA requests on mount
@@ -1380,7 +1571,7 @@ export default function DashboardPage() {
                         <div className="relative z-20 p-6 sm:p-8 flex flex-col h-full justify-between min-h-[320px]">
                             {/* Top Row: Status Badge + Time */}
                             <div className="flex justify-between items-start">
-                                <div className="flex items-center gap-2">
+                                <div className="flex items-center gap-2 relative">
                                     {/* Dynamic Work Status Label */}
                                     {isLoadingTeamData ? (
                                         <Badge className="gap-2 px-4 py-2 backdrop-blur-md border bg-gray-500/20 border-white/30">
@@ -1402,6 +1593,79 @@ export default function DashboardPage() {
                                                 </Badge>
                                             );
                                         })()
+                                    )}
+
+                                    {/* CEO Quick Status Edit Button */}
+                                    {profile?.role === 'ceo' && !isLoadingTeamData && (
+                                        <div className="relative force-dark-mode" data-ceo-dropdown>
+                                            <button
+                                                onClick={() => setShowCeoStatusDropdown(!showCeoStatusDropdown)}
+                                                disabled={isUpdatingCeoStatus}
+                                                className="p-2 rounded-full bg-white/10 hover:bg-white/20 border border-white/20 transition-all group"
+                                                title="Change Status"
+                                            >
+                                                {isUpdatingCeoStatus ? (
+                                                    <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" style={{ borderTopColor: '#ffffff' }} />
+                                                ) : (
+                                                    <Pencil className="w-4 h-4 group-hover:text-[#f4d875] transition-colors" style={{ color: '#ffffff' }} />
+                                                )}
+                                            </button>
+
+                                            {/* Dropdown Menu - Forced Dark Mode Style */}
+                                            {showCeoStatusDropdown && (
+                                                <div
+                                                    className="force-dark-mode absolute top-full left-0 mt-2 w-48 bg-[#1a1a18] border border-white/20 rounded-xl shadow-2xl z-50 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200"
+                                                >
+                                                    {/* Injected style to force dark scrollbar in this specific dropdown regardless of global theme */}
+                                                    <style jsx>{`
+                                                        .ceo-status-scroll::-webkit-scrollbar {
+                                                            width: 6px !important;
+                                                            height: 6px !important;
+                                                            background: #1a1a18 !important;
+                                                        }
+                                                        .ceo-status-scroll::-webkit-scrollbar-track {
+                                                            background: #1a1a18 !important;
+                                                        }
+                                                        .ceo-status-scroll::-webkit-scrollbar-thumb {
+                                                            background: #3f545f !important;
+                                                            border-radius: 4px !important;
+                                                        }
+                                                        .ceo-status-scroll::-webkit-scrollbar-thumb:hover {
+                                                            background: #5f788e !important;
+                                                        }
+                                                    `}</style>
+
+                                                    <div className="p-2 border-b border-white/10">
+                                                        <p className="text-xs text-white/60 font-medium px-2">Set Status</p>
+                                                    </div>
+                                                    <div className="p-1 max-h-[300px] overflow-y-auto ceo-status-scroll">
+                                                        {ceoStatusOptions.map((option) => {
+                                                            const OptionIcon = option.Icon;
+                                                            const isActive = currentUserStatus === option.id;
+                                                            return (
+                                                                <button
+                                                                    key={option.id}
+                                                                    onClick={() => handleCEOStatusChange(option.id)}
+                                                                    className={cn(
+                                                                        "w-full flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all text-left",
+                                                                        isActive
+                                                                            ? "bg-[#e8c559]/20 text-[#f4d875]"
+                                                                            : "text-white hover:bg-white/10 hover:text-white"
+                                                                    )}
+                                                                    style={{ color: isActive ? '#f4d875' : '#ffffff' }} // Inline style fallback for ultimate force
+                                                                >
+                                                                    <div className={cn("w-8 h-8 rounded-lg flex items-center justify-center", option.color + "/30")}>
+                                                                        <OptionIcon className="w-4 h-4" />
+                                                                    </div>
+                                                                    <span className="font-medium">{option.label}</span>
+                                                                    {isActive && <Check className="ml-auto w-4 h-4 text-[#e8c559]" />}
+                                                                </button>
+                                                            );
+                                                        })}
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
                                     )}
                                 </div>
                                 {/* Clock */}
@@ -1445,21 +1709,23 @@ export default function DashboardPage() {
                                 {/* Dark: amber/gold bg | Light: glassmorphism */}
                                 {/* Leave Quota Grid - Using Shadcn/Tailwind Variables via glass-panel or generic classes */}
                                 <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-                                    {/* WFH Weekly */}
-                                    <Card className="backdrop-blur-md transition-colors border bg-amber-500/10 border-amber-500/20 dark:bg-white/5 dark:border-white/10 shadow-none">
-                                        <CardContent className="p-3">
-                                            <div className="flex items-center gap-2 mb-1">
-                                                <Home className="h-4 w-4 text-purple-400" />
-                                                <span className="text-xs font-medium uppercase text-[#f4d875]">WFH Minggu Ini</span>
-                                            </div>
-                                            <p className="text-xl font-bold text-white !text-white">
-                                                {leaveQuota?.wfh_weekly_used || 0}/{leaveQuota?.wfh_weekly_limit || 1}
-                                            </p>
-                                        </CardContent>
-                                    </Card>
+                                    {/* WFH Weekly - Hidden for CEO */}
+                                    {profile?.role !== 'ceo' && (
+                                        <Card className="backdrop-blur-md transition-colors border bg-amber-500/10 border-amber-500/20 dark:bg-white/5 dark:border-white/10 shadow-none">
+                                            <CardContent className="p-3">
+                                                <div className="flex items-center gap-2 mb-1">
+                                                    <Home className="h-4 w-4 text-purple-400" />
+                                                    <span className="text-xs font-medium uppercase text-[#f4d875]">WFH Minggu Ini</span>
+                                                </div>
+                                                <p className="text-xl font-bold text-white !text-white">
+                                                    {leaveQuota?.wfh_weekly_used || 0}/{leaveQuota?.wfh_weekly_limit || 1}
+                                                </p>
+                                            </CardContent>
+                                        </Card>
+                                    )}
 
-                                    {/* Annual Leave - Hidden for Interns */}
-                                    {!isIntern && (
+                                    {/* Annual Leave - Hidden for Interns and CEO */}
+                                    {!isIntern && profile?.role !== 'ceo' && (
                                         <Card className="backdrop-blur-md transition-colors border bg-amber-500/10 border-amber-500/20 dark:bg-white/5 dark:border-white/10 shadow-none">
                                             <CardContent className="p-3">
                                                 <div className="flex items-center gap-2 mb-1">
@@ -1473,8 +1739,8 @@ export default function DashboardPage() {
                                         </Card>
                                     )}
 
-                                    {/* WFA with Expiry - Hidden for Interns */}
-                                    {!isIntern && (
+                                    {/* WFA with Expiry - Hidden for Interns and CEO */}
+                                    {!isIntern && profile?.role !== 'ceo' && (
                                         <Card className="backdrop-blur-md transition-colors border bg-amber-500/10 border-amber-500/20 dark:bg-white/5 dark:border-white/10 shadow-none">
                                             <CardContent className="p-3">
                                                 <div className="flex items-center gap-2 mb-1">
@@ -1488,8 +1754,8 @@ export default function DashboardPage() {
                                         </Card>
                                     )}
 
-                                    {/* Libur Ekstra - Hidden for Interns */}
-                                    {!isIntern && (
+                                    {/* Libur Ekstra - Hidden for Interns and CEO */}
+                                    {!isIntern && profile?.role !== 'ceo' && (
                                         <Link href="/dashboard/extra-leave">
                                             <Card className="backdrop-blur-md transition-all border bg-amber-500/10 border-amber-500/20 dark:bg-white/5 dark:border-white/10 shadow-none hover:bg-amber-500/20 cursor-pointer group">
                                                 <CardContent className="p-3">
@@ -1558,12 +1824,15 @@ export default function DashboardPage() {
                                     {/* Right: Quick Access Grid */}
                                     <div className="flex flex-col gap-3 h-full">
                                         <div className="grid grid-cols-3 gap-3 flex-1">
-                                            <Link href="/dashboard/my-request" className="group flex flex-col items-center justify-center gap-2 p-2 rounded-xl backdrop-blur-md transition-all hover:scale-105 active:scale-95 border bg-amber-500/10 border-amber-500/20 hover:bg-amber-500/20 dark:bg-white/5 dark:border-white/10 dark:hover:bg-white/10">
-                                                <div className="w-8 h-8 rounded-lg bg-indigo-500/20 flex items-center justify-center group-hover:bg-indigo-500/30 transition-colors">
-                                                    <FileText className="h-4 w-4 text-indigo-300" />
-                                                </div>
-                                                <span className="text-[10px] font-bold text-white uppercase tracking-wider text-center">My Request</span>
-                                            </Link>
+                                            {/* My Request - Hidden for CEO */}
+                                            {profile?.role !== 'ceo' && (
+                                                <Link href="/dashboard/my-request" className="group flex flex-col items-center justify-center gap-2 p-2 rounded-xl backdrop-blur-md transition-all hover:scale-105 active:scale-95 border bg-amber-500/10 border-amber-500/20 hover:bg-amber-500/20 dark:bg-white/5 dark:border-white/10 dark:hover:bg-white/10">
+                                                    <div className="w-8 h-8 rounded-lg bg-indigo-500/20 flex items-center justify-center group-hover:bg-indigo-500/30 transition-colors">
+                                                        <FileText className="h-4 w-4 text-indigo-300" />
+                                                    </div>
+                                                    <span className="text-[10px] font-bold text-white uppercase tracking-wider text-center">My Request</span>
+                                                </Link>
+                                            )}
 
                                             <Link href="/dashboard/projects" className="group flex flex-col items-center justify-center gap-2 p-2 rounded-xl backdrop-blur-md transition-all hover:scale-105 active:scale-95 border bg-amber-500/10 border-amber-500/20 hover:bg-amber-500/20 dark:bg-white/5 dark:border-white/10 dark:hover:bg-white/10">
                                                 <div className="w-8 h-8 rounded-lg bg-emerald-500/20 flex items-center justify-center group-hover:bg-emerald-500/30 transition-colors">
@@ -1670,66 +1939,68 @@ export default function DashboardPage() {
                                     </div>
                                 </div>
 
-                                {/* Action Buttons */}
-                                <div className="flex flex-wrap gap-3 items-center justify-between">
-                                    <div className="flex items-center gap-3">
-                                        {!checkinState.isClockedIn ? (
-                                            <div className="relative group/clockin">
+                                {/* Action Buttons - Hidden for CEO (they use quick status editor instead) */}
+                                {profile?.role !== 'ceo' && (
+                                    <div className="flex flex-wrap gap-3 items-center justify-between">
+                                        <div className="flex items-center gap-3">
+                                            {!checkinState.isClockedIn ? (
+                                                <div className="relative group/clockin">
+                                                    <button
+                                                        onClick={() => handleClockIn()}
+                                                        disabled={!canClockInToday}
+                                                        className={`flex items-center justify-center gap-2 px-6 h-12 rounded-xl text-sm tracking-wide transition-colors font-bold shadow-lg ${canClockInToday
+                                                            ? "bg-[#e8c559] hover:bg-[#d4a843] text-[#171611] cursor-pointer"
+                                                            : "bg-gray-500/20 text-gray-400 cursor-not-allowed border border-gray-500/30"
+                                                            }`}
+                                                    >
+                                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 24 24" fill="currentColor">
+                                                            <path d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67z" />
+                                                        </svg>
+                                                        Clock In
+                                                    </button>
+                                                    {!canClockInToday && (
+                                                        <div className="absolute bottom-full mb-2 left-0 w-max max-w-[200px] p-3 bg-black !text-white text-xs font-medium rounded-xl text-center opacity-0 group-hover/clockin:opacity-100 transition-opacity pointer-events-none z-[100] shadow-2xl border border-white/20">
+                                                            Setelah mengajukan WFH/WFA jangan lupa melakukan Absensi disini sesuai jam kerja
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            ) : !checkinState.isClockedOut ? (
                                                 <button
-                                                    onClick={() => handleClockIn()}
-                                                    disabled={!canClockInToday}
-                                                    className={`flex items-center justify-center gap-2 px-6 h-12 rounded-xl text-sm tracking-wide transition-colors font-bold shadow-lg ${canClockInToday
-                                                        ? "bg-[#e8c559] hover:bg-[#d4a843] text-[#171611] cursor-pointer"
-                                                        : "bg-gray-500/20 text-gray-400 cursor-not-allowed border border-gray-500/30"
-                                                        }`}
+                                                    onClick={handleClockOut}
+                                                    className="bg-rose-500 hover:bg-rose-600 text-white flex items-center justify-center gap-2 px-6 h-12 rounded-xl text-sm tracking-wide transition-colors font-bold shadow-lg"
                                                 >
                                                     <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 24 24" fill="currentColor">
                                                         <path d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67z" />
                                                     </svg>
-                                                    Clock In
+                                                    Clock Out
                                                 </button>
-                                                {!canClockInToday && (
-                                                    <div className="absolute bottom-full mb-2 left-0 w-max max-w-[200px] p-3 bg-black !text-white text-xs font-medium rounded-xl text-center opacity-0 group-hover/clockin:opacity-100 transition-opacity pointer-events-none z-[100] shadow-2xl border border-white/20">
-                                                        Setelah mengajukan WFH/WFA jangan lupa melakukan Absensi disini sesuai jam kerja
-                                                    </div>
-                                                )}
-                                            </div>
-                                        ) : !checkinState.isClockedOut ? (
-                                            <button
-                                                onClick={handleClockOut}
-                                                className="bg-rose-500 hover:bg-rose-600 text-white flex items-center justify-center gap-2 px-6 h-12 rounded-xl text-sm tracking-wide transition-colors font-bold shadow-lg"
-                                            >
-                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 24 24" fill="currentColor">
-                                                    <path d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67z" />
-                                                </svg>
-                                                Clock Out
-                                            </button>
-                                        ) : (
-                                            <div className="px-6 py-3 rounded-xl bg-gray-500/20 border border-gray-500/30 text-gray-400 text-sm font-bold flex items-center gap-2">
-                                                ✅ Selesai Hari Ini
-                                            </div>
-                                        )}
-
-                                        {/* Clock Times Badge */}
-                                        {checkinState.isClockedIn && (
-                                            <div className="px-4 py-2 rounded-xl bg-amber-500/10 border border-amber-500/30 text-sm font-medium flex items-center gap-3">
-                                                <div className="flex items-center gap-1.5">
-                                                    <span className="text-green-400 text-xs">🟢</span>
-                                                    <span style={{ color: 'white' }}>Clock In</span>
-                                                    <span className="font-bold" style={{ color: 'white' }}>{checkinState.clockInTime}</span>
-                                                    {checkinState.isLate && <span className="text-amber-400 text-xs">(Telat)</span>}
+                                            ) : (
+                                                <div className="px-6 py-3 rounded-xl bg-gray-500/20 border border-gray-500/30 text-gray-400 text-sm font-bold flex items-center gap-2">
+                                                    ✅ Selesai Hari Ini
                                                 </div>
-                                                {checkinState.isClockedOut && (
+                                            )}
+
+                                            {/* Clock Times Badge */}
+                                            {checkinState.isClockedIn && (
+                                                <div className="px-4 py-2 rounded-xl bg-amber-500/10 border border-amber-500/30 text-sm font-medium flex items-center gap-3">
                                                     <div className="flex items-center gap-1.5">
-                                                        <span className="text-rose-400 text-xs">🔴</span>
-                                                        <span style={{ color: 'white' }}>Clock Out</span>
-                                                        <span className="font-bold" style={{ color: 'white' }}>{checkinState.clockOutTime}</span>
+                                                        <span className="text-green-400 text-xs">🟢</span>
+                                                        <span style={{ color: 'white' }}>Clock In</span>
+                                                        <span className="font-bold" style={{ color: 'white' }}>{checkinState.clockInTime}</span>
+                                                        {checkinState.isLate && <span className="text-amber-400 text-xs">(Telat)</span>}
                                                     </div>
-                                                )}
-                                            </div>
-                                        )}
+                                                    {checkinState.isClockedOut && (
+                                                        <div className="flex items-center gap-1.5">
+                                                            <span className="text-rose-400 text-xs">🔴</span>
+                                                            <span style={{ color: 'white' }}>Clock Out</span>
+                                                            <span className="font-bold" style={{ color: 'white' }}>{checkinState.clockOutTime}</span>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            )}
+                                        </div>
                                     </div>
-                                </div>
+                                )}
                             </div>
                         </div>
                     </div>
@@ -1982,191 +2253,193 @@ export default function DashboardPage() {
                     </div>
 
                     {/* ==================== SLIDE 3: Career Development ==================== */}
-                    {!isIntern && (
-                        <div className="w-full flex-shrink-0 relative min-h-[400px] group">
-                            {/* Background with darker overlay for better text contrast */}
-                            <div
-                                className="absolute inset-0 bg-cover bg-center z-0"
-                                style={{
-                                    backgroundImage: `url('/jason-cooper-XEhchWQuWyM-unsplash.jpg')`,
-                                }}
-                            />
-                            <div className="absolute inset-0 bg-[#0f0f0d]/90 z-10" />
+                    {
+                        !isIntern && profile?.role !== 'ceo' && (
+                            <div className="w-full flex-shrink-0 relative min-h-[400px] group">
+                                {/* Background with darker overlay for better text contrast */}
+                                <div
+                                    className="absolute inset-0 bg-cover bg-center z-0"
+                                    style={{
+                                        backgroundImage: `url('/jason-cooper-XEhchWQuWyM-unsplash.jpg')`,
+                                    }}
+                                />
+                                <div className="absolute inset-0 bg-[#0f0f0d]/90 z-10" />
 
-                            {/* Content Container - Unified Single View */}
-                            <div className="relative z-20 p-8 h-full flex flex-col min-h-[400px]">
+                                {/* Content Container - Unified Single View */}
+                                <div className="relative z-20 p-8 h-full flex flex-col min-h-[400px]">
 
-                                {/* 1. Header: Profile & Career Level */}
-                                <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-8 border-b border-[#e8c559]/20 pb-6">
-                                    <div className="flex items-center gap-5">
-                                        <div className="w-16 h-16 rounded-full bg-gradient-to-br from-[#e8c559] to-[#d4a843] flex items-center justify-center text-2xl font-bold text-[#171611] shadow-lg ring-4 ring-[#e8c559]/20">
-                                            {(profile?.full_name || 'User').split(' ').map((n: string) => n[0]).join('').slice(0, 2)}
-                                        </div>
-                                        <div>
-                                            <h3 className="text-2xl font-bold !text-white tracking-tight">{profile?.full_name || 'Loading...'}</h3>
-                                            <div className="flex items-center gap-2 mt-1">
-                                                <span className="!text-[#f4d875] font-bold">{profile?.job_title || 'Employee'}</span>
-                                                <span className="!text-white/30">•</span>
-                                                <span className="!text-white/60 text-sm">{profile?.job_level || 'Level 2 Analyst'}</span>
+                                    {/* 1. Header: Profile & Career Level */}
+                                    <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-8 border-b border-[#e8c559]/20 pb-6">
+                                        <div className="flex items-center gap-5">
+                                            <div className="w-16 h-16 rounded-full bg-gradient-to-br from-[#e8c559] to-[#d4a843] flex items-center justify-center text-2xl font-bold text-[#171611] shadow-lg ring-4 ring-[#e8c559]/20">
+                                                {(profile?.full_name || 'User').split(' ').map((n: string) => n[0]).join('').slice(0, 2)}
+                                            </div>
+                                            <div>
+                                                <h3 className="text-2xl font-bold !text-white tracking-tight">{profile?.full_name || 'Loading...'}</h3>
+                                                <div className="flex items-center gap-2 mt-1">
+                                                    <span className="!text-[#f4d875] font-bold">{profile?.job_title || 'Employee'}</span>
+                                                    <span className="!text-white/30">•</span>
+                                                    <span className="!text-white/60 text-sm">{profile?.job_level || 'Level 2 Analyst'}</span>
+                                                </div>
                                             </div>
                                         </div>
+
+                                        {/* Spacer for layout - removed career progression bars */}
                                     </div>
 
-                                    {/* Spacer for layout - removed career progression bars */}
-                                </div>
+                                    {/* 2. Main Content Grid */}
+                                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 flex-1">
 
-                                {/* 2. Main Content Grid */}
-                                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 flex-1">
-
-                                    {/* Col 1: Performance Summary (KPI) */}
-                                    <div className="lg:col-span-1 flex flex-col gap-4">
-                                        <h4 className="text-sm font-bold !text-[#f4d875] uppercase tracking-wider flex items-center gap-2">
-                                            <Target className="w-4 h-4" /> Performance
-                                        </h4>
-                                        <div className="bg-[#e8c559]/10 dark:bg-white/5 rounded-2xl p-6 border border-[#e8c559]/20 dark:border-white/10 flex-1 hover:bg-[#e8c559]/20 dark:hover:bg-white/10 transition-colors group/card shadow-lg dark:shadow-none">
-                                            <div className="flex items-end gap-3 mb-6">
-                                                <span className="text-6xl font-black !text-white tracking-tighter drop-shadow-lg">
-                                                    {kpiStats?.final_score ? Number(kpiStats.final_score).toFixed(1) : '—'}
-                                                </span>
-                                                <span className="text-lg !text-gray-300 font-medium mb-1.5">/ 5.0</span>
-                                            </div>
-                                            <div className="space-y-3 mb-6">
-                                                {[
-                                                    { label: 'Knowledge', score: kpiStats?.score_knowledge, color: 'bg-blue-500', shadow: 'shadow-[0_0_10px_rgba(59,130,246,0.5)]' },
-                                                    { label: 'People', score: kpiStats?.score_people, color: 'bg-emerald-500', shadow: 'shadow-[0_0_10px_rgba(16,185,129,0.5)]' },
-                                                    { label: 'Service', score: kpiStats?.score_service, color: 'bg-indigo-500', shadow: 'shadow-[0_0_10px_rgba(99,102,241,0.5)]' },
-                                                    { label: 'Business', score: kpiStats?.score_business, color: 'bg-purple-500', shadow: 'shadow-[0_0_10px_rgba(168,85,247,0.5)]' },
-                                                    { label: 'Leadership', score: kpiStats?.score_leadership, color: 'bg-rose-500', shadow: 'shadow-[0_0_10px_rgba(244,63,94,0.5)]' },
-                                                ]
-                                                    .filter(pillar => {
-                                                        // Hide Leadership pillar for Analyst I-II (job_level contains 'Analyst I' or 'Analyst II' but not 'Analyst III')
-                                                        if (pillar.label === 'Leadership') {
-                                                            const jobLevel = profile?.job_level?.toLowerCase() || '';
-                                                            const isAnalystI_II = (jobLevel.includes('analyst i') || jobLevel.includes('analyst ii')) && !jobLevel.includes('analyst iii');
-                                                            return !isAnalystI_II; // Show only if NOT Analyst I-II
-                                                        }
-                                                        return true;
-                                                    })
-                                                    .map((pillar) => (
-                                                        <div key={pillar.label} className="flex justify-between text-sm">
-                                                            <span className="!text-gray-200 font-medium">{pillar.label}</span>
-                                                            <div className="h-1.5 w-24 bg-gray-700/50 rounded-full overflow-hidden self-center border border-white/5">
-                                                                <div
-                                                                    className={`h-full ${pillar.color} ${pillar.shadow}`}
-                                                                    style={{ width: `${((pillar.score || 0) / 5) * 100}%` }}
-                                                                />
+                                        {/* Col 1: Performance Summary (KPI) */}
+                                        <div className="lg:col-span-1 flex flex-col gap-4">
+                                            <h4 className="text-sm font-bold !text-[#f4d875] uppercase tracking-wider flex items-center gap-2">
+                                                <Target className="w-4 h-4" /> Performance
+                                            </h4>
+                                            <div className="bg-[#e8c559]/10 dark:bg-white/5 rounded-2xl p-6 border border-[#e8c559]/20 dark:border-white/10 flex-1 hover:bg-[#e8c559]/20 dark:hover:bg-white/10 transition-colors group/card shadow-lg dark:shadow-none">
+                                                <div className="flex items-end gap-3 mb-6">
+                                                    <span className="text-6xl font-black !text-white tracking-tighter drop-shadow-lg">
+                                                        {kpiStats?.final_score ? Number(kpiStats.final_score).toFixed(1) : '—'}
+                                                    </span>
+                                                    <span className="text-lg !text-gray-300 font-medium mb-1.5">/ 5.0</span>
+                                                </div>
+                                                <div className="space-y-3 mb-6">
+                                                    {[
+                                                        { label: 'Knowledge', score: kpiStats?.score_knowledge, color: 'bg-blue-500', shadow: 'shadow-[0_0_10px_rgba(59,130,246,0.5)]' },
+                                                        { label: 'People', score: kpiStats?.score_people, color: 'bg-emerald-500', shadow: 'shadow-[0_0_10px_rgba(16,185,129,0.5)]' },
+                                                        { label: 'Service', score: kpiStats?.score_service, color: 'bg-indigo-500', shadow: 'shadow-[0_0_10px_rgba(99,102,241,0.5)]' },
+                                                        { label: 'Business', score: kpiStats?.score_business, color: 'bg-purple-500', shadow: 'shadow-[0_0_10px_rgba(168,85,247,0.5)]' },
+                                                        { label: 'Leadership', score: kpiStats?.score_leadership, color: 'bg-rose-500', shadow: 'shadow-[0_0_10px_rgba(244,63,94,0.5)]' },
+                                                    ]
+                                                        .filter(pillar => {
+                                                            // Hide Leadership pillar for Analyst I-II (job_level contains 'Analyst I' or 'Analyst II' but not 'Analyst III')
+                                                            if (pillar.label === 'Leadership') {
+                                                                const jobLevel = profile?.job_level?.toLowerCase() || '';
+                                                                const isAnalystI_II = (jobLevel.includes('analyst i') || jobLevel.includes('analyst ii')) && !jobLevel.includes('analyst iii');
+                                                                return !isAnalystI_II; // Show only if NOT Analyst I-II
+                                                            }
+                                                            return true;
+                                                        })
+                                                        .map((pillar) => (
+                                                            <div key={pillar.label} className="flex justify-between text-sm">
+                                                                <span className="!text-gray-200 font-medium">{pillar.label}</span>
+                                                                <div className="h-1.5 w-24 bg-gray-700/50 rounded-full overflow-hidden self-center border border-white/5">
+                                                                    <div
+                                                                        className={`h-full ${pillar.color} ${pillar.shadow}`}
+                                                                        style={{ width: `${((pillar.score || 0) / 5) * 100}%` }}
+                                                                    />
+                                                                </div>
                                                             </div>
-                                                        </div>
-                                                    ))}
+                                                        ))}
+                                                </div>
+                                                <Link
+                                                    href="/dashboard/my-kpi"
+                                                    className="inline-flex items-center gap-2 !text-[#f4d875] text-sm font-bold hover:gap-3 transition-all"
+                                                >
+                                                    Full Report <ArrowRight className="h-4 w-4" />
+                                                </Link>
                                             </div>
-                                            <Link
-                                                href="/dashboard/my-kpi"
-                                                className="inline-flex items-center gap-2 !text-[#f4d875] text-sm font-bold hover:gap-3 transition-all"
-                                            >
-                                                Full Report <ArrowRight className="h-4 w-4" />
-                                            </Link>
                                         </div>
-                                    </div>
 
-                                    {/* Col 2: Attendance (NEW Replaces Learning) */}
-                                    <div className="lg:col-span-1 flex flex-col gap-4">
-                                        <h4 className="text-sm font-bold !text-[#f4d875] uppercase tracking-wider flex items-center gap-2">
-                                            <Clock className="w-4 h-4" /> Attendance
-                                        </h4>
-                                        <div className="bg-[#e8c559]/10 dark:bg-white/5 rounded-2xl p-6 border border-[#e8c559]/20 dark:border-white/10 flex-1 flex flex-col justify-between hover:bg-[#e8c559]/20 dark:hover:bg-white/10 transition-colors shadow-lg dark:shadow-none">
-                                            <div className="flex gap-4">
-                                                <div className="flex-1 p-3 bg-blue-500/10 rounded-xl border border-blue-500/20 text-center">
-                                                    <div className="text-2xl font-bold text-blue-400">{attendanceStats?.total || 0}</div>
-                                                    <div className="text-[10px] text-blue-200 uppercase tracking-wider">Total Days</div>
+                                        {/* Col 2: Attendance (NEW Replaces Learning) */}
+                                        <div className="lg:col-span-1 flex flex-col gap-4">
+                                            <h4 className="text-sm font-bold !text-[#f4d875] uppercase tracking-wider flex items-center gap-2">
+                                                <Clock className="w-4 h-4" /> Attendance
+                                            </h4>
+                                            <div className="bg-[#e8c559]/10 dark:bg-white/5 rounded-2xl p-6 border border-[#e8c559]/20 dark:border-white/10 flex-1 flex flex-col justify-between hover:bg-[#e8c559]/20 dark:hover:bg-white/10 transition-colors shadow-lg dark:shadow-none">
+                                                <div className="flex gap-4">
+                                                    <div className="flex-1 p-3 bg-blue-500/10 rounded-xl border border-blue-500/20 text-center">
+                                                        <div className="text-2xl font-bold text-blue-400">{attendanceStats?.total || 0}</div>
+                                                        <div className="text-[10px] text-blue-200 uppercase tracking-wider">Total Days</div>
+                                                    </div>
+                                                    <div className="flex-1 p-3 bg-rose-500/10 rounded-xl border border-rose-500/20 text-center">
+                                                        <div className="text-2xl font-bold text-rose-400">{attendanceStats?.late || 0}</div>
+                                                        <div className="text-[10px] text-rose-200 uppercase tracking-wider">Late Days</div>
+                                                    </div>
                                                 </div>
-                                                <div className="flex-1 p-3 bg-rose-500/10 rounded-xl border border-rose-500/20 text-center">
-                                                    <div className="text-2xl font-bold text-rose-400">{attendanceStats?.late || 0}</div>
-                                                    <div className="text-[10px] text-rose-200 uppercase tracking-wider">Late Days</div>
+
+                                                <div className="mt-4">
+                                                    <div className="flex justify-between text-xs !text-gray-300 mb-2">
+                                                        <span>Late Percentage</span>
+                                                        <span className="!text-white font-bold">{attendanceStats?.percent.toFixed(1)}%</span>
+                                                    </div>
+                                                    <div className="h-2 w-full bg-gray-700/50 rounded-full overflow-hidden border border-white/5 relative">
+                                                        <div
+                                                            className="absolute left-0 top-0 h-full bg-gradient-to-r from-emerald-500 via-amber-500 to-rose-500 transition-all duration-500"
+                                                            style={{ width: `${Math.min((attendanceStats?.percent || 0) * 5, 100)}%` }}
+                                                        />
+                                                    </div>
+                                                    <p className="text-[10px] !text-gray-400 mt-2 italic">
+                                                        {(attendanceStats?.percent || 0) <= 2 ? "Excellent! On time." :
+                                                            (attendanceStats?.percent || 0) <= 5 ? "Very Good." :
+                                                                "Needs Improvement."}
+                                                    </p>
                                                 </div>
+
+                                                <Link
+                                                    href="/dashboard/my-request/attendance"
+                                                    className="mt-4 w-full py-2 bg-white/5 hover:bg-white/10 border border-white/10 !text-white text-xs font-bold uppercase tracking-wider rounded-lg text-center transition-colors"
+                                                >
+                                                    Detailed History
+                                                </Link>
                                             </div>
+                                        </div>
 
-                                            <div className="mt-4">
-                                                <div className="flex justify-between text-xs !text-gray-300 mb-2">
-                                                    <span>Late Percentage</span>
-                                                    <span className="!text-white font-bold">{attendanceStats?.percent.toFixed(1)}%</span>
-                                                </div>
-                                                <div className="h-2 w-full bg-gray-700/50 rounded-full overflow-hidden border border-white/5 relative">
-                                                    <div
-                                                        className="absolute left-0 top-0 h-full bg-gradient-to-r from-emerald-500 via-amber-500 to-rose-500 transition-all duration-500"
-                                                        style={{ width: `${Math.min((attendanceStats?.percent || 0) * 5, 100)}%` }}
-                                                    />
-                                                </div>
-                                                <p className="text-[10px] !text-gray-400 mt-2 italic">
-                                                    {(attendanceStats?.percent || 0) <= 2 ? "Excellent! On time." :
-                                                        (attendanceStats?.percent || 0) <= 5 ? "Very Good." :
-                                                            "Needs Improvement."}
-                                                </p>
+                                        {/* Col 3: Quick Actions */}
+                                        <div className="lg:col-span-1 flex flex-col gap-4">
+                                            <h4 className="text-sm font-bold !text-[#f4d875] uppercase tracking-wider flex items-center gap-2">
+                                                <Zap className="w-4 h-4" /> Quick Actions
+                                            </h4>
+                                            <div className="grid grid-rows-3 gap-3 flex-1">
+                                                <Link
+                                                    href="/dashboard/my-request/training"
+                                                    className="flex items-center gap-4 p-4 rounded-xl bg-[#e8c559]/10 dark:bg-white/5 border border-[#e8c559]/20 dark:border-white/10 hover:bg-[#e8c559]/20 dark:hover:bg-white/10 hover:border-[#e8c559]/30 dark:hover:border-white/20 transition-all group"
+                                                >
+                                                    <div className="w-10 h-10 rounded-lg bg-blue-500/20 flex items-center justify-center text-blue-400 group-hover:scale-110 transition-transform">
+                                                        <Plus className="w-5 h-5" />
+                                                    </div>
+                                                    <div>
+                                                        <div className="font-bold !text-white text-sm">Request Training</div>
+                                                        <div className="text-[10px] !text-gray-300">Ajukan pelatihan baru</div>
+                                                    </div>
+                                                    <ArrowRight className="ml-auto w-4 h-4 !text-white/50 group-hover:!text-white group-hover:translate-x-1 transition-all" />
+                                                </Link>
+
+                                                <Link
+                                                    href="/dashboard/knowledge"
+                                                    className="flex items-center gap-4 p-4 rounded-xl bg-[#e8c559]/10 dark:bg-white/5 border border-[#e8c559]/20 dark:border-white/10 hover:bg-[#e8c559]/20 dark:hover:bg-white/10 hover:border-[#e8c559]/30 dark:hover:border-white/20 transition-all group"
+                                                >
+                                                    <div className="w-10 h-10 rounded-lg bg-emerald-500/20 flex items-center justify-center text-emerald-400 group-hover:scale-110 transition-transform">
+                                                        <BookOpen className="w-5 h-5" />
+                                                    </div>
+                                                    <div>
+                                                        <div className="font-bold !text-white text-sm">Knowledge Hub</div>
+                                                        <div className="text-[10px] !text-gray-300">Akses materi belajar</div>
+                                                    </div>
+                                                    <ArrowRight className="ml-auto w-4 h-4 !text-white/50 group-hover:!text-white group-hover:translate-x-1 transition-all" />
+                                                </Link>
+
+                                                <Link
+                                                    href="/dashboard/my-request/one-on-one"
+                                                    className="flex items-center gap-4 p-4 rounded-xl bg-[#e8c559]/10 dark:bg-white/5 border border-[#e8c559]/20 dark:border-white/10 hover:bg-[#e8c559]/20 dark:hover:bg-white/10 hover:border-[#e8c559]/30 dark:hover:border-white/20 transition-all group"
+                                                >
+                                                    <div className="w-10 h-10 rounded-lg bg-pink-500/20 flex items-center justify-center text-pink-400 group-hover:scale-110 transition-transform">
+                                                        <Users className="w-5 h-5" />
+                                                    </div>
+                                                    <div>
+                                                        <div className="font-bold !text-white text-sm">Request 1-on-1</div>
+                                                        <div className="text-[10px] !text-gray-300">Sesi diskusi karier</div>
+                                                    </div>
+                                                    <ArrowRight className="ml-auto w-4 h-4 !text-white/50 group-hover:!text-white group-hover:translate-x-1 transition-all" />
+                                                </Link>
                                             </div>
-
-                                            <Link
-                                                href="/dashboard/my-request/attendance"
-                                                className="mt-4 w-full py-2 bg-white/5 hover:bg-white/10 border border-white/10 !text-white text-xs font-bold uppercase tracking-wider rounded-lg text-center transition-colors"
-                                            >
-                                                Detailed History
-                                            </Link>
                                         </div>
+
                                     </div>
-
-                                    {/* Col 3: Quick Actions */}
-                                    <div className="lg:col-span-1 flex flex-col gap-4">
-                                        <h4 className="text-sm font-bold !text-[#f4d875] uppercase tracking-wider flex items-center gap-2">
-                                            <Zap className="w-4 h-4" /> Quick Actions
-                                        </h4>
-                                        <div className="grid grid-rows-3 gap-3 flex-1">
-                                            <Link
-                                                href="/dashboard/my-request/training"
-                                                className="flex items-center gap-4 p-4 rounded-xl bg-[#e8c559]/10 dark:bg-white/5 border border-[#e8c559]/20 dark:border-white/10 hover:bg-[#e8c559]/20 dark:hover:bg-white/10 hover:border-[#e8c559]/30 dark:hover:border-white/20 transition-all group"
-                                            >
-                                                <div className="w-10 h-10 rounded-lg bg-blue-500/20 flex items-center justify-center text-blue-400 group-hover:scale-110 transition-transform">
-                                                    <Plus className="w-5 h-5" />
-                                                </div>
-                                                <div>
-                                                    <div className="font-bold !text-white text-sm">Request Training</div>
-                                                    <div className="text-[10px] !text-gray-300">Ajukan pelatihan baru</div>
-                                                </div>
-                                                <ArrowRight className="ml-auto w-4 h-4 !text-white/50 group-hover:!text-white group-hover:translate-x-1 transition-all" />
-                                            </Link>
-
-                                            <Link
-                                                href="/dashboard/knowledge"
-                                                className="flex items-center gap-4 p-4 rounded-xl bg-[#e8c559]/10 dark:bg-white/5 border border-[#e8c559]/20 dark:border-white/10 hover:bg-[#e8c559]/20 dark:hover:bg-white/10 hover:border-[#e8c559]/30 dark:hover:border-white/20 transition-all group"
-                                            >
-                                                <div className="w-10 h-10 rounded-lg bg-emerald-500/20 flex items-center justify-center text-emerald-400 group-hover:scale-110 transition-transform">
-                                                    <BookOpen className="w-5 h-5" />
-                                                </div>
-                                                <div>
-                                                    <div className="font-bold !text-white text-sm">Knowledge Hub</div>
-                                                    <div className="text-[10px] !text-gray-300">Akses materi belajar</div>
-                                                </div>
-                                                <ArrowRight className="ml-auto w-4 h-4 !text-white/50 group-hover:!text-white group-hover:translate-x-1 transition-all" />
-                                            </Link>
-
-                                            <Link
-                                                href="/dashboard/my-request/one-on-one"
-                                                className="flex items-center gap-4 p-4 rounded-xl bg-[#e8c559]/10 dark:bg-white/5 border border-[#e8c559]/20 dark:border-white/10 hover:bg-[#e8c559]/20 dark:hover:bg-white/10 hover:border-[#e8c559]/30 dark:hover:border-white/20 transition-all group"
-                                            >
-                                                <div className="w-10 h-10 rounded-lg bg-pink-500/20 flex items-center justify-center text-pink-400 group-hover:scale-110 transition-transform">
-                                                    <Users className="w-5 h-5" />
-                                                </div>
-                                                <div>
-                                                    <div className="font-bold !text-white text-sm">Request 1-on-1</div>
-                                                    <div className="text-[10px] !text-gray-300">Sesi diskusi karier</div>
-                                                </div>
-                                                <ArrowRight className="ml-auto w-4 h-4 !text-white/50 group-hover:!text-white group-hover:translate-x-1 transition-all" />
-                                            </Link>
-                                        </div>
-                                    </div>
-
                                 </div>
                             </div>
-                        </div>
-                    )}
-                </div>
+                        )
+                    }
+                </div >
                 {/* End of Carousel Inner */}
 
                 {/* Dot Indicators - Inside Carousel Wrapper */}
@@ -2187,7 +2460,7 @@ export default function DashboardPage() {
                             }`}
                         aria-label="Go to slide 2"
                     />
-                    {!isIntern && (
+                    {!isIntern && profile?.role !== 'ceo' && (
                         <button
                             onClick={() => setActiveSlide(2)}
                             className={`w-2.5 h-2.5 rounded-full transition-all duration-300 ${activeSlide === 2

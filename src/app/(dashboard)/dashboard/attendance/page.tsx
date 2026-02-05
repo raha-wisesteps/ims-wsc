@@ -174,31 +174,44 @@ export default function PersonalAttendancePage() {
 
     return (
         <div className="p-6 max-w-5xl mx-auto pb-20">
-            {/* Header */}
-            <div className="flex items-center justify-between mb-8">
-                <div className="flex items-center gap-4">
-                    {isViewingOthers && (
-                        <Link
-                            href={`/dashboard/command-center/kpi-assessment/${targetProfile.id}`}
-                            className="p-2 bg-white/5 rounded-xl border border-white/10 hover:bg-white/10 text-white"
-                        >
-                            <ArrowLeft className="w-5 h-5" />
-                        </Link>
-                    )}
-                    <div>
-                        <h1 className="text-2xl font-black text-white flex items-center gap-2">
-                            Attendance Log
-                        </h1>
-                        <p className="text-gray-400">
-                            {isViewingOthers ? `Viewing records for ` : `Your personal attendance history`}
-                            {isViewingOthers && <span className="text-[#e8c559] font-bold">{targetProfile.full_name}</span>}
-                        </p>
+            {/* Standardized Header */}
+            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-8">
+                <div>
+                    <div className="flex items-center gap-2 text-sm text-[var(--text-muted)] mb-1">
+                        <Link href="/dashboard" className="hover:text-[#3f545f] dark:hover:text-[#e8c559]">Dashboard</Link>
+                        <span>/</span>
+                        <span className="text-[var(--text-primary)]">Attendance</span>
+                    </div>
+                    <div className="flex items-center gap-3">
+                        <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-blue-500 to-cyan-500 flex items-center justify-center text-2xl text-white shadow-lg">
+                            <Clock className="w-6 h-6" />
+                        </div>
+                        <div>
+                            <h1 className="text-3xl font-bold tracking-tight text-[var(--text-primary)]">
+                                Attendance Log
+                            </h1>
+                            <p className="text-[var(--text-secondary)] text-sm">
+                                {isViewingOthers ? `Viewing records for ` : `Riwayat Kehadiran`}
+                                {isViewingOthers && <span className="text-[#e8c559] font-bold"> {targetProfile.full_name}</span>}
+                            </p>
+                        </div>
                     </div>
                 </div>
 
-                <div className="text-right hidden md:block">
-                    <div className="text-sm font-bold text-white">{targetProfile.department}</div>
-                    <div className="text-xs text-gray-400">{targetProfile.job_title}</div>
+                <div className="flex items-center gap-3">
+                    {/* Department Badge (existing) */}
+                    <div className="hidden md:block text-right mr-2">
+                        <div className="text-sm font-bold text-[var(--text-primary)]">{targetProfile.department}</div>
+                        <div className="text-xs text-[var(--text-muted)]">{targetProfile.job_title}</div>
+                    </div>
+
+                    <Link
+                        href={isViewingOthers ? `/dashboard/command-center/kpi-assessment/${targetProfile.id}` : "/dashboard"}
+                        className="px-4 py-2 rounded-lg bg-[var(--glass-bg)] hover:bg-[var(--glass-border)] text-[var(--text-secondary)] font-medium transition-colors flex items-center gap-2"
+                    >
+                        <ArrowLeft className="w-4 h-4" />
+                        Kembali
+                    </Link>
                 </div>
             </div>
 

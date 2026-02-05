@@ -641,6 +641,78 @@ html.dark .career-text-current,
   color: #1c2120 !important;
 }
 
+/* ===== FORCE DARK MODE EXCEPTION ===== */
+/* Use .force-dark-mode class on containers that should maintain dark theme styling in light mode */
+/* This is useful for dropdowns/popups with dark backgrounds that need white text */
+.light .force-dark-mode,
+.light .force-dark-mode .text-white,
+.light .force-dark-mode .text-white\/60,
+.light .force-dark-mode .text-white\/80,
+.light .force-dark-mode button,
+.light .force-dark-mode p,
+.light .force-dark-mode span {
+  color: inherit;
+}
+
+.light .force-dark-mode {
+  color: #ffffff !important;
+}
+
+.light .force-dark-mode .text-white {
+  color: #ffffff !important;
+}
+
+.light .force-dark-mode .text-white\/60 {
+  color: rgba(255, 255, 255, 0.6) !important;
+}
+
+.light .force-dark-mode .text-white\/80 {
+  color: rgba(255, 255, 255, 0.8) !important;
+}
+
+/* Force dark scrollbar in force-dark-mode containers */
+.light .force-dark-mode::-webkit-scrollbar,
+.light .force-dark-mode *::-webkit-scrollbar {
+  width: 6px !important;
+  background: #1a1a18 !important;
+}
+
+.light .force-dark-mode::-webkit-scrollbar-track,
+.light .force-dark-mode *::-webkit-scrollbar-track {
+  background: #1a1a18 !important;
+}
+
+.light .force-dark-mode::-webkit-scrollbar-thumb,
+.light .force-dark-mode *::-webkit-scrollbar-thumb {
+  background: #3f545f !important;
+  border-radius: 4px !important;
+}
+
+.light .force-dark-mode::-webkit-scrollbar-thumb:hover,
+.light .force-dark-mode *::-webkit-scrollbar-thumb:hover {
+  background: #5f788e !important;
+}
+
+/* Hover states for force-dark-mode - YELLOW text on hover */
+/* Using high specificity to override the global .light .text-white rule */
+.light .force-dark-mode button:hover {
+  color: #f4d875 !important;
+}
+
+.light .force-dark-mode button:hover span,
+.light .force-dark-mode button:hover .font-medium,
+.light .force-dark-mode button:hover p,
+.light .force-dark-mode button:hover * {
+  color: #f4d875 !important;
+}
+
+/* Active/selected items keep their gold color */
+.light .force-dark-mode button.bg-\[\#e8c559\]\/20,
+.light .force-dark-mode button.bg-\[\#e8c559\]\/20 span,
+.light .force-dark-mode .text-\[\#f4d875\] {
+  color: #f4d875 !important;
+}
+
 /* ===== CUSTOM COLOR OVERRIDES for buttons ===== */
 /* bg-[#3f545f] is the primary blue-gray used in light mode */
 .light .bg-\[\#3f545f\] {

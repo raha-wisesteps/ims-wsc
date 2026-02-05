@@ -41,18 +41,19 @@ export default function AssessmentCenterPage() {
         }
     }, [isLoading, canAccessCommandCenter, router]);
 
-    if (isLoading || (!canAccessCommandCenter && loading)) {
-        return <div className="p-10 text-white text-center">Checking access...</div>;
-    }
-
+    // Fetch staff data - must be called unconditionally (before any early returns)
     useEffect(() => {
+        // Only fetch if user has access
+        if (!canAccessCommandCenter) return;
+
         const fetchStaff = async () => {
-            // 1. Fetch profiles (excluding interns AND HR)
+            // 1. Fetch profiles (excluding interns, HR job_type, AND CEO/HR roles)
             const { data: profiles } = await supabase
                 .from('profiles')
-                .select('id, full_name, avatar_url, job_title, job_level, job_type, department')
+                .select('id, full_name, avatar_url, job_title, job_level, job_type, department, role')
                 .neq('job_type', 'intern')
-                .neq('job_type', 'hr');
+                .neq('job_type', 'hr')
+                .not('role', 'in', '(ceo,hr)');
 
             if (!profiles) return;
 
@@ -96,7 +97,12 @@ export default function AssessmentCenterPage() {
         };
 
         fetchStaff();
-    }, []);
+    }, [canAccessCommandCenter]);
+
+    // Early return for loading/access check - MUST be after all hooks
+    if (isLoading || (!canAccessCommandCenter && loading)) {
+        return <div className="p-10 text-white text-center">Checking access...</div>;
+    }
 
     const filteredStaff = staffList.filter(staff => {
         return staff.name.toLowerCase().includes(searchQuery.toLowerCase());
