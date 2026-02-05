@@ -538,6 +538,43 @@ export default function DashboardPage() {
         fetchProfile();
     }, []);
 
+    // KPI & Attendance Data Fetching
+    const [kpiStats, setKpiStats] = useState<any>(null);
+    const [attendanceStats, setAttendanceStats] = useState<{ total: number; late: number; percent: number } | null>(null);
+
+    useEffect(() => {
+        const fetchKPIAndAttendance = async () => {
+            if (!profile?.id) return;
+
+            // 1. Fetch KPI Scores
+            const { data: kpi } = await supabase
+                .from('kpi_scores')
+                .select('*, kpi_sub_aspect_scores(*)')
+                .eq('profile_id', profile.id)
+                .eq('period', '2026-S1')
+                .single();
+
+            if (kpi) setKpiStats(kpi);
+
+            // 2. Fetch Attendance Stats
+            const semesterStart = '2026-01-01';
+            const { data: checkins } = await supabase
+                .from('daily_checkins')
+                .select('checkin_date, is_late')
+                .eq('profile_id', profile.id)
+                .gte('checkin_date', semesterStart);
+
+            if (checkins) {
+                const total = checkins.length;
+                const late = checkins.filter((c: any) => c.is_late).length;
+                const percent = total > 0 ? (late / total) * 100 : 0;
+                setAttendanceStats({ total, late, percent });
+            }
+        };
+
+        fetchKPIAndAttendance();
+    }, [profile?.id]);
+
     // Weather & Location State
     const [weather, setWeather] = useState<{ temp: number; code: number } | null>(null);
     const [locationName, setLocationName] = useState<string>("Detecting...");
@@ -667,7 +704,7 @@ export default function DashboardPage() {
         const isLeftSwipe = distance > minSwipeDistance;
         const isRightSwipe = distance < -minSwipeDistance;
 
-        if (isLeftSwipe && activeSlide < 2) {
+        if (isLeftSwipe && activeSlide < (isIntern ? 1 : 2)) {
             setActiveSlide(activeSlide + 1);
         }
         if (isRightSwipe && activeSlide > 0) {
@@ -693,7 +730,7 @@ export default function DashboardPage() {
         if (!isDragging) return;
         setIsDragging(false);
         const distance = dragStart - e.clientX;
-        if (distance > minSwipeDistance && activeSlide < 2) {
+        if (distance > minSwipeDistance && activeSlide < (isIntern ? 1 : 2)) {
             setActiveSlide(activeSlide + 1);
         }
         if (distance < -minSwipeDistance && activeSlide > 0) {
@@ -1884,187 +1921,190 @@ export default function DashboardPage() {
                     </div>
 
                     {/* ==================== SLIDE 3: Career Development ==================== */}
-                    <div className="w-full flex-shrink-0 relative min-h-[400px] group">
-                        {/* Background with darker overlay for better text contrast */}
-                        <div
-                            className="absolute inset-0 bg-cover bg-center z-0"
-                            style={{
-                                backgroundImage: `url('/jason-cooper-XEhchWQuWyM-unsplash.jpg')`,
-                            }}
-                        />
-                        <div className="absolute inset-0 bg-[#0f0f0d]/90 z-10" />
+                    {!isIntern && (
+                        <div className="w-full flex-shrink-0 relative min-h-[400px] group">
+                            {/* Background with darker overlay for better text contrast */}
+                            <div
+                                className="absolute inset-0 bg-cover bg-center z-0"
+                                style={{
+                                    backgroundImage: `url('/jason-cooper-XEhchWQuWyM-unsplash.jpg')`,
+                                }}
+                            />
+                            <div className="absolute inset-0 bg-[#0f0f0d]/90 z-10" />
 
-                        {/* Content Container - Unified Single View */}
-                        <div className="relative z-20 p-8 h-full flex flex-col min-h-[400px]">
+                            {/* Content Container - Unified Single View */}
+                            <div className="relative z-20 p-8 h-full flex flex-col min-h-[400px]">
 
-                            {/* 1. Header: Profile & Career Level */}
-                            <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-8 border-b border-[#e8c559]/20 pb-6">
-                                <div className="flex items-center gap-5">
-                                    <div className="w-16 h-16 rounded-full bg-gradient-to-br from-[#e8c559] to-[#d4a843] flex items-center justify-center text-2xl font-bold text-[#171611] shadow-lg ring-4 ring-[#e8c559]/20">
-                                        {(profile?.full_name || 'User').split(' ').map((n: string) => n[0]).join('').slice(0, 2)}
-                                    </div>
-                                    <div>
-                                        <h3 className="text-2xl font-bold !text-white tracking-tight">{profile?.full_name || 'Loading...'}</h3>
-                                        <div className="flex items-center gap-2 mt-1">
-                                            <span className="!text-[#f4d875] font-bold">{profile?.job_title || 'Employee'}</span>
-                                            <span className="!text-white/30">•</span>
-                                            <span className="!text-white/60 text-sm">Level 2 Analyst</span>
+                                {/* 1. Header: Profile & Career Level */}
+                                <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-8 border-b border-[#e8c559]/20 pb-6">
+                                    <div className="flex items-center gap-5">
+                                        <div className="w-16 h-16 rounded-full bg-gradient-to-br from-[#e8c559] to-[#d4a843] flex items-center justify-center text-2xl font-bold text-[#171611] shadow-lg ring-4 ring-[#e8c559]/20">
+                                            {(profile?.full_name || 'User').split(' ').map((n: string) => n[0]).join('').slice(0, 2)}
+                                        </div>
+                                        <div>
+                                            <h3 className="text-2xl font-bold !text-white tracking-tight">{profile?.full_name || 'Loading...'}</h3>
+                                            <div className="flex items-center gap-2 mt-1">
+                                                <span className="!text-[#f4d875] font-bold">{profile?.job_title || 'Employee'}</span>
+                                                <span className="!text-white/30">•</span>
+                                                <span className="!text-white/60 text-sm">{profile?.job_level || 'Level 2 Analyst'}</span>
+                                            </div>
                                         </div>
                                     </div>
+
+                                    {/* Spacer for layout - removed career progression bars */}
                                 </div>
 
-                                {/* Career Progression Mini-Map */}
-                                <div className="flex items-center gap-3 bg-[#e8c559]/10 dark:bg-black/40 px-5 py-3 rounded-xl border border-[#e8c559]/30 dark:border-white/10 backdrop-blur-md shadow-lg">
-                                    <div className="text-right mr-2 hidden md:block">
-                                        <p className="text-[10px] !text-gray-300 uppercase tracking-widest font-semibold">Current Level</p>
-                                        <p className="text-sm font-bold !text-[#f4d875] drop-shadow-md">L2 - Established</p>
-                                    </div>
-                                    <div className="flex items-center gap-1">
-                                        {[1, 2, 3, 4, 5].map((level) => (
-                                            <div
-                                                key={level}
-                                                className={`w-2 h-8 rounded-full transition-all border border-white/5 ${level <= 2 ? '!bg-[#f4d875] shadow-[0_0_10px_rgba(244,216,117,0.6)]' : '!bg-gray-700/50'
-                                                    }`}
-                                            />
-                                        ))}
-                                    </div>
-                                </div>
-                            </div>
+                                {/* 2. Main Content Grid */}
+                                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 flex-1">
 
-                            {/* 2. Main Content Grid */}
-                            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 flex-1">
-
-                                {/* Col 1: Performance Summary (KPI) */}
-                                <div className="lg:col-span-1 flex flex-col gap-4">
-                                    <h4 className="text-sm font-bold !text-[#f4d875] uppercase tracking-wider flex items-center gap-2">
-                                        <Target className="w-4 h-4" /> Performance
-                                    </h4>
-                                    <div className="bg-[#e8c559]/10 dark:bg-white/5 rounded-2xl p-6 border border-[#e8c559]/20 dark:border-white/10 flex-1 hover:bg-[#e8c559]/20 dark:hover:bg-white/10 transition-colors group/card shadow-lg dark:shadow-none">
-                                        <div className="flex items-end gap-3 mb-6">
-                                            <span className="text-6xl font-black !text-white tracking-tighter drop-shadow-lg">4.1</span>
-                                            <span className="text-lg !text-gray-300 font-medium mb-1.5">/ 5.0</span>
+                                    {/* Col 1: Performance Summary (KPI) */}
+                                    <div className="lg:col-span-1 flex flex-col gap-4">
+                                        <h4 className="text-sm font-bold !text-[#f4d875] uppercase tracking-wider flex items-center gap-2">
+                                            <Target className="w-4 h-4" /> Performance
+                                        </h4>
+                                        <div className="bg-[#e8c559]/10 dark:bg-white/5 rounded-2xl p-6 border border-[#e8c559]/20 dark:border-white/10 flex-1 hover:bg-[#e8c559]/20 dark:hover:bg-white/10 transition-colors group/card shadow-lg dark:shadow-none">
+                                            <div className="flex items-end gap-3 mb-6">
+                                                <span className="text-6xl font-black !text-white tracking-tighter drop-shadow-lg">
+                                                    {kpiStats?.final_score ? Number(kpiStats.final_score).toFixed(1) : '—'}
+                                                </span>
+                                                <span className="text-lg !text-gray-300 font-medium mb-1.5">/ 5.0</span>
+                                            </div>
+                                            <div className="space-y-3 mb-6">
+                                                {[
+                                                    { label: 'Knowledge', score: kpiStats?.score_knowledge, color: 'bg-blue-500', shadow: 'shadow-[0_0_10px_rgba(59,130,246,0.5)]' },
+                                                    { label: 'People', score: kpiStats?.score_people, color: 'bg-emerald-500', shadow: 'shadow-[0_0_10px_rgba(16,185,129,0.5)]' },
+                                                    { label: 'Service', score: kpiStats?.score_service, color: 'bg-indigo-500', shadow: 'shadow-[0_0_10px_rgba(99,102,241,0.5)]' },
+                                                    { label: 'Business', score: kpiStats?.score_business, color: 'bg-purple-500', shadow: 'shadow-[0_0_10px_rgba(168,85,247,0.5)]' },
+                                                    { label: 'Leadership', score: kpiStats?.score_leadership, color: 'bg-rose-500', shadow: 'shadow-[0_0_10px_rgba(244,63,94,0.5)]' },
+                                                ]
+                                                    .filter(pillar => {
+                                                        // Hide Leadership pillar for Analyst I-II (job_level contains 'Analyst I' or 'Analyst II' but not 'Analyst III')
+                                                        if (pillar.label === 'Leadership') {
+                                                            const jobLevel = profile?.job_level?.toLowerCase() || '';
+                                                            const isAnalystI_II = (jobLevel.includes('analyst i') || jobLevel.includes('analyst ii')) && !jobLevel.includes('analyst iii');
+                                                            return !isAnalystI_II; // Show only if NOT Analyst I-II
+                                                        }
+                                                        return true;
+                                                    })
+                                                    .map((pillar) => (
+                                                        <div key={pillar.label} className="flex justify-between text-sm">
+                                                            <span className="!text-gray-200 font-medium">{pillar.label}</span>
+                                                            <div className="h-1.5 w-24 bg-gray-700/50 rounded-full overflow-hidden self-center border border-white/5">
+                                                                <div
+                                                                    className={`h-full ${pillar.color} ${pillar.shadow}`}
+                                                                    style={{ width: `${((pillar.score || 0) / 5) * 100}%` }}
+                                                                />
+                                                            </div>
+                                                        </div>
+                                                    ))}
+                                            </div>
+                                            <Link
+                                                href="/dashboard/my-kpi"
+                                                className="inline-flex items-center gap-2 !text-[#f4d875] text-sm font-bold hover:gap-3 transition-all"
+                                            >
+                                                Full Report <ArrowRight className="h-4 w-4" />
+                                            </Link>
                                         </div>
-                                        <div className="space-y-3 mb-6">
-                                            <div className="flex justify-between text-sm">
-                                                <span className="!text-gray-200 font-medium">Knowledge</span>
-                                                <div className="h-1.5 w-24 bg-gray-700/50 rounded-full overflow-hidden self-center border border-white/5">
-                                                    <div className="h-full bg-blue-500 w-[84%] shadow-[0_0_10px_rgba(59,130,246,0.5)]" />
+                                    </div>
+
+                                    {/* Col 2: Attendance (NEW Replaces Learning) */}
+                                    <div className="lg:col-span-1 flex flex-col gap-4">
+                                        <h4 className="text-sm font-bold !text-[#f4d875] uppercase tracking-wider flex items-center gap-2">
+                                            <Clock className="w-4 h-4" /> Attendance
+                                        </h4>
+                                        <div className="bg-[#e8c559]/10 dark:bg-white/5 rounded-2xl p-6 border border-[#e8c559]/20 dark:border-white/10 flex-1 flex flex-col justify-between hover:bg-[#e8c559]/20 dark:hover:bg-white/10 transition-colors shadow-lg dark:shadow-none">
+                                            <div className="flex gap-4">
+                                                <div className="flex-1 p-3 bg-blue-500/10 rounded-xl border border-blue-500/20 text-center">
+                                                    <div className="text-2xl font-bold text-blue-400">{attendanceStats?.total || 0}</div>
+                                                    <div className="text-[10px] text-blue-200 uppercase tracking-wider">Total Days</div>
+                                                </div>
+                                                <div className="flex-1 p-3 bg-rose-500/10 rounded-xl border border-rose-500/20 text-center">
+                                                    <div className="text-2xl font-bold text-rose-400">{attendanceStats?.late || 0}</div>
+                                                    <div className="text-[10px] text-rose-200 uppercase tracking-wider">Late Days</div>
                                                 </div>
                                             </div>
-                                            <div className="flex justify-between text-sm">
-                                                <span className="!text-gray-200 font-medium">People</span>
-                                                <div className="h-1.5 w-24 bg-gray-700/50 rounded-full overflow-hidden self-center border border-white/5">
-                                                    <div className="h-full bg-emerald-500 w-[90%] shadow-[0_0_10px_rgba(16,185,129,0.5)]" />
+
+                                            <div className="mt-4">
+                                                <div className="flex justify-between text-xs !text-gray-300 mb-2">
+                                                    <span>Late Percentage</span>
+                                                    <span className="!text-white font-bold">{attendanceStats?.percent.toFixed(1)}%</span>
                                                 </div>
-                                            </div>
-                                            <div className="flex justify-between text-sm">
-                                                <span className="!text-gray-200 font-medium">Business</span>
-                                                <div className="h-1.5 w-24 bg-gray-700/50 rounded-full overflow-hidden self-center border border-white/5">
-                                                    <div className="h-full bg-purple-500 w-[76%] shadow-[0_0_10px_rgba(168,85,247,0.5)]" />
+                                                <div className="h-2 w-full bg-gray-700/50 rounded-full overflow-hidden border border-white/5 relative">
+                                                    <div
+                                                        className="absolute left-0 top-0 h-full bg-gradient-to-r from-emerald-500 via-amber-500 to-rose-500 transition-all duration-500"
+                                                        style={{ width: `${Math.min((attendanceStats?.percent || 0) * 5, 100)}%` }}
+                                                    />
                                                 </div>
+                                                <p className="text-[10px] !text-gray-400 mt-2 italic">
+                                                    {(attendanceStats?.percent || 0) <= 2 ? "Excellent! On time." :
+                                                        (attendanceStats?.percent || 0) <= 5 ? "Very Good." :
+                                                            "Needs Improvement."}
+                                                </p>
                                             </div>
+
+                                            <Link
+                                                href="/dashboard/my-request/attendance"
+                                                className="mt-4 w-full py-2 bg-white/5 hover:bg-white/10 border border-white/10 !text-white text-xs font-bold uppercase tracking-wider rounded-lg text-center transition-colors"
+                                            >
+                                                Detailed History
+                                            </Link>
                                         </div>
-                                        <Link
-                                            href="/dashboard/my-kpi"
-                                            className="inline-flex items-center gap-2 !text-[#f4d875] text-sm font-bold hover:gap-3 transition-all"
-                                        >
-                                            Full Report <ArrowRight className="h-4 w-4" />
-                                        </Link>
                                     </div>
-                                </div>
 
-                                {/* Col 2: Learning & Development (Training) */}
-                                <div className="lg:col-span-1 flex flex-col gap-4">
-                                    <h4 className="text-sm font-bold !text-[#f4d875] uppercase tracking-wider flex items-center gap-2">
-                                        <BookOpen className="w-4 h-4" /> Learning
-                                    </h4>
-                                    <div className="bg-[#e8c559]/10 dark:bg-white/5 rounded-2xl p-6 border border-[#e8c559]/20 dark:border-white/10 flex-1 flex flex-col justify-between hover:bg-[#e8c559]/20 dark:hover:bg-white/10 transition-colors shadow-lg dark:shadow-none">
-                                        <div className="flex gap-4">
-                                            <div className="flex-1 p-3 bg-blue-500/10 rounded-xl border border-blue-500/20 text-center">
-                                                <div className="text-2xl font-bold text-blue-400">12</div>
-                                                <div className="text-[10px] text-blue-200 uppercase tracking-wider">Jam Training</div>
-                                            </div>
-                                            <div className="flex-1 p-3 bg-purple-500/10 rounded-xl border border-purple-500/20 text-center">
-                                                <div className="text-2xl font-bold text-purple-400">2</div>
-                                                <div className="text-[10px] text-purple-200 uppercase tracking-wider">Sertifikat</div>
-                                            </div>
+                                    {/* Col 3: Quick Actions */}
+                                    <div className="lg:col-span-1 flex flex-col gap-4">
+                                        <h4 className="text-sm font-bold !text-[#f4d875] uppercase tracking-wider flex items-center gap-2">
+                                            <Zap className="w-4 h-4" /> Quick Actions
+                                        </h4>
+                                        <div className="grid grid-rows-3 gap-3 flex-1">
+                                            <Link
+                                                href="/dashboard/my-request/training"
+                                                className="flex items-center gap-4 p-4 rounded-xl bg-[#e8c559]/10 dark:bg-white/5 border border-[#e8c559]/20 dark:border-white/10 hover:bg-[#e8c559]/20 dark:hover:bg-white/10 hover:border-[#e8c559]/30 dark:hover:border-white/20 transition-all group"
+                                            >
+                                                <div className="w-10 h-10 rounded-lg bg-blue-500/20 flex items-center justify-center text-blue-400 group-hover:scale-110 transition-transform">
+                                                    <Plus className="w-5 h-5" />
+                                                </div>
+                                                <div>
+                                                    <div className="font-bold !text-white text-sm">Request Training</div>
+                                                    <div className="text-[10px] !text-gray-300">Ajukan pelatihan baru</div>
+                                                </div>
+                                                <ArrowRight className="ml-auto w-4 h-4 !text-white/50 group-hover:!text-white group-hover:translate-x-1 transition-all" />
+                                            </Link>
+
+                                            <Link
+                                                href="/dashboard/knowledge"
+                                                className="flex items-center gap-4 p-4 rounded-xl bg-[#e8c559]/10 dark:bg-white/5 border border-[#e8c559]/20 dark:border-white/10 hover:bg-[#e8c559]/20 dark:hover:bg-white/10 hover:border-[#e8c559]/30 dark:hover:border-white/20 transition-all group"
+                                            >
+                                                <div className="w-10 h-10 rounded-lg bg-emerald-500/20 flex items-center justify-center text-emerald-400 group-hover:scale-110 transition-transform">
+                                                    <BookOpen className="w-5 h-5" />
+                                                </div>
+                                                <div>
+                                                    <div className="font-bold !text-white text-sm">Knowledge Hub</div>
+                                                    <div className="text-[10px] !text-gray-300">Akses materi belajar</div>
+                                                </div>
+                                                <ArrowRight className="ml-auto w-4 h-4 !text-white/50 group-hover:!text-white group-hover:translate-x-1 transition-all" />
+                                            </Link>
+
+                                            <Link
+                                                href="/dashboard/my-request/one-on-one"
+                                                className="flex items-center gap-4 p-4 rounded-xl bg-[#e8c559]/10 dark:bg-white/5 border border-[#e8c559]/20 dark:border-white/10 hover:bg-[#e8c559]/20 dark:hover:bg-white/10 hover:border-[#e8c559]/30 dark:hover:border-white/20 transition-all group"
+                                            >
+                                                <div className="w-10 h-10 rounded-lg bg-pink-500/20 flex items-center justify-center text-pink-400 group-hover:scale-110 transition-transform">
+                                                    <Users className="w-5 h-5" />
+                                                </div>
+                                                <div>
+                                                    <div className="font-bold !text-white text-sm">Request 1-on-1</div>
+                                                    <div className="text-[10px] !text-gray-300">Sesi diskusi karier</div>
+                                                </div>
+                                                <ArrowRight className="ml-auto w-4 h-4 !text-white/50 group-hover:!text-white group-hover:translate-x-1 transition-all" />
+                                            </Link>
                                         </div>
-
-                                        <div className="mt-4">
-                                            <div className="flex justify-between text-xs !text-gray-300 mb-2">
-                                                <span>Goal Semester Ini</span>
-                                                <span className="!text-white font-bold">12 / 20 Jam</span>
-                                            </div>
-                                            <div className="h-2 w-full bg-gray-700/50 rounded-full overflow-hidden border border-white/5">
-                                                <div className="h-full bg-gradient-to-r from-blue-500 to-purple-500 w-[60%] shadow-[0_0_15px_rgba(168,85,247,0.4)]" />
-                                            </div>
-                                            <p className="text-[10px] !text-gray-400 mt-2 italic">
-                                                "Great progress! 8h more to go."
-                                            </p>
-                                        </div>
-
-                                        <Link
-                                            href="/dashboard/training"
-                                            className="mt-4 w-full py-2 bg-white/5 hover:bg-white/10 border border-white/10 !text-white text-xs font-bold uppercase tracking-wider rounded-lg text-center transition-colors"
-                                        >
-                                            Training History
-                                        </Link>
                                     </div>
+
                                 </div>
-
-                                {/* Col 3: Quick Actions */}
-                                <div className="lg:col-span-1 flex flex-col gap-4">
-                                    <h4 className="text-sm font-bold !text-[#f4d875] uppercase tracking-wider flex items-center gap-2">
-                                        <Zap className="w-4 h-4" /> Quick Actions
-                                    </h4>
-                                    <div className="grid grid-rows-3 gap-3 flex-1">
-                                        <Link
-                                            href="/dashboard/training/request"
-                                            className="flex items-center gap-4 p-4 rounded-xl bg-[#e8c559]/10 dark:bg-white/5 border border-[#e8c559]/20 dark:border-white/10 hover:bg-[#e8c559]/20 dark:hover:bg-white/10 hover:border-[#e8c559]/30 dark:hover:border-white/20 transition-all group"
-                                        >
-                                            <div className="w-10 h-10 rounded-lg bg-blue-500/20 flex items-center justify-center text-blue-400 group-hover:scale-110 transition-transform">
-                                                <Plus className="w-5 h-5" />
-                                            </div>
-                                            <div>
-                                                <div className="font-bold !text-white text-sm">Request Training</div>
-                                                <div className="text-[10px] !text-gray-300">Ajukan pelatihan baru</div>
-                                            </div>
-                                            <ArrowRight className="ml-auto w-4 h-4 !text-white/50 group-hover:!text-white group-hover:translate-x-1 transition-all" />
-                                        </Link>
-
-                                        <Link
-                                            href="/dashboard/knowledge"
-                                            className="flex items-center gap-4 p-4 rounded-xl bg-[#e8c559]/10 dark:bg-white/5 border border-[#e8c559]/20 dark:border-white/10 hover:bg-[#e8c559]/20 dark:hover:bg-white/10 hover:border-[#e8c559]/30 dark:hover:border-white/20 transition-all group"
-                                        >
-                                            <div className="w-10 h-10 rounded-lg bg-emerald-500/20 flex items-center justify-center text-emerald-400 group-hover:scale-110 transition-transform">
-                                                <BookOpen className="w-5 h-5" />
-                                            </div>
-                                            <div>
-                                                <div className="font-bold !text-white text-sm">Knowledge Hub</div>
-                                                <div className="text-[10px] !text-gray-300">Akses materi belajar</div>
-                                            </div>
-                                            <ArrowRight className="ml-auto w-4 h-4 !text-white/50 group-hover:!text-white group-hover:translate-x-1 transition-all" />
-                                        </Link>
-
-                                        <Link
-                                            href="/dashboard/my-request/one-on-one"
-                                            className="flex items-center gap-4 p-4 rounded-xl bg-[#e8c559]/10 dark:bg-white/5 border border-[#e8c559]/20 dark:border-white/10 hover:bg-[#e8c559]/20 dark:hover:bg-white/10 hover:border-[#e8c559]/30 dark:hover:border-white/20 transition-all group"
-                                        >
-                                            <div className="w-10 h-10 rounded-lg bg-pink-500/20 flex items-center justify-center text-pink-400 group-hover:scale-110 transition-transform">
-                                                <Users className="w-5 h-5" />
-                                            </div>
-                                            <div>
-                                                <div className="font-bold !text-white text-sm">Request 1-on-1</div>
-                                                <div className="text-[10px] !text-gray-300">Sesi diskusi karier</div>
-                                            </div>
-                                            <ArrowRight className="ml-auto w-4 h-4 !text-white/50 group-hover:!text-white group-hover:translate-x-1 transition-all" />
-                                        </Link>
-                                    </div>
-                                </div>
-
                             </div>
                         </div>
-                    </div>
+                    )}
                 </div>
                 {/* End of Carousel Inner */}
 
@@ -2086,14 +2126,16 @@ export default function DashboardPage() {
                             }`}
                         aria-label="Go to slide 2"
                     />
-                    <button
-                        onClick={() => setActiveSlide(2)}
-                        className={`w-2.5 h-2.5 rounded-full transition-all duration-300 ${activeSlide === 2
-                            ? 'bg-[#e8c559] w-6'
-                            : 'bg-white/30 hover:bg-white/50'
-                            }`}
-                        aria-label="Go to slide 3"
-                    />
+                    {!isIntern && (
+                        <button
+                            onClick={() => setActiveSlide(2)}
+                            className={`w-2.5 h-2.5 rounded-full transition-all duration-300 ${activeSlide === 2
+                                ? 'bg-[#e8c559] w-6'
+                                : 'bg-white/30 hover:bg-white/50'
+                                }`}
+                            aria-label="Go to slide 3"
+                        />
+                    )}
                 </div>
             </Card >
             {/* End of Carousel Wrapper */}

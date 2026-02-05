@@ -4,9 +4,8 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import {
-    mockStaffData,
     ROLE_NAMES,
-    calculateStaffScore
+    StaffRole
 } from "./kpi-data";
 import {
     TrendingUp,
@@ -18,29 +17,45 @@ import {
     FileText,
 } from "lucide-react";
 
-// Score levels (1-5)
-const SCORE_LEVELS = [
-    { score: 1, label: "Poor", color: "text-rose-400", bg: "bg-rose-500", bgLight: "bg-rose-100" },
-    { score: 2, label: "Need Improvement", color: "text-orange-400", bg: "bg-orange-500", bgLight: "bg-orange-100" },
-    { score: 3, label: "Good", color: "text-amber-400", bg: "bg-amber-500", bgLight: "bg-amber-100" },
-    { score: 4, label: "Very Good", color: "text-lime-400", bg: "bg-lime-500", bgLight: "bg-lime-100" },
-    { score: 5, label: "Excellent", color: "text-emerald-400", bg: "bg-emerald-500", bgLight: "bg-emerald-100" },
-];
-
 export default function CEODashboardPage() {
-    const [selectedPeriod, setSelectedPeriod] = useState("S1 2026");
+    const [selectedPeriod, setSelectedPeriod] = useState("2026-S1");
     const [pendingCount, setPendingCount] = useState(0);
+    const [staffList, setStaffList] = useState<any[]>([]);
+    const [loading, setLoading] = useState(true);
+
     const supabase = createClient();
 
-    // Calculate dynamic stats
-    const totalStaff = mockStaffData.length;
-    const teamAvgScore = mockStaffData.reduce((sum, s) => sum + calculateStaffScore(s), 0) / totalStaff;
-    const avgPercentage = (teamAvgScore / 5) * 100;
-
-    const topPerformer = [...mockStaffData].sort((a, b) => calculateStaffScore(b) - calculateStaffScore(a))[0];
-    const needsAttention = [...mockStaffData].sort((a, b) => calculateStaffScore(a) - calculateStaffScore(b))[0];
-
+    // Fetch Stats & Staff List
     useEffect(() => {
+        const calculateStats = async () => {
+            // 1. Fetch all profiles (employees)
+            const { data: profiles } = await supabase
+                .from('profiles')
+                .select('id, full_name, job_title, job_level, job_type')
+                .neq('job_type', 'intern'); // Exclude interns from KPI view
+
+            if (!profiles) return;
+
+            // 2. Fetch KPI Scores for Selected Period
+            const { data: scores } = await supabase
+                .from('kpi_scores')
+                .select('profile_id, final_score')
+                .eq('period', selectedPeriod);
+
+            // 3. Merge Data
+            const merged = profiles.map((p: any) => {
+                const scoreRec = scores?.find((s: any) => s.profile_id === p.id);
+                return {
+                    ...p,
+                    kpiScore: scoreRec ? scoreRec.final_score : 0,
+                    hasAssessment: !!scoreRec
+                };
+            });
+
+            setStaffList(merged);
+            setLoading(false);
+        };
+
         const fetchPending = async () => {
             const { count: leaveCount } = await supabase
                 .from('leave_requests')
@@ -55,33 +70,34 @@ export default function CEODashboardPage() {
             setPendingCount((leaveCount || 0) + (otherCount || 0));
         };
 
+        calculateStats();
         fetchPending();
 
-        // Realtime subscription for LEAVE REQUESTS
-        const channel1 = supabase
-            .channel('cmd_center_pending_leaves')
-            .on(
-                'postgres_changes',
-                { event: '*', schema: 'public', table: 'leave_requests' },
-                () => fetchPending()
-            )
-            .subscribe();
-
-        // Realtime subscription for OTHER REQUESTS
-        const channel2 = supabase
-            .channel('cmd_center_pending_others')
-            .on(
-                'postgres_changes',
-                { event: '*', schema: 'public', table: 'other_requests' },
-                () => fetchPending()
-            )
+        // Realtime
+        const channel = supabase.channel('cmd_center_updates')
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'leave_requests' }, fetchPending)
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'other_requests' }, fetchPending)
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'kpi_scores' }, calculateStats)
             .subscribe();
 
         return () => {
-            supabase.removeChannel(channel1);
-            supabase.removeChannel(channel2);
+            supabase.removeChannel(channel);
         };
-    }, [supabase]);
+    }, [selectedPeriod, supabase]);
+
+    // Calculate Dashboard Metrics
+    const activeStaffCount = staffList.length;
+    const avgScore = activeStaffCount > 0
+        ? staffList.reduce((acc, s) => acc + (s.kpiScore || 0), 0) / activeStaffCount
+        : 0;
+    const avgPercentage = (avgScore / 5) * 100;
+
+    const sortedStaff = [...staffList].sort((a, b) => b.kpiScore - a.kpiScore);
+    const topPerformer = sortedStaff[0];
+    const lowPerformers = [...staffList].filter(s => s.kpiScore > 0).sort((a, b) => a.kpiScore - b.kpiScore);
+    const needsAttention = lowPerformers.length > 0 ? lowPerformers[0] : null;
+
+    if (loading) return <div className="p-10 text-white">Loading dashboard...</div>;
 
     return (
         <div className="space-y-8 pb-20">
@@ -102,8 +118,8 @@ export default function CEODashboardPage() {
                         onChange={(e) => setSelectedPeriod(e.target.value)}
                         className="px-4 py-2 rounded-lg bg-white/5 border border-white/10 text-white text-sm focus:border-[#e8c559] outline-none"
                     >
-                        <option value="S1 2026">Semester 1 2026</option>
-                        <option value="S2 2025">Semester 2 2025</option>
+                        <option value="2026-S1">Semester 1 2026</option>
+                        <option value="2025-S2">Semester 2 2025</option>
                     </select>
                 </div>
             </header>
@@ -117,7 +133,7 @@ export default function CEODashboardPage() {
                         <TrendingUp className="w-4 h-4 text-[#e8c559]" />
                     </div>
                     <p className="text-3xl font-black text-white">{avgPercentage.toFixed(0)}%</p>
-                    <p className="text-xs text-gray-400 mt-1">Target: 80%</p>
+                    <p className="text-xs text-gray-400 mt-1">Target: 80% ({avgScore.toFixed(2)}/5.0)</p>
                 </div>
 
                 {/* Total Employees */}
@@ -126,8 +142,8 @@ export default function CEODashboardPage() {
                         <p className="text-xs text-gray-500 uppercase tracking-wider">Total Staff</p>
                         <Users className="w-4 h-4 text-blue-500" />
                     </div>
-                    <p className="text-3xl font-black text-white">{totalStaff}</p>
-                    <p className="text-xs text-gray-400 mt-1">Active Employees</p>
+                    <p className="text-3xl font-black text-white">{activeStaffCount}</p>
+                    <p className="text-xs text-gray-400 mt-1">Active Employees (Non-Intern)</p>
                 </div>
 
                 {/* Pending Approvals */}
@@ -146,16 +162,27 @@ export default function CEODashboardPage() {
                 </Link>
 
                 {/* Needs Attention */}
-                <Link href={`/dashboard/command-center/kpi-assessment/${needsAttention.id}`} className="glass-panel p-5 rounded-xl border-l-4 border-rose-500 hover:bg-white/5 transition-colors group">
-                    <div className="flex justify-between items-start mb-2">
-                        <p className="text-xs text-gray-500 uppercase tracking-wider group-hover:text-rose-400 transition-colors">Needs Attention</p>
-                        <AlertCircle className="w-4 h-4 text-rose-500" />
+                {needsAttention ? (
+                    <Link href={`/dashboard/command-center/kpi-assessment/${needsAttention.id}`} className="glass-panel p-5 rounded-xl border-l-4 border-rose-500 hover:bg-white/5 transition-colors group">
+                        <div className="flex justify-between items-start mb-2">
+                            <p className="text-xs text-gray-500 uppercase tracking-wider group-hover:text-rose-400 transition-colors">Needs Attention</p>
+                            <AlertCircle className="w-4 h-4 text-rose-500" />
+                        </div>
+                        <p className="text-lg font-bold text-white truncate">{needsAttention.full_name}</p>
+                        <p className="text-xs text-rose-400 mt-1 flex items-center gap-1">
+                            Score: {(needsAttention.kpiScore).toFixed(2)} <ArrowRight className="w-3 h-3 group-hover:translate-x-1 transition-transform" />
+                        </p>
+                    </Link>
+                ) : (
+                    <div className="glass-panel p-5 rounded-xl border-l-4 border-emerald-500">
+                        <div className="flex justify-between items-start mb-2">
+                            <p className="text-xs text-gray-500 uppercase tracking-wider">Status</p>
+                            <ClipboardCheck className="w-4 h-4 text-emerald-500" />
+                        </div>
+                        <p className="text-lg font-bold text-white">All Good</p>
+                        <p className="text-xs text-emerald-400 mt-1">No low performers</p>
                     </div>
-                    <p className="text-lg font-bold text-white truncate">{needsAttention.name}</p>
-                    <p className="text-xs text-rose-400 mt-1 flex items-center gap-1">
-                        Score: {(calculateStaffScore(needsAttention) / 5 * 100).toFixed(0)}% <ArrowRight className="w-3 h-3 group-hover:translate-x-1 transition-transform" />
-                    </p>
-                </Link>
+                )}
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
@@ -229,37 +256,6 @@ export default function CEODashboardPage() {
                         </Link>
 
                     </div>
-
-                    {/* Simple Chart / Trend Visualization */}
-                    <div className="glass-panel p-6 rounded-xl border border-white/10">
-                        <div className="flex justify-between items-center mb-6">
-                            <h3 className="font-bold text-white">Performance Overview</h3>
-                            <span className="text-xs text-gray-500">Average Score by Role</span>
-                        </div>
-                        <div className="space-y-4">
-                            {Object.entries(ROLE_NAMES).map(([roleKey, roleName]) => {
-                                const staffInRole = mockStaffData.filter(s => s.role === roleKey);
-                                if (staffInRole.length === 0) return null;
-                                const avgScore = staffInRole.reduce((acc, s) => acc + calculateStaffScore(s), 0) / staffInRole.length;
-                                const percentage = (avgScore / 5) * 100;
-
-                                return (
-                                    <div key={roleKey}>
-                                        <div className="flex justify-between text-sm mb-1">
-                                            <span className="text-gray-300">{roleName.split('(')[0]}</span>
-                                            <span className="text-white font-bold">{avgScore.toFixed(1)} <span className="text-gray-500 text-xs">/ 5.0</span></span>
-                                        </div>
-                                        <div className="h-2 bg-white/5 rounded-full overflow-hidden">
-                                            <div
-                                                className={`h-full rounded-full ${percentage >= 80 ? 'bg-emerald-500' : percentage >= 60 ? 'bg-amber-500' : 'bg-rose-500'}`}
-                                                style={{ width: `${percentage}%` }}
-                                            />
-                                        </div>
-                                    </div>
-                                )
-                            })}
-                        </div>
-                    </div>
                 </div>
 
                 {/* Right Sidebar: Top Performer Spotlight */}
@@ -268,50 +264,53 @@ export default function CEODashboardPage() {
                         <TrendingUp className="w-5 h-5 text-emerald-500" /> Spotlight
                     </h2>
 
-                    <div className="glass-panel p-6 rounded-xl border border-emerald-500/20 bg-gradient-to-b from-emerald-500/10 to-transparent relative overflow-hidden">
-                        <div className="absolute top-0 right-0 p-4 opacity-10">
-                            <TrendingUp className="w-32 h-32 text-emerald-500" />
-                        </div>
-
-                        <div className="relative z-10">
-                            <p className="text-emerald-400 text-xs font-bold uppercase tracking-wider mb-2">🏆 Top Performer of the Month</p>
-                            <h3 className="text-2xl font-black text-white mb-1">{topPerformer.name}</h3>
-                            <p className="text-gray-400 text-sm mb-4">{ROLE_NAMES[topPerformer.role]}</p>
-
-                            <div className="flex items-end gap-2 mb-6">
-                                <span className="text-4xl font-black text-white">{(calculateStaffScore(topPerformer)).toFixed(1)}</span>
-                                <span className="text-sm text-gray-500 mb-1">/ 5.0</span>
+                    {topPerformer && topPerformer.kpiScore > 0 ? (
+                        <div className="glass-panel p-6 rounded-xl border border-emerald-500/20 bg-gradient-to-b from-emerald-500/10 to-transparent relative overflow-hidden">
+                            <div className="absolute top-0 right-0 p-4 opacity-10">
+                                <TrendingUp className="w-32 h-32 text-emerald-500" />
                             </div>
 
-                            <Link
-                                href={`/dashboard/command-center/kpi-assessment/${topPerformer.id}`}
-                                className="w-full py-2 rounded-lg bg-emerald-500 text-white text-sm font-bold flex items-center justify-center gap-2 hover:bg-emerald-600 transition-colors"
-                            >
-                                View Assessment <ArrowRight className="w-4 h-4" />
-                            </Link>
+                            <div className="relative z-10">
+                                <p className="text-emerald-400 text-xs font-bold uppercase tracking-wider mb-2">🏆 Top Performer of the Month</p>
+                                <h3 className="text-2xl font-black text-white mb-1">{topPerformer.full_name}</h3>
+                                <p className="text-gray-400 text-sm mb-4">{topPerformer.job_title}</p>
+
+                                <div className="flex items-end gap-2 mb-6">
+                                    <span className="text-4xl font-black text-white">{topPerformer.kpiScore.toFixed(2)}</span>
+                                    <span className="text-sm text-gray-500 mb-1">/ 5.0</span>
+                                </div>
+
+                                <Link
+                                    href={`/dashboard/command-center/kpi-assessment/${topPerformer.id}`}
+                                    className="w-full py-2 rounded-lg bg-emerald-500 text-white text-sm font-bold flex items-center justify-center gap-2 hover:bg-emerald-600 transition-colors"
+                                >
+                                    View Assessment <ArrowRight className="w-4 h-4" />
+                                </Link>
+                            </div>
                         </div>
-                    </div>
+                    ) : (
+                        <div className="glass-panel p-6 rounded-xl border border-white/10 text-center text-gray-500">
+                            No KPI data available for this period.
+                        </div>
+                    )}
 
                     <div className="glass-panel p-6 rounded-xl border border-white/10">
                         <h3 className="font-bold text-white mb-4">Pending Approvals</h3>
                         <div className="space-y-3">
-                            {/* Mock list for now, we could fetch recent 3 */}
-                            {[1].map((_, i) => (
-                                pendingCount === 0 ? (
-                                    <p key={i} className="text-sm text-gray-500">No pending approvals</p>
-                                ) : (
-                                    <div key={i} className="flex items-center justify-between p-3 rounded-lg bg-white/5 hover:bg-white/10 transition-colors cursor-pointer">
-                                        <div className="flex items-center gap-3">
-                                            <div className="w-2 h-2 rounded-full bg-orange-500" />
-                                            <div>
-                                                <p className="text-sm text-white font-medium">Pending Requests</p>
-                                                <p className="text-xs text-gray-500">{pendingCount} requests waiting</p>
-                                            </div>
+                            {pendingCount === 0 ? (
+                                <p className="text-sm text-gray-500">No pending approvals</p>
+                            ) : (
+                                <div className="flex items-center justify-between p-3 rounded-lg bg-white/5 hover:bg-white/10 transition-colors cursor-pointer">
+                                    <div className="flex items-center gap-3">
+                                        <div className="w-2 h-2 rounded-full bg-orange-500" />
+                                        <div>
+                                            <p className="text-sm text-white font-medium">Pending Requests</p>
+                                            <p className="text-xs text-gray-500">{pendingCount} requests waiting</p>
                                         </div>
-                                        <ArrowRight className="w-4 h-4 text-gray-500" />
                                     </div>
-                                )
-                            ))}
+                                    <ArrowRight className="w-4 h-4 text-gray-500" />
+                                </div>
+                            )}
                         </div>
                         <Link
                             href="/dashboard/command-center/request-approval"
