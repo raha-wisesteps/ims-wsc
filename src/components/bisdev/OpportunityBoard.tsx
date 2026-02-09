@@ -211,7 +211,8 @@ export default function OpportunityBoard() {
         cash_in: 0,
         priority: "medium",
         opportunity_type: "" as "" | "customer_based" | "product_based",
-        notes: ""
+        notes: "",
+        created_at: ""
     });
 
     const openEditModal = (opp: Opportunity) => {
@@ -224,7 +225,8 @@ export default function OpportunityBoard() {
             priority: opp.priority,
             opportunity_type: opp.opportunity_type || "",
             cash_in: opp.cash_in || 0,
-            notes: opp.notes || ""
+            notes: opp.notes || "",
+            created_at: opp.created_at ? new Date(opp.created_at).toISOString().split('T')[0] : ""
         });
         setIsEditMode(false); // Default to Quick View
         setIsEditModalOpen(true);
@@ -237,7 +239,8 @@ export default function OpportunityBoard() {
         try {
             const payload = {
                 ...editForm,
-                opportunity_type: editForm.opportunity_type || undefined
+                opportunity_type: editForm.opportunity_type || undefined,
+                created_at: editForm.created_at ? new Date(editForm.created_at).toISOString() : undefined
             };
             await opportunityService.updateOpportunity(editingOpp.id, payload);
             setIsEditModalOpen(false);
@@ -397,7 +400,7 @@ export default function OpportunityBoard() {
                                                                         )}
                                                                         <div className="flex items-center gap-1 text-[10px] text-[var(--text-secondary)] mt-1">
                                                                             <Calendar className="h-3 w-3" />
-                                                                            <span>{new Date(opp.updated_at).toLocaleDateString()}</span>
+                                                                            <span>Updated: {new Date(opp.updated_at).toLocaleDateString()}</span>
                                                                         </div>
                                                                     </div>
 
@@ -789,6 +792,15 @@ export default function OpportunityBoard() {
                                             <option value="customer_based">Customer Based</option>
                                             <option value="product_based">Product Based</option>
                                         </select>
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-bold text-[var(--text-primary)] mb-1">Created Date</label>
+                                        <input
+                                            type="date"
+                                            value={editForm.created_at}
+                                            onChange={(e) => setEditForm({ ...editForm, created_at: e.target.value })}
+                                            className="w-full px-4 py-2 rounded-xl border border-[var(--glass-border)] bg-white dark:bg-[#232b2a] text-[var(--text-primary)]"
+                                        />
                                     </div>
                                     <div className="grid grid-cols-2 gap-4">
                                         <div>

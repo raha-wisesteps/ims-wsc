@@ -219,6 +219,7 @@ export default function ClientDetailPage() {
         opportunity_type: "" as "" | "customer_based" | "product_based",
         cash_in: 0,
         notes: "",
+        created_at: "", // Added for custom date
     });
 
     // Opportunity Status Config
@@ -694,6 +695,8 @@ export default function ClientDetailPage() {
         if (!profile) return;
 
         try {
+            const finalDate = opportunityForm.created_at ? new Date(opportunityForm.created_at).toISOString() : new Date().toISOString();
+
             if (editingOpportunity) {
                 // Update
                 const { error } = await supabase
@@ -707,6 +710,7 @@ export default function ClientDetailPage() {
                         priority: opportunityForm.priority,
                         opportunity_type: opportunityForm.opportunity_type,
                         notes: opportunityForm.notes || null,
+                        created_at: finalDate, // Allow updating created_at
                         updated_at: new Date().toISOString(),
                     })
                     .eq("id", editingOpportunity.id);
@@ -737,6 +741,7 @@ export default function ClientDetailPage() {
                     priority: opportunityForm.priority,
                     opportunity_type: opportunityForm.opportunity_type,
                     notes: opportunityForm.notes || null,
+                    created_at: finalDate, // Set custom date
                     created_by: profile.id,
                 };
 
@@ -759,6 +764,7 @@ export default function ClientDetailPage() {
                     to_stage: opportunityForm.stage,
                     status: opportunityForm.status,
                     notes: `Created new opportunity: ${opportunityForm.title}`,
+                    created_at: finalDate, // Sync journey log with custom date
                     created_by: profile.id,
                 });
             }
@@ -773,7 +779,8 @@ export default function ClientDetailPage() {
                 priority: "medium",
                 opportunity_type: "",
                 cash_in: 0,
-                notes: ""
+                notes: "",
+                created_at: ""
             });
             fetchAllData();
         } catch (error: any) {
@@ -793,6 +800,7 @@ export default function ClientDetailPage() {
             opportunity_type: opp.opportunity_type || "",
             cash_in: opp.cash_in || 0,
             notes: opp.notes || "",
+            created_at: opp.created_at ? new Date(opp.created_at).toISOString().split('T')[0] : "",
         });
         setShowOpportunityForm(true);
     };
@@ -1119,7 +1127,7 @@ export default function ClientDetailPage() {
                                     <button
                                         onClick={() => {
                                             setEditingOpportunity(null);
-                                            setOpportunityForm({ title: "", stage: "prospect", status: "on_going", value: 0, priority: "medium", opportunity_type: "", cash_in: 0, notes: "" });
+                                            setOpportunityForm({ title: "", stage: "prospect", status: "on_going", value: 0, priority: "medium", opportunity_type: "", cash_in: 0, notes: "", created_at: "" });
                                             setShowOpportunityForm(true);
                                         }}
                                         className="px-4 py-2 bg-[#e8c559] text-[#171611] font-bold rounded-xl hover:bg-[#d4b44e] transition-colors flex items-center gap-2"
@@ -1173,7 +1181,7 @@ export default function ClientDetailPage() {
                                                     {new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumSignificantDigits: 3 }).format(opp.value)}
                                                 </span>
                                                 <span>•</span>
-                                                <span>{new Date(opp.updated_at).toLocaleDateString()}</span>
+                                                <span>Updated: {new Date(opp.updated_at).toLocaleDateString()}</span>
                                             </div>
 
                                             {/* Notes Display */}
@@ -1580,6 +1588,16 @@ export default function ClientDetailPage() {
                                         <option value="customer_based">Customer Based</option>
                                         <option value="product_based">Product Based</option>
                                     </select>
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-bold text-[var(--text-primary)] mb-1">Created Date</label>
+                                    <input
+                                        type="date"
+                                        value={opportunityForm.created_at ? new Date(opportunityForm.created_at).toISOString().split('T')[0] : ""}
+                                        onChange={(e) => setOpportunityForm({ ...opportunityForm, created_at: e.target.value })}
+                                        className="w-full px-4 py-2 rounded-xl border border-[var(--glass-border)] bg-white dark:bg-[#232b2a] text-[var(--text-primary)]"
+                                    />
+                                    <p className="text-xs text-[var(--text-muted)] mt-1">Leave empty to use current date/time.</p>
                                 </div>
                                 <div className="grid grid-cols-2 gap-4">
                                     <div>

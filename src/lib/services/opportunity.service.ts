@@ -72,6 +72,7 @@ export const opportunityService = {
             to_stage: opportunity.stage,
             status: opportunity.status,
             notes: `Created new opportunity: ${opportunity.title}`,
+            created_at: opportunity.created_at, // Use same date for journey log
             created_by: (await supabase.auth.getUser()).data.user?.id
         });
 
@@ -126,7 +127,7 @@ export const opportunityService = {
         const supabase = createClient();
         const { data, error } = await supabase
             .from('crm_opportunities')
-            .update({ ...updates, updated_at: new Date().toISOString() })
+            .update({ ...updates, updated_at: new Date().toISOString() }) // created_at will be in updates if passed
             .eq('id', id)
             .select()
             .single();

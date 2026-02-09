@@ -60,6 +60,9 @@ export default function BisDevDashboardPage() {
     const [recentActivity, setRecentActivity] = useState<Array<{ type: string; title: string; subtitle: string; date: string }>>([]);
     const [isLoadingData, setIsLoadingData] = useState(true);
 
+    const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
+    const availableYears = [2024, 2025, 2026];
+
     // Edit Target State
     const [isEditingTarget, setIsEditingTarget] = useState(false);
     const [newTarget, setNewTarget] = useState(0);
@@ -72,8 +75,14 @@ export default function BisDevDashboardPage() {
                 return;
             }
 
-            const { data: config } = await supabase.from('bisdev_config').select('id').single();
+            const { data: config } = await supabase
+                .from('bisdev_config')
+                .select('id')
+                .eq('year', selectedYear)
+                .single();
+
             if (config) {
+                // Update existing
                 const { error: updateError } = await supabase
                     .from('bisdev_config')
                     .update({
@@ -83,10 +92,21 @@ export default function BisDevDashboardPage() {
                     })
                     .eq('id', config.id);
                 if (updateError) throw updateError;
+            } else {
+                // Insert new for this year
+                const { error: insertError } = await supabase
+                    .from('bisdev_config')
+                    .insert({
+                        year: selectedYear,
+                        annual_target: newTarget,
+                        updated_by: profile.id,
+                    });
+                if (insertError) throw insertError;
             }
 
             setIsEditingTarget(false);
             setStats(prev => ({ ...prev, annualTarget: newTarget }));
+            // Refresh to ensure sync
             window.location.reload();
         } catch (error: any) {
             console.error("Error updating target:", error);
@@ -99,8 +119,13 @@ export default function BisDevDashboardPage() {
             if (!canAccessBisdev) return;
 
             try {
-                // 1. Fetch Configuration (Annual Target)
-                const { data: configData } = await supabase.from('bisdev_config').select('annual_target').single();
+                // 1. Fetch Configuration (Annual Target) for Selected Year
+                const { data: configData } = await supabase
+                    .from('bisdev_config')
+                    .select('annual_target')
+                    .eq('year', selectedYear)
+                    .single();
+
                 const annualTarget = configData?.annual_target || 4000000000;
                 setNewTarget(annualTarget);
 
@@ -111,7 +136,13 @@ export default function BisDevDashboardPage() {
                     .order('updated_at', { ascending: false });
 
                 if (error) throw error;
-                const opportunities = (rawOpportunities || []) as Opportunity[];
+
+                // Filter by Selected Year (Created At)
+                const allOpportunities = (rawOpportunities || []) as Opportunity[];
+                const opportunities = allOpportunities.filter(o => {
+                    const year = new Date(o.created_at).getFullYear();
+                    return year === selectedYear;
+                });
 
                 // 3. Calculate Metrics
 
@@ -208,7 +239,7 @@ export default function BisDevDashboardPage() {
         };
 
         fetchAllData();
-    }, [canAccessBisdev]);
+    }, [canAccessBisdev, selectedYear]);
 
     if (isLoading) {
         return (
@@ -293,6 +324,21 @@ export default function BisDevDashboardPage() {
                     </div>
                 </div>
                 <div className="flex items-center gap-3">
+                    <div className="flex bg-white dark:bg-[#1c2120] rounded-lg border border-[var(--glass-border)] p-1">
+                        {availableYears.map(year => (
+                            <button
+                                key={year}
+                                onClick={() => setSelectedYear(year)}
+                                className={`px-3 py-1 text-sm font-bold rounded-md transition-colors ${selectedYear === year
+                                    ? 'bg-[#e8c559] text-[#171611]'
+                                    : 'text-[var(--text-secondary)] hover:bg-[var(--glass-border)]'
+                                    }`}
+                            >
+                                {year}
+                            </button>
+                        ))}
+                    </div>
+
                     <span className="text-sm font-bold bg-white dark:bg-[#1c2120] px-4 py-2 rounded-lg border border-[var(--glass-border)]">
                         Target: {formatCurrency(stats.annualTarget)}
                     </span>
