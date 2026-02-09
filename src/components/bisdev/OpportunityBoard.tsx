@@ -3,13 +3,14 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { DragDropContext, Droppable, Draggable } from "@hello-pangea/dnd";
-import { Plus, Search, Filter, Calendar, DollarSign, GripVertical, CheckCircle, XCircle, Building2, X, User, Eye, FileDown } from "lucide-react";
+import { Plus, Search, Filter, Calendar, DollarSign, GripVertical, CheckCircle, XCircle, Building2, X, User, Eye, FileDown, Edit3 } from "lucide-react";
 import Image from "next/image";
 import { Opportunity, opportunityService } from "@/lib/services/opportunity.service";
 import { formatCurrency } from "@/lib/utils"; // Assume utility exists or create inline
 import { createClient } from "@/lib/supabase/client";
 import * as XLSX from "xlsx";
 import { saveAs } from "file-saver";
+import { useSearchParams } from "next/navigation";
 
 // Status Configuration 
 // Status Configuration 
@@ -24,7 +25,7 @@ const STAGE_CONFIG = {
     proposal: {
         label: "Proposals",
         color: "purple",
-        columns: ["pending", "on_going", "sent", "follow_up"],
+        columns: ["pending", "on_going", "sent"],
         nextStage: "leads",
         nextStatus: "pending"
     },
@@ -61,11 +62,20 @@ const STATUS_LABELS: Record<string, string> = {
 };
 
 export default function OpportunityBoard() {
-    const [activeTab, setActiveTab] = useState<keyof typeof STAGE_CONFIG>("prospect");
+    const searchParams = useSearchParams();
+    const initialStage = searchParams.get("stage") as keyof typeof STAGE_CONFIG;
+    const [activeTab, setActiveTab] = useState<keyof typeof STAGE_CONFIG>(
+        (initialStage && STAGE_CONFIG[initialStage]) ? initialStage : "prospect"
+    );
     const [viewMode, setViewMode] = useState<"board" | "table">("board");
     const [opportunities, setOpportunities] = useState<Opportunity[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [searchQuery, setSearchQuery] = useState("");
+
+    // Edit Modal State
+    const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+    const [isEditMode, setIsEditMode] = useState(false); // Default to Quick View (false)
+    const [editingOpp, setEditingOpp] = useState<Opportunity | null>(null);
 
     // Fetch Data
     const fetchData = async () => {
@@ -190,8 +200,7 @@ export default function OpportunityBoard() {
     };
 
     // Edit Modal State
-    const [editingOpp, setEditingOpp] = useState<Opportunity | null>(null);
-    const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+
 
     // Edit Form State
     const [editForm, setEditForm] = useState({
@@ -209,14 +218,15 @@ export default function OpportunityBoard() {
         setEditingOpp(opp);
         setEditForm({
             title: opp.title,
-            stage: opp.stage as any,
+            stage: opp.stage,
             status: opp.status,
             value: opp.value,
-            cash_in: opp.cash_in || 0,
             priority: opp.priority,
             opportunity_type: opp.opportunity_type || "",
+            cash_in: opp.cash_in || 0,
             notes: opp.notes || ""
         });
+        setIsEditMode(false); // Default to Quick View
         setIsEditModalOpen(true);
     };
 
@@ -412,27 +422,89 @@ export default function OpportunityBoard() {
                                                                             </button>
                                                                         )}
 
-                                                                        {activeTab === 'sales' ? (
-                                                                            <button
-                                                                                onClick={() => handleArchive(opp.id, 'won')}
-                                                                                title="Mark Completed (Won)"
-                                                                                disabled={['down_payment', 'account_receivable'].includes(opp.status)}
-                                                                                className={`p-1 rounded transition-colors ${['down_payment', 'account_receivable'].includes(opp.status)
-                                                                                    ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                                                                                    : 'hover:bg-emerald-100 text-emerald-500 bg-emerald-50/50'
-                                                                                    }`}
-                                                                            >
-                                                                                <CheckCircle className="h-4 w-4" />
-                                                                            </button>
-                                                                        ) : (
-                                                                            <button
-                                                                                onClick={() => handleMoveToNextStage(opp.id)}
-                                                                                title="Move Next"
-                                                                                className="p-1 hover:bg-emerald-100 text-emerald-500 rounded bg-emerald-50/50"
-                                                                            >
-                                                                                <CheckCircle className="h-4 w-4" />
-                                                                            </button>
-                                                                        )}
+                                                                        {(() => {
+                                                                            if (activeTab === 'sales') {
+                                                                                const canComplete = !['down_payment', 'account_receivable'].includes(opp.status);
+                                                                                return (
+                                                                                    <button
+                                                                                        onClick={() => handleArchive(opp.id, 'won')}
+                                                                                        title="Mark Completed (Won)"
+                                                                                        disabled={!canComplete}
+                                                                                        className={`p-1 rounded transition-colors ${!canComplete
+                                                                                            ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                                                                                            : 'hover:bg-emerald-100 text-emerald-500 bg-emerald-50/50'
+                                                                                            }`}
+                                                                                    >
+                                                                                        <CheckCircle className="h-4 w-4" />
+                                                                                    </button>
+                                                                                );
+                                                                            }
+
+                                                                            // Logic for Proposal: Only "sent" can move next
+                                                                            if (activeTab === 'proposal') {
+                                                                                const canMoveNext = opp.status === 'sent';
+                                                                                return (
+                                                                                    <button
+                                                                                        onClick={() => canMoveNext && handleMoveToNextStage(opp.id)}
+                                                                                        title={canMoveNext ? "Move Next" : "Complete checklist to proceed"}
+                                                                                        disabled={!canMoveNext}
+                                                                                        className={`p-1 rounded transition-colors ${!canMoveNext
+                                                                                            ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                                                                                            : 'hover:bg-emerald-100 text-emerald-500 bg-emerald-50/50'
+                                                                                            }`}
+                                                                                    >
+                                                                                        <CheckCircle className="h-4 w-4" />
+                                                                                    </button>
+                                                                                );
+                                                                            }
+
+                                                                            // Logic for Leads: Only non-pending can move next
+                                                                            if (activeTab === 'leads') {
+                                                                                const canMoveNext = opp.status !== 'pending';
+                                                                                return (
+                                                                                    <button
+                                                                                        onClick={() => canMoveNext && handleMoveToNextStage(opp.id)}
+                                                                                        title={canMoveNext ? "Move Next" : "Warm up the lead first"}
+                                                                                        disabled={!canMoveNext}
+                                                                                        className={`p-1 rounded transition-colors ${!canMoveNext
+                                                                                            ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                                                                                            : 'hover:bg-emerald-100 text-emerald-500 bg-emerald-50/50'
+                                                                                            }`}
+                                                                                    >
+                                                                                        <CheckCircle className="h-4 w-4" />
+                                                                                    </button>
+                                                                                );
+                                                                            }
+
+                                                                            // Logic for Prospect: Only non-pending can move next
+                                                                            if (activeTab === 'prospect') {
+                                                                                const canMoveNext = opp.status !== 'pending';
+                                                                                return (
+                                                                                    <button
+                                                                                        onClick={() => canMoveNext && handleMoveToNextStage(opp.id)}
+                                                                                        title={canMoveNext ? "Move Next" : "Complete checklist to proceed"}
+                                                                                        disabled={!canMoveNext}
+                                                                                        className={`p-1 rounded transition-colors ${!canMoveNext
+                                                                                            ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                                                                                            : 'hover:bg-emerald-100 text-emerald-500 bg-emerald-50/50'
+                                                                                            }`}
+                                                                                    >
+                                                                                        <CheckCircle className="h-4 w-4" />
+                                                                                    </button>
+                                                                                );
+                                                                            }
+
+                                                                            // Default (others)
+                                                                            return (
+                                                                                <button
+                                                                                    onClick={() => handleMoveToNextStage(opp.id)}
+                                                                                    title="Move Next"
+                                                                                    className="p-1 hover:bg-emerald-100 text-emerald-500 bg-emerald-50/50"
+                                                                                >
+                                                                                    <CheckCircle className="h-4 w-4" />
+                                                                                </button>
+                                                                            );
+                                                                        })()}
                                                                     </div>
                                                                 </div>
                                                             </div>
@@ -590,143 +662,242 @@ export default function OpportunityBoard() {
                 <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
                     <div className="w-full max-w-lg bg-white dark:bg-[#1c2120] rounded-2xl shadow-2xl overflow-hidden border border-[var(--glass-border)] flex flex-col max-h-[90vh]">
                         <div className="p-6 border-b border-[var(--glass-border)] flex justify-between items-center">
-                            <h2 className="text-xl font-bold text-[var(--text-primary)]">Edit Opportunity</h2>
-                            <button
-                                onClick={() => setIsEditModalOpen(false)}
-                                className="p-2 rounded-lg hover:bg-red-50 text-[var(--text-secondary)] hover:text-red-500 transition-colors"
-                            >
-                                <X className="w-5 h-5" />
-                            </button>
+                            <h2 className="text-xl font-bold text-[var(--text-primary)]">
+                                {isEditMode ? "Edit Opportunity" : "Opportunity Details"}
+                            </h2>
+                            <div className="flex items-center gap-2">
+                                {!isEditMode ? (
+                                    <button
+                                        onClick={() => setIsEditMode(true)}
+                                        className="p-2 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 text-[var(--text-secondary)] hover:text-amber-500 transition-colors"
+                                        title="Edit Opportunity"
+                                    >
+                                        <Edit3 className="w-5 h-5" />
+                                    </button>
+                                ) : (
+                                    <button
+                                        onClick={() => setIsEditMode(false)}
+                                        className="p-2 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 text-[var(--text-secondary)] hover:text-blue-500 transition-colors"
+                                        title="Quick View"
+                                    >
+                                        <Eye className="w-5 h-5" />
+                                    </button>
+                                )}
+                                <button
+                                    onClick={() => setIsEditModalOpen(false)}
+                                    className="p-2 rounded-lg hover:bg-red-50 text-[var(--text-secondary)] hover:text-red-500 transition-colors"
+                                >
+                                    <X className="w-5 h-5" />
+                                </button>
+                            </div>
                         </div>
                         <div className="p-6 overflow-y-auto">
-                            <form onSubmit={handleUpdateOpportunity} className="space-y-4">
-                                <div>
-                                    <label className="block text-sm font-bold text-[var(--text-primary)] mb-1">Title</label>
-                                    <input
-                                        type="text"
-                                        required
-                                        value={editForm.title}
-                                        onChange={(e) => setEditForm({ ...editForm, title: e.target.value })}
-                                        className="w-full px-4 py-2 rounded-xl border border-[var(--glass-border)] bg-white dark:bg-[#232b2a] text-[var(--text-primary)]"
-                                    />
-                                </div>
-                                <div>
-                                    <label className="block text-sm font-bold text-[var(--text-primary)] mb-1">Type</label>
-                                    <select
-                                        value={editForm.opportunity_type}
-                                        onChange={(e) => setEditForm({ ...editForm, opportunity_type: e.target.value as any })}
-                                        className="w-full px-4 py-2 rounded-xl border border-[var(--glass-border)] bg-white dark:bg-[#232b2a] text-[var(--text-primary)]"
-                                    >
-                                        <option value="">-- Select Type --</option>
-                                        <option value="customer_based">Customer Based</option>
-                                        <option value="product_based">Product Based</option>
-                                    </select>
-                                </div>
-                                <div className="grid grid-cols-2 gap-4">
-                                    <div>
-                                        <label className="block text-sm font-bold text-[var(--text-primary)] mb-1">Stage</label>
-                                        <select
-                                            disabled
-                                            value={editForm.stage}
-                                            className="w-full px-4 py-2 rounded-xl border border-[var(--glass-border)] bg-gray-50 dark:bg-[#2c3332] text-[var(--text-muted)] cursor-not-allowed uppercase"
-                                        >
-                                            {Object.entries(STAGE_CONFIG).map(([key, config]) => (
-                                                <option key={key} value={key}>{config.label}</option>
-                                            ))}
-                                        </select>
+                            {!isEditMode && editingOpp ? (
+                                // Quick View Card
+                                <div className="space-y-6">
+                                    <div className="flex justify-between items-start">
+                                        <div>
+                                            <h3 className="text-2xl font-bold text-[var(--text-primary)]">{editingOpp.title}</h3>
+                                            <div className="flex items-center gap-2 text-[var(--text-secondary)] mt-1">
+                                                <Building2 className="h-4 w-4" />
+                                                <span className="font-medium">{editingOpp.client?.company_name || 'No Client'}</span>
+                                            </div>
+                                        </div>
+                                        <div className="flex flex-col items-end gap-1">
+                                            <span className={`px-2.5 py-0.5 rounded-full text-xs font-bold uppercase ${editingOpp.stage === 'prospect' ? 'bg-blue-100 text-blue-700' :
+                                                editingOpp.stage === 'proposal' ? 'bg-purple-100 text-purple-700' :
+                                                    editingOpp.stage === 'leads' ? 'bg-orange-100 text-orange-700' :
+                                                        'bg-emerald-100 text-emerald-700'
+                                                }`}>
+                                                {STAGE_CONFIG[editingOpp.stage].label}
+                                            </span>
+                                            <span className="px-2.5 py-0.5 rounded-full text-xs font-bold uppercase bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300">
+                                                {STATUS_LABELS[editingOpp.status] || editingOpp.status.replace('_', ' ')}
+                                            </span>
+                                        </div>
                                     </div>
-                                    <div>
-                                        <label className="block text-sm font-bold text-[var(--text-primary)] mb-1">Status</label>
-                                        <select
-                                            value={editForm.status}
-                                            onChange={(e) => setEditForm({ ...editForm, status: e.target.value })}
-                                            className="w-full px-4 py-2 rounded-xl border border-[var(--glass-border)] bg-white dark:bg-[#232b2a] text-[var(--text-primary)] capitalize"
+
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <div className="p-4 rounded-xl bg-[var(--glass-bg)] border border-[var(--glass-border)]">
+                                            <p className="text-xs text-[var(--text-muted)] uppercase tracking-wider mb-1">Value</p>
+                                            <p className="text-xl font-mono font-bold text-emerald-600">
+                                                {new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR' }).format(editingOpp.value)}
+                                            </p>
+                                        </div>
+                                        {editingOpp.stage === 'sales' && (
+                                            <div className="p-4 rounded-xl bg-[var(--glass-bg)] border border-[var(--glass-border)]">
+                                                <p className="text-xs text-[var(--text-muted)] uppercase tracking-wider mb-1">Cash In</p>
+                                                <p className="text-xl font-mono font-bold text-emerald-600">
+                                                    {new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR' }).format(editingOpp.cash_in || 0)}
+                                                </p>
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    <div className="space-y-2">
+                                        <div className="flex items-center justify-between">
+                                            <h4 className="font-bold text-[var(--text-primary)] text-sm">Notes</h4>
+                                            <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold uppercase ${editingOpp.priority === 'high' ? 'bg-red-100 text-red-600' :
+                                                editingOpp.priority === 'medium' ? 'bg-amber-100 text-amber-600' :
+                                                    'bg-green-100 text-green-600'
+                                                }`}>
+                                                {editingOpp.priority} Priority
+                                            </span>
+                                        </div>
+                                        <div className="p-4 rounded-xl bg-[var(--glass-bg)] border border-[var(--glass-border)] min-h-[80px]">
+                                            <p className="text-sm text-[var(--text-secondary)] whitespace-pre-wrap italic">
+                                                {editingOpp.notes ? `"${editingOpp.notes}"` : "No notes yet."}
+                                            </p>
+                                        </div>
+                                    </div>
+
+                                    <div className="flex justify-between items-center pt-4 border-t border-[var(--glass-border)]">
+                                        <div className="text-xs text-[var(--text-muted)] flex flex-col gap-1">
+                                            <span>Created: {new Date(editingOpp.created_at).toLocaleDateString()}</span>
+                                            <span>Updated: {new Date(editingOpp.updated_at).toLocaleDateString()}</span>
+                                        </div>
+                                        <Link
+                                            href={`/dashboard/bisdev/crm/${editingOpp.client_id}?tab=opportunities`}
+                                            className="px-4 py-2 bg-[#e8c559] text-[#171611] font-bold rounded-xl hover:bg-[#d4b44e] transition-colors flex items-center gap-2"
                                         >
-                                            {STAGE_CONFIG[editForm.stage as keyof typeof STAGE_CONFIG]?.columns.map((status) => (
-                                                <option key={status} value={status}>{STATUS_LABELS[status] || status.replace('_', ' ')}</option>
-                                            ))}
-                                        </select>
+                                            <Building2 className="h-4 w-4" />
+                                            Go to CRM
+                                        </Link>
                                     </div>
                                 </div>
-                                <div className="grid grid-cols-2 gap-4">
+                            ) : (
+                                // Edit Form
+                                <form onSubmit={handleUpdateOpportunity} className="space-y-4">
                                     <div>
-                                        <label className="block text-sm font-bold text-[var(--text-primary)] mb-1">Value (IDR)</label>
+                                        <label className="block text-sm font-bold text-[var(--text-primary)] mb-1">Title</label>
                                         <input
                                             type="text"
-                                            value={editForm.value}
-                                            onChange={(e) => {
-                                                const val = e.target.value.replace(/[^0-9]/g, '');
-                                                setEditForm({ ...editForm, value: val ? parseFloat(val) : 0 });
-                                            }}
+                                            required
+                                            value={editForm.title}
+                                            onChange={(e) => setEditForm({ ...editForm, title: e.target.value })}
                                             className="w-full px-4 py-2 rounded-xl border border-[var(--glass-border)] bg-white dark:bg-[#232b2a] text-[var(--text-primary)]"
                                         />
-                                        <p className="text-xs text-[var(--text-muted)] mt-1 font-mono">
-                                            {new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR' }).format(editForm.value)}
-                                        </p>
                                     </div>
                                     <div>
-                                        <label className="block text-sm font-bold text-[var(--text-primary)] mb-1">Cash In (Paid)</label>
-                                        <div className="flex gap-2">
+                                        <label className="block text-sm font-bold text-[var(--text-primary)] mb-1">Type</label>
+                                        <select
+                                            value={editForm.opportunity_type}
+                                            onChange={(e) => setEditForm({ ...editForm, opportunity_type: e.target.value as any })}
+                                            className="w-full px-4 py-2 rounded-xl border border-[var(--glass-border)] bg-white dark:bg-[#232b2a] text-[var(--text-primary)]"
+                                        >
+                                            <option value="">-- Select Type --</option>
+                                            <option value="customer_based">Customer Based</option>
+                                            <option value="product_based">Product Based</option>
+                                        </select>
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <div>
+                                            <label className="block text-sm font-bold text-[var(--text-primary)] mb-1">Stage</label>
+                                            <select
+                                                disabled
+                                                value={editForm.stage}
+                                                className="w-full px-4 py-2 rounded-xl border border-[var(--glass-border)] bg-gray-50 dark:bg-[#2c3332] text-[var(--text-muted)] cursor-not-allowed uppercase"
+                                            >
+                                                {Object.entries(STAGE_CONFIG).map(([key, config]) => (
+                                                    <option key={key} value={key}>{config.label}</option>
+                                                ))}
+                                            </select>
+                                        </div>
+                                        <div>
+                                            <label className="block text-sm font-bold text-[var(--text-primary)] mb-1">Status</label>
+                                            <select
+                                                value={editForm.status}
+                                                onChange={(e) => setEditForm({ ...editForm, status: e.target.value })}
+                                                className="w-full px-4 py-2 rounded-xl border border-[var(--glass-border)] bg-white dark:bg-[#232b2a] text-[var(--text-primary)] capitalize"
+                                            >
+                                                {STAGE_CONFIG[editForm.stage as keyof typeof STAGE_CONFIG]?.columns.map((status) => (
+                                                    <option key={status} value={status}>{STATUS_LABELS[status] || status.replace('_', ' ')}</option>
+                                                ))}
+                                            </select>
+                                        </div>
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <div className={editForm.stage === 'sales' ? "" : "col-span-2"}>
+                                            <label className="block text-sm font-bold text-[var(--text-primary)] mb-1">Value (IDR)</label>
                                             <input
                                                 type="text"
-                                                value={editForm.cash_in}
+                                                value={editForm.value}
                                                 onChange={(e) => {
                                                     const val = e.target.value.replace(/[^0-9]/g, '');
-                                                    setEditForm({ ...editForm, cash_in: val ? parseFloat(val) : 0 });
+                                                    setEditForm({ ...editForm, value: val ? parseFloat(val) : 0 });
                                                 }}
                                                 className="w-full px-4 py-2 rounded-xl border border-[var(--glass-border)] bg-white dark:bg-[#232b2a] text-[var(--text-primary)]"
                                             />
-                                            <button
-                                                type="button"
-                                                onClick={() => setEditForm({ ...editForm, cash_in: editForm.value })}
-                                                className="px-3 py-2 rounded-xl bg-emerald-100 text-emerald-700 hover:bg-emerald-200 border border-emerald-200 text-xs font-bold whitespace-nowrap transition-colors"
-                                                title="Set to Full Value"
-                                            >
-                                                Full Payment
-                                            </button>
+                                            <p className="text-xs text-[var(--text-muted)] mt-1 font-mono">
+                                                {new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR' }).format(editForm.value)}
+                                            </p>
                                         </div>
-                                        <p className="text-xs text-[var(--text-muted)] mt-1 font-mono">
-                                            {new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR' }).format(editForm.cash_in)}
-                                        </p>
+                                        {editForm.stage === 'sales' && (
+                                            <div>
+                                                <label className="block text-sm font-bold text-[var(--text-primary)] mb-1">Cash In (Paid)</label>
+                                                <div className="flex gap-2">
+                                                    <input
+                                                        type="text"
+                                                        value={editForm.cash_in}
+                                                        onChange={(e) => {
+                                                            const val = e.target.value.replace(/[^0-9]/g, '');
+                                                            setEditForm({ ...editForm, cash_in: val ? parseFloat(val) : 0 });
+                                                        }}
+                                                        className="w-full px-4 py-2 rounded-xl border border-[var(--glass-border)] bg-white dark:bg-[#232b2a] text-[var(--text-primary)]"
+                                                    />
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setEditForm({ ...editForm, cash_in: editForm.value })}
+                                                        className="px-3 py-2 rounded-xl bg-emerald-100 text-emerald-700 hover:bg-emerald-200 border border-emerald-200 text-xs font-bold whitespace-nowrap transition-colors"
+                                                        title="Set to Full Value"
+                                                    >
+                                                        Full Payment
+                                                    </button>
+                                                </div>
+                                                <p className="text-xs text-[var(--text-muted)] mt-1 font-mono">
+                                                    {new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR' }).format(editForm.cash_in)}
+                                                </p>
+                                            </div>
+                                        )}
                                     </div>
-                                </div>
-                                <div>
-                                    <label className="block text-sm font-bold text-[var(--text-primary)] mb-1">Priority</label>
-                                    <select
-                                        value={editForm.priority}
-                                        onChange={(e) => setEditForm({ ...editForm, priority: e.target.value })}
-                                        className="w-full px-4 py-2 rounded-xl border border-[var(--glass-border)] bg-white dark:bg-[#232b2a] text-[var(--text-primary)]"
-                                    >
-                                        <option value="low">Low</option>
-                                        <option value="medium">Medium</option>
-                                        <option value="high">High</option>
-                                    </select>
-                                </div>
-                                <div>
-                                    <label className="block text-sm font-bold text-[var(--text-primary)] mb-1">Notes</label>
-                                    <textarea
-                                        rows={3}
-                                        value={editForm.notes}
-                                        onChange={(e) => setEditForm({ ...editForm, notes: e.target.value })}
-                                        className="w-full px-4 py-2 rounded-xl border border-[var(--glass-border)] bg-white dark:bg-[#232b2a] text-[var(--text-primary)]"
-                                    />
-                                </div>
-                                <div className="flex justify-end gap-3 pt-4 border-t border-[var(--glass-border)] mt-4">
-                                    <button
-                                        type="button"
-                                        onClick={() => setIsEditModalOpen(false)}
-                                        className="px-4 py-2 rounded-xl border border-[var(--glass-border)] text-[var(--text-secondary)] hover:bg-black/5 dark:hover:bg-white/5"
-                                    >
-                                        Cancel
-                                    </button>
-                                    <button
-                                        type="submit"
-                                        className="px-6 py-2 rounded-xl bg-[#e8c559] text-[#171611] font-bold shadow-lg shadow-amber-500/20 hover:shadow-xl hover:scale-[1.02] transition-all"
-                                    >
-                                        Save Changes
-                                    </button>
-                                </div>
-                            </form>
+                                    <div>
+                                        <label className="block text-sm font-bold text-[var(--text-primary)] mb-1">Priority</label>
+                                        <select
+                                            value={editForm.priority}
+                                            onChange={(e) => setEditForm({ ...editForm, priority: e.target.value })}
+                                            className="w-full px-4 py-2 rounded-xl border border-[var(--glass-border)] bg-white dark:bg-[#232b2a] text-[var(--text-primary)]"
+                                        >
+                                            <option value="low">Low</option>
+                                            <option value="medium">Medium</option>
+                                            <option value="high">High</option>
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-bold text-[var(--text-primary)] mb-1">Notes</label>
+                                        <textarea
+                                            rows={3}
+                                            value={editForm.notes}
+                                            onChange={(e) => setEditForm({ ...editForm, notes: e.target.value })}
+                                            className="w-full px-4 py-2 rounded-xl border border-[var(--glass-border)] bg-white dark:bg-[#232b2a] text-[var(--text-primary)]"
+                                        />
+                                    </div>
+                                    <div className="flex justify-end gap-3 pt-4 border-t border-[var(--glass-border)] mt-4">
+                                        <button
+                                            type="button"
+                                            onClick={() => setIsEditModalOpen(false)}
+                                            className="px-4 py-2 text-sm font-medium text-[var(--text-secondary)] hover:bg-black/5 dark:hover:bg-white/5 rounded-lg transition-colors"
+                                        >
+                                            Cancel
+                                        </button>
+                                        <button
+                                            type="submit"
+                                            className="px-4 py-2 bg-[#e8c559] text-[#171611] font-bold rounded-xl hover:bg-[#d4b44e] transition-colors"
+                                        >
+                                            Save Changes
+                                        </button>
+                                    </div>
+                                </form>
+                            )}
                         </div>
                     </div>
                 </div>

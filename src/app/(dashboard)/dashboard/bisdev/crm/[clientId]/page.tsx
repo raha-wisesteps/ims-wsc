@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
@@ -183,7 +183,10 @@ type TabType = "overview" | "opportunities" | "logbook" | "contacts" | "tags";
 export default function ClientDetailPage() {
     const params = useParams();
     const router = useRouter();
+    const searchParams = useSearchParams();
     const clientId = params.clientId as string;
+    const initialTab = searchParams.get("tab") as TabType;
+
     const supabase = createClient();
     const { profile, canAccessBisdev, isLoading: authLoading } = useAuth();
 
@@ -194,7 +197,7 @@ export default function ClientDetailPage() {
     const [tags, setTags] = useState<ClientTag[]>([]);
     const [employees, setEmployees] = useState<Employee[]>([]);
     const [isLoading, setIsLoading] = useState(true);
-    const [activeTab, setActiveTab] = useState<TabType>("overview");
+    const [activeTab, setActiveTab] = useState<TabType>(initialTab || "overview");
     const [expandedLogId, setExpandedLogId] = useState<string | null>(null); // For accordion
 
     // Form states
@@ -1150,13 +1153,20 @@ export default function ClientDetailPage() {
                                         >
                                             <div className="flex justify-between items-start mb-2">
                                                 <h4 className="font-bold text-[var(--text-primary)] line-clamp-1">{opp.title}</h4>
-                                                <span className={`px-2 py-0.5 rounded text-xs font-bold uppercase ${opp.stage === 'prospect' ? 'bg-blue-100 text-blue-700' :
-                                                    opp.stage === 'proposal' ? 'bg-purple-100 text-purple-700' :
-                                                        opp.stage === 'leads' ? 'bg-orange-100 text-orange-700' :
-                                                            'bg-emerald-100 text-emerald-700'
-                                                    }`}>
-                                                    {opp.status.replace('_', ' ')}
-                                                </span>
+                                                <div className="flex gap-1">
+                                                    {/* Stage Badge */}
+                                                    <span className={`px-2 py-0.5 rounded text-xs font-bold uppercase ${opp.stage === 'prospect' ? 'bg-blue-100 text-blue-700' :
+                                                        opp.stage === 'proposal' ? 'bg-purple-100 text-purple-700' :
+                                                            opp.stage === 'leads' ? 'bg-orange-100 text-orange-700' :
+                                                                'bg-emerald-100 text-emerald-700'
+                                                        }`}>
+                                                        {opp.stage}
+                                                    </span>
+                                                    {/* Status Badge */}
+                                                    <span className="px-2 py-0.5 rounded text-xs font-bold uppercase bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300">
+                                                        {opp.status.replace('_', ' ')}
+                                                    </span>
+                                                </div>
                                             </div>
                                             <div className="flex items-center gap-2 text-sm text-[var(--text-secondary)] mb-3">
                                                 <span className="font-mono text-emerald-600 font-bold">
@@ -1191,13 +1201,17 @@ export default function ClientDetailPage() {
                                                     )}
                                                 </div>
                                                 <div className="flex items-center gap-1">
-                                                    <Link
-                                                        href="/dashboard/bisdev/opportunities"
-                                                        className="p-1.5 rounded hover:bg-black/5 dark:hover:bg-white/5 text-[var(--text-secondary)] hover:text-amber-500 transition-colors"
+                                                    <div
+                                                        onClick={(e) => e.stopPropagation()}
                                                         title="Go to Board"
                                                     >
-                                                        <LayoutGrid className="h-4 w-4" />
-                                                    </Link>
+                                                        <Link
+                                                            href={`/dashboard/bisdev/opportunities?stage=${opp.stage}`}
+                                                            className="p-1.5 rounded hover:bg-black/5 dark:hover:bg-white/5 text-[var(--text-secondary)] hover:text-amber-500 transition-colors block"
+                                                        >
+                                                            <LayoutGrid className="h-4 w-4" />
+                                                        </Link>
+                                                    </div>
                                                     <button
                                                         onClick={(e) => { e.stopPropagation(); openEditOpportunity(opp); }}
                                                         className="p-1.5 rounded hover:bg-black/5 dark:hover:bg-white/5 text-[var(--text-secondary)] hover:text-blue-500 transition-colors"
@@ -1600,55 +1614,64 @@ export default function ClientDetailPage() {
                                     </div>
                                 </div>
                                 <div className="grid grid-cols-2 gap-4">
-                                    <div>
+                                    <div className={opportunityForm.stage === 'sales' ? "" : "col-span-2"}>
                                         <label className="block text-sm font-bold text-[var(--text-primary)] mb-1">Value (IDR)</label>
-                                        <input
-                                            type="text"
-                                            value={opportunityForm.value}
-                                            onChange={(e) => {
-                                                const val = e.target.value.replace(/[^0-9]/g, '');
-                                                setOpportunityForm({ ...opportunityForm, value: val ? parseFloat(val) : 0 });
-                                            }}
-                                            onFocus={(e) => e.target.select()}
-                                            className="w-full px-4 py-2 rounded-xl border border-[var(--glass-border)] bg-white dark:bg-[#232b2a] text-[var(--text-primary)]"
-                                        />
-                                    </div>
-                                    <div>
-                                        <label className="block text-sm font-bold text-[var(--text-primary)] mb-1">Cash In (Paid)</label>
-                                        <div className="flex gap-2">
+                                        <div className="space-y-1">
                                             <input
                                                 type="text"
-                                                value={opportunityForm.cash_in || 0}
+                                                value={opportunityForm.value}
                                                 onChange={(e) => {
                                                     const val = e.target.value.replace(/[^0-9]/g, '');
-                                                    setOpportunityForm({ ...opportunityForm, cash_in: val ? parseFloat(val) : 0 });
+                                                    setOpportunityForm({ ...opportunityForm, value: val ? parseFloat(val) : 0 });
                                                 }}
                                                 onFocus={(e) => e.target.select()}
                                                 className="w-full px-4 py-2 rounded-xl border border-[var(--glass-border)] bg-white dark:bg-[#232b2a] text-[var(--text-primary)]"
                                             />
-                                            <button
-                                                type="button"
-                                                onClick={() => setOpportunityForm({ ...opportunityForm, cash_in: opportunityForm.value })}
-                                                className="px-3 py-2 rounded-xl bg-emerald-100 text-emerald-700 hover:bg-emerald-200 border border-emerald-200 text-xs font-bold whitespace-nowrap transition-colors"
-                                                title="Set to Full Value"
-                                            >
-                                                Full Payment
-                                            </button>
+                                            {opportunityForm.value > 0 && (
+                                                <p className="text-xs text-[var(--text-muted)]">
+                                                    Rp {opportunityForm.value.toLocaleString('id-ID')}
+                                                </p>
+                                            )}
                                         </div>
                                     </div>
-                                    <div>
-                                        <label className="block text-sm font-bold text-[var(--text-primary)] mb-1">Priority</label>
-                                        <select
-                                            value={opportunityForm.priority}
-                                            onChange={(e) => setOpportunityForm({ ...opportunityForm, priority: e.target.value })}
-                                            className="w-full px-4 py-2 rounded-xl border border-[var(--glass-border)] bg-white dark:bg-[#232b2a] text-[var(--text-primary)]"
-                                        >
-                                            <option value="low">Low</option>
-                                            <option value="medium">Medium</option>
-                                            <option value="high">High</option>
-                                        </select>
-                                    </div>
+
+                                    {opportunityForm.stage === 'sales' && (
+                                        <div>
+                                            <label className="block text-sm font-bold text-[var(--text-primary)] mb-1">Cash In (IDR)</label>
+                                            <div className="space-y-1">
+                                                <input
+                                                    type="text"
+                                                    value={opportunityForm.cash_in}
+                                                    onChange={(e) => {
+                                                        const val = e.target.value.replace(/[^0-9]/g, '');
+                                                        setOpportunityForm({ ...opportunityForm, cash_in: val ? parseFloat(val) : 0 });
+                                                    }}
+                                                    onFocus={(e) => e.target.select()}
+                                                    className="w-full px-4 py-2 rounded-xl border border-[var(--glass-border)] bg-white dark:bg-[#232b2a] text-[var(--text-primary)]"
+                                                />
+                                                {opportunityForm.cash_in > 0 && (
+                                                    <p className="text-xs text-[var(--text-muted)]">
+                                                        Rp {opportunityForm.cash_in.toLocaleString('id-ID')}
+                                                    </p>
+                                                )}
+                                            </div>
+                                        </div>
+                                    )}
                                 </div>
+
+                                <div>
+                                    <label className="block text-sm font-bold text-[var(--text-primary)] mb-1">Priority</label>
+                                    <select
+                                        value={opportunityForm.priority}
+                                        onChange={(e) => setOpportunityForm({ ...opportunityForm, priority: e.target.value as any })}
+                                        className="w-full px-4 py-2 rounded-xl border border-[var(--glass-border)] bg-white dark:bg-[#232b2a] text-[var(--text-primary)]"
+                                    >
+                                        <option value="low">Low</option>
+                                        <option value="medium">Medium</option>
+                                        <option value="high">High</option>
+                                    </select>
+                                </div>
+
                                 <div>
                                     <label className="block text-sm font-bold text-[var(--text-primary)] mb-1">Notes</label>
                                     <textarea
@@ -1668,7 +1691,7 @@ export default function ClientDetailPage() {
                                 </div>
                             </form>
                         </div>
-                    </div>
+                    </div >
                 )
             }
 

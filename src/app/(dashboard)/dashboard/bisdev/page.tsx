@@ -127,8 +127,10 @@ export default function BisDevDashboardPage() {
                 );
                 const proposalCount = sentOpps.length;
 
-                // Lost Projects: Status == 'closed_lost'
-                const lostOpps = opportunities.filter((o: Opportunity) => o.status === 'closed_lost');
+                // Lost Projects: Stage == 'leads' AND Status == 'closed_lost'
+                const lostOpps = opportunities.filter((o: Opportunity) =>
+                    o.stage === 'leads' && ['closed_lost', 'lost'].includes(o.status)
+                );
                 const lostCount = lostOpps.length;
 
                 // Sales Conversion: (Sales / Proposals Sent) * 100
