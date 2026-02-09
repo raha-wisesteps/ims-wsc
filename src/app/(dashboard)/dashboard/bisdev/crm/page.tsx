@@ -108,6 +108,7 @@ export default function CRMPage() {
 
     // Multi-contact state
     interface ContactItem {
+        id?: string;
         name: string;
         position: string;
         email: string;
@@ -171,6 +172,38 @@ export default function CRMPage() {
                     .update({ ...clientData, updated_at: new Date().toISOString() })
                     .eq("id", editingClient.id);
                 if (error) throw error;
+
+                // Handle Contacts Update
+                const validContacts = contacts.filter(c => c.name.trim());
+                for (let i = 0; i < validContacts.length; i++) {
+                    const contact = validContacts[i];
+                    if (contact.id) {
+                        // Update existing
+                        await supabase
+                            .from("crm_client_contacts")
+                            .update({
+                                name: contact.name,
+                                position: contact.position || null,
+                                email: contact.email || null,
+                                phone: contact.phone || null,
+                                is_primary: i === 0,
+                            })
+                            .eq("id", contact.id);
+                    } else {
+                        // Insert new
+                        await supabase
+                            .from("crm_client_contacts")
+                            .insert({
+                                client_id: editingClient.id,
+                                name: contact.name,
+                                position: contact.position || null,
+                                email: contact.email || null,
+                                phone: contact.phone || null,
+                                is_primary: i === 0,
+                                created_by: profile.id,
+                            });
+                    }
+                }
             } else {
                 // Insert client
                 const { data: newClient, error: insertError } = await supabase
@@ -261,6 +294,7 @@ export default function CRMPage() {
         // Load existing contacts or empty one
         if (client.contacts && client.contacts.length > 0) {
             setContacts(client.contacts.map(c => ({
+                id: c.id,
                 name: c.name || "",
                 position: c.position || "",
                 email: c.email || "",

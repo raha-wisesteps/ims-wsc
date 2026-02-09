@@ -15,7 +15,7 @@ export interface Opportunity {
     created_at: string;
     updated_at: string;
     expected_close_date?: string;
-    opportunity_type?: 'customer_based' | 'product_based';
+    opportunity_type?: 'customer_based' | 'product_based' | null;
     cash_in?: number;
     client?: {
         company_name: string;

@@ -239,7 +239,7 @@ export default function OpportunityBoard() {
         try {
             const payload = {
                 ...editForm,
-                opportunity_type: editForm.opportunity_type || undefined,
+                opportunity_type: editForm.opportunity_type || null,
                 created_at: editForm.created_at ? new Date(editForm.created_at).toISOString() : undefined
             };
             await opportunityService.updateOpportunity(editingOpp.id, payload);

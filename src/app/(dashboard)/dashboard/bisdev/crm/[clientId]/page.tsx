@@ -7,6 +7,8 @@ import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import {
     Building2,
+    ArrowRight,
+    Video,
     ChevronRight,
     ChevronLeft,
     Edit3,
@@ -42,6 +44,7 @@ import {
     Trophy,
     Angry,
     LayoutGrid,
+    History,
 } from "lucide-react";
 
 // Configs
@@ -130,6 +133,7 @@ interface Contact {
     email: string | null;
     phone: string | null;
     is_primary: boolean;
+    birth_date: string | null; // Added birth_date
     notes: string | null;
     created_at: string;
 }
@@ -199,6 +203,7 @@ export default function ClientDetailPage() {
     const [isLoading, setIsLoading] = useState(true);
     const [activeTab, setActiveTab] = useState<TabType>(initialTab || "overview");
     const [expandedLogId, setExpandedLogId] = useState<string | null>(null); // For accordion
+    const [selectedLogFilter, setSelectedLogFilter] = useState<string>("all");
 
     // Form states
     const [showMeetingForm, setShowMeetingForm] = useState(false);
@@ -267,13 +272,23 @@ export default function ClientDetailPage() {
         email: "",
         phone: "",
         is_primary: false,
+        birth_date: "", // Added birth_date
         notes: "",
     });
 
     const hasFullAccess = profile?.job_type === "bisdev" || ["ceo", "super_admin"].includes(profile?.role || "");
 
     useEffect(() => {
-        if (canAccessBisdev && clientId) fetchAllData();
+        if (canAccessBisdev && clientId) {
+            fetchAllData();
+            // Trigger inactivity check (fire and forget)
+            supabase.rpc('check_and_notify_inactivity').then(({ error }: { error: any }) => {
+                if (error) console.error("Inactivity check error:", JSON.stringify(error, null, 2));
+            });
+            supabase.rpc('check_and_notify_birthdays').then(({ error }: { error: any }) => {
+                if (error) console.error("Birthday check error:", JSON.stringify(error, null, 2));
+            });
+        }
     }, [canAccessBisdev, clientId]);
 
     const fetchAllData = async () => {
@@ -608,6 +623,7 @@ export default function ClientDetailPage() {
                         email: contactForm.email || null,
                         phone: contactForm.phone || null,
                         is_primary: contactForm.is_primary,
+                        birth_date: contactForm.birth_date || null, // Added birth_date
                         notes: contactForm.notes || null,
                     })
                     .eq("id", editingContact.id);
@@ -620,6 +636,7 @@ export default function ClientDetailPage() {
                     email: contactForm.email || null,
                     phone: contactForm.phone || null,
                     is_primary: contactForm.is_primary,
+                    birth_date: contactForm.birth_date || null, // Added birth_date
                     notes: contactForm.notes || null,
                     created_by: profile.id,
                 });
@@ -628,7 +645,9 @@ export default function ClientDetailPage() {
 
             setShowContactForm(false);
             setEditingContact(null);
-            setContactForm({ name: "", position: "", email: "", phone: "", is_primary: false, notes: "" });
+            setShowContactForm(false);
+            setEditingContact(null);
+            setContactForm({ name: "", position: "", email: "", phone: "", is_primary: false, birth_date: "", notes: "" });
             fetchAllData();
         } catch (error) {
             console.error("Error saving contact:", error);
@@ -653,6 +672,7 @@ export default function ClientDetailPage() {
             email: contact.email || "",
             phone: contact.phone || "",
             is_primary: contact.is_primary,
+            birth_date: contact.birth_date || "",
             notes: contact.notes || "",
         });
         setShowContactForm(true);
@@ -694,8 +714,25 @@ export default function ClientDetailPage() {
         e.preventDefault();
         if (!profile) return;
 
+        if (!opportunityForm.title?.trim()) {
+            alert("Opportunity Title is required!");
+            return;
+        }
+
+        if (!opportunityForm.opportunity_type) {
+            alert("Opportunity Type is required!");
+            return;
+        }
+
         try {
-            const finalDate = opportunityForm.created_at ? new Date(opportunityForm.created_at).toISOString() : new Date().toISOString();
+            let finalDate = new Date().toISOString();
+            if (opportunityForm.created_at) {
+                const now = new Date();
+                // Create date from input (YYYY-MM-DD) but use current time
+                const [year, month, day] = opportunityForm.created_at.split('-').map(Number);
+                const dateWithTime = new Date(year, month - 1, day, now.getHours(), now.getMinutes(), now.getSeconds());
+                finalDate = dateWithTime.toISOString();
+            }
 
             if (editingOpportunity) {
                 // Update
@@ -708,7 +745,7 @@ export default function ClientDetailPage() {
                         value: opportunityForm.value,
                         cash_in: opportunityForm.cash_in,
                         priority: opportunityForm.priority,
-                        opportunity_type: opportunityForm.opportunity_type,
+                        opportunity_type: opportunityForm.opportunity_type || null,
                         notes: opportunityForm.notes || null,
                         created_at: finalDate, // Allow updating created_at
                         updated_at: new Date().toISOString(),
@@ -929,38 +966,357 @@ export default function ClientDetailPage() {
             {/* Tab Content */}
             <div className="flex-1 overflow-y-auto">
                 {/* Overview Tab */}
+                {/* Dashboard Metrics */}
+                {activeTab === "overview" && (
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                        {(() => {
+                            const totalSales = opportunities.filter(o => o.status === 'won').reduce((sum, o) => sum + (o.value || 0), 0);
+                            const totalCashIn = opportunities.reduce((sum, o) => sum + (o.cash_in || 0), 0);
+                            const totalLeads = opportunities.length;
+                            const wonCount = opportunities.filter(o => o.status === 'won').length;
+                            const conversionRate = opportunities.length > 0 ? ((wonCount / opportunities.length) * 100).toFixed(1) : 0;
+
+                            return (
+                                <>
+                                    <div className="p-4 rounded-xl bg-white dark:bg-[#1c2120] border border-[var(--glass-border)] flex flex-col items-center justify-center text-center">
+                                        <p className="text-xs text-[var(--text-muted)] uppercase font-bold tracking-wider mb-1">Total Sales (Won)</p>
+                                        <p className="text-xl font-bold text-emerald-600">
+                                            Rp {totalSales.toLocaleString('id-ID')}
+                                        </p>
+                                    </div>
+                                    <div className="p-4 rounded-xl bg-white dark:bg-[#1c2120] border border-[var(--glass-border)] flex flex-col items-center justify-center text-center">
+                                        <p className="text-xs text-[var(--text-muted)] uppercase font-bold tracking-wider mb-1">Total Cash In</p>
+                                        <p className="text-xl font-bold text-blue-600">
+                                            Rp {totalCashIn.toLocaleString('id-ID')}
+                                        </p>
+                                    </div>
+                                    <div className="p-4 rounded-xl bg-white dark:bg-[#1c2120] border border-[var(--glass-border)] flex flex-col items-center justify-center text-center">
+                                        <p className="text-xs text-[var(--text-muted)] uppercase font-bold tracking-wider mb-1">Total Leads (Value)</p>
+                                        <p className="text-xl font-bold text-amber-600">
+                                            Rp {opportunities.reduce((sum, o) => sum + (o.value || 0), 0).toLocaleString('id-ID')}
+                                        </p>
+                                    </div>
+                                    <div className="p-4 rounded-xl bg-white dark:bg-[#1c2120] border border-[var(--glass-border)] flex flex-col items-center justify-center text-center">
+                                        <p className="text-xs text-[var(--text-muted)] uppercase font-bold tracking-wider mb-1">Conversion Rate</p>
+                                        <p className="text-xl font-bold text-purple-600">
+                                            {conversionRate}%
+                                        </p>
+                                    </div>
+                                </>
+                            );
+                        })()}
+                    </div>
+                )}
+
+                {/* Overview Tab */}
                 {activeTab === "overview" && (
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {/* Reminders Card (Birthdays & Inactivity) */}
+
+
                         <div className="p-4 rounded-xl bg-white dark:bg-[#1c2120] border border-[var(--glass-border)]">
-                            <h3 className="font-bold text-[var(--text-primary)] mb-4 flex items-center gap-2">
-                                <Users className="h-4 w-4" /> Contacts ({contacts.length})
-                            </h3>
+                            <div className="flex justify-between items-start mb-4">
+                                <h3 className="font-bold text-[var(--text-primary)] flex items-center gap-2">
+                                    <Users className="h-4 w-4" /> Contacts ({contacts.length})
+                                </h3>
+                                {contacts.length > 0 && (
+                                    <button
+                                        onClick={() => {
+                                            setContactForm({ name: "", email: "", phone: "", position: "", is_primary: false, birth_date: "", notes: "" });
+                                            setShowContactForm(true);
+                                        }}
+                                        className="px-3 py-1 text-xs font-bold rounded-lg bg-[#e8c559] text-[#171611] hover:bg-[#d4b44e] transition-colors flex items-center gap-1"
+                                    >
+                                        <Plus className="h-3 w-3" /> Add
+                                    </button>
+                                )}
+                            </div>
                             {contacts.length === 0 ? (
-                                <p className="text-sm text-[var(--text-muted)]">No contacts added yet</p>
+                                <div className="text-center py-8">
+                                    <div className="w-12 h-12 bg-gray-50 dark:bg-indigo-900/20 text-indigo-500 rounded-full flex items-center justify-center mx-auto mb-3 border border-gray-100 dark:border-none">
+                                        <User className="h-6 w-6" />
+                                    </div>
+                                    <h3 className="text-sm font-bold text-[var(--text-primary)] mb-1">No Contacts Yet</h3>
+                                    <p className="text-xs text-[var(--text-secondary)] mb-4 max-w-[200px] mx-auto">
+                                        Add key stakeholders for this client.
+                                    </p>
+                                    <button
+                                        onClick={() => {
+                                            setContactForm({ name: "", email: "", phone: "", position: "", is_primary: false, birth_date: "", notes: "" });
+                                            setShowContactForm(true);
+                                        }}
+                                        className="px-4 py-2 bg-[#e8c559] text-[#171611] font-bold rounded-lg hover:bg-[#d4b44e] transition-colors text-xs flex items-center justify-center gap-2 mx-auto shadow-sm"
+                                    >
+                                        <Plus className="h-3.5 w-3.5" /> Add First Contact
+                                    </button>
+                                </div>
                             ) : (
                                 <div className="space-y-3">
                                     {contacts.slice(0, 3).map((c) => (
-                                        <div key={c.id} className="flex items-start gap-3">
-                                            <div className="w-8 h-8 rounded-full bg-indigo-500/20 flex items-center justify-center">
-                                                <User className="h-4 w-4 text-indigo-500" />
+                                        <div key={c.id} className="flex items-start gap-3 p-2 rounded-lg hover:bg-gray-50 dark:hover:bg-white/5 transition-colors cursor-pointer group" onClick={() => setActiveTab("contacts")}>
+                                            <div className="w-8 h-8 rounded-full bg-indigo-100 dark:bg-indigo-500/20 flex items-center justify-center border border-indigo-200 dark:border-transparent">
+                                                <User className="h-4 w-4 text-indigo-600 dark:text-indigo-500" />
                                             </div>
                                             <div className="flex-1 min-w-0">
                                                 <div className="flex items-center gap-2">
-                                                    <p className="text-sm font-medium text-[var(--text-primary)] truncate">{c.name}</p>
+                                                    <p className="text-sm font-medium text-[var(--text-primary)] truncate group-hover:text-indigo-600 transition-colors">{c.name}</p>
                                                     {c.is_primary && <Star className="h-3 w-3 text-amber-500 fill-amber-500" />}
                                                 </div>
                                                 <p className="text-xs text-[var(--text-muted)] truncate">{c.position || "-"}</p>
                                                 {c.phone && <p className="text-xs text-[var(--text-secondary)]">{c.phone}</p>}
+                                                {c.birth_date && (
+                                                    <p className="text-xs text-[var(--text-secondary)] flex items-center gap-1 mt-0.5">
+                                                        <Sparkles className="h-3 w-3 text-pink-400" />
+                                                        {new Date(c.birth_date).toLocaleDateString('id-ID', { day: 'numeric', month: 'short' })}
+                                                    </p>
+                                                )}
                                             </div>
                                         </div>
                                     ))}
                                     {contacts.length > 3 && (
-                                        <button onClick={() => setActiveTab("contacts")} className="text-xs text-[#e8c559] hover:underline">
+                                        <button onClick={() => setActiveTab("contacts")} className="text-xs text-[#e8c559] hover:underline px-2">
                                             View all {contacts.length} contacts
                                         </button>
                                     )}
                                 </div>
                             )}
+                        </div>
+
+                        {/* Last Interaction Card */}
+                        <div className="p-4 rounded-xl bg-white dark:bg-[#1c2120] border border-[var(--glass-border)]">
+                            <div className="flex justify-between items-start mb-4">
+                                <h3 className="font-bold text-[var(--text-primary)] flex items-center gap-2">
+                                    <History className="h-4 w-4" /> Last Interaction
+                                </h3>
+                                {logbook.length > 0 && (
+                                    <button
+                                        onClick={() => {
+                                            setMeetingForm(prev => ({ ...prev, opportunity_id: "", meeting_type: "online" }));
+                                            setShowMeetingForm(true);
+                                        }}
+                                        className="px-3 py-1 text-xs font-bold rounded-lg bg-[#e8c559] text-[#171611] hover:bg-[#d4b44e] transition-colors flex items-center gap-1"
+                                    >
+                                        <Plus className="h-3 w-3" /> Add
+                                    </button>
+                                )}
+                            </div>
+
+                            {logbook.length > 0 ? (
+                                (() => {
+                                    const latestLog = [...logbook].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0];
+                                    return (
+                                        <div className="p-3 rounded-lg bg-gray-50 dark:bg-white/5 border border-[var(--glass-border)] space-y-3">
+                                            {/* Header: Type, Mood, Date */}
+                                            <div className="flex justify-between items-start">
+                                                <div className="flex items-center gap-2">
+                                                    <div className={`w-8 h-8 rounded-full flex items-center justify-center ${latestLog.type === 'journey' ? 'bg-purple-100 text-purple-600' : 'bg-blue-100 text-blue-600'}`}>
+                                                        {latestLog.type === 'journey' ? <ArrowRight className="h-4 w-4" /> :
+                                                            (latestLog.meeting_type === 'call' ? <Phone className="h-4 w-4" /> :
+                                                                latestLog.meeting_type === 'video' ? <Video className="h-4 w-4" /> :
+                                                                    latestLog.meeting_type === 'offline' ? <Users className="h-4 w-4" /> :
+                                                                        <MessageSquare className="h-4 w-4" />)}
+                                                    </div>
+                                                    <div>
+                                                        <div className="flex items-center gap-2">
+                                                            <p className="text-xs font-bold text-[var(--text-primary)] capitalize">
+                                                                {latestLog.meeting_type ? (MEETING_TYPES[latestLog.meeting_type as MeetingType]?.label || latestLog.meeting_type) : 'Interaction'}
+                                                            </p>
+                                                            {latestLog.mood && MOOD_CONFIG[latestLog.mood as MoodType] && (
+                                                                <span className={`flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full ${MOOD_CONFIG[latestLog.mood as MoodType].color}`} title={MOOD_CONFIG[latestLog.mood as MoodType].label}>
+                                                                    {MOOD_CONFIG[latestLog.mood as MoodType].icon}
+                                                                    <span className="font-medium">{MOOD_CONFIG[latestLog.mood as MoodType].label}</span>
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                        <p className="text-[10px] text-[var(--text-muted)] flex items-center gap-1">
+                                                            <Clock className="h-3 w-3" />
+                                                            {new Date(latestLog.date).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                                                        </p>
+                                                    </div>
+                                                </div>
+                                                {latestLog.opportunity?.title && (
+                                                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 max-w-[100px] truncate">
+                                                        {latestLog.opportunity.title}
+                                                    </span>
+                                                )}
+                                            </div>
+
+                                            {/* Details Grid */}
+                                            <div className="grid grid-cols-2 gap-2 text-xs">
+                                                <div className="col-span-2 sm:col-span-1">
+                                                    <p className="text-[10px] text-[var(--text-muted)] font-semibold mb-0.5">Internal PIC</p>
+                                                    <div className="flex items-center gap-1.5 p-1.5 bg-white dark:bg-black/20 rounded border border-[var(--glass-border)] min-h-[32px]">
+                                                        <User className="h-3.5 w-3.5 text-[var(--text-muted)] shrink-0" />
+                                                        <span className="truncate text-[var(--text-secondary)]">
+                                                            {latestLog.internal_attendees?.length > 0
+                                                                ? latestLog.internal_attendees.map((id: string) => employees.find(e => e.id === id)?.full_name).filter(Boolean).join(", ")
+                                                                : latestLog.created_by_profile?.full_name || 'Unknown'}
+                                                        </span>
+                                                    </div>
+                                                </div>
+                                                <div className="col-span-2 sm:col-span-1">
+                                                    <p className="text-[10px] text-[var(--text-muted)] font-semibold mb-0.5">External</p>
+                                                    <div className="flex items-center gap-1.5 p-1.5 bg-white dark:bg-black/20 rounded border border-[var(--glass-border)] min-h-[32px] truncate">
+                                                        <Users className="h-3.5 w-3.5 text-[var(--text-muted)] shrink-0" />
+                                                        <span className="truncate text-[var(--text-secondary)]">{latestLog.attendees || '-'}</span>
+                                                    </div>
+                                                </div>
+                                            </div>
+
+                                            {/* Content: Agenda, MOM, Link */}
+                                            <div className="space-y-2 bg-white dark:bg-black/20 p-2 rounded border border-[var(--glass-border)]">
+                                                {latestLog.agenda && (
+                                                    <div>
+                                                        <p className="text-[10px] text-[var(--text-muted)] font-semibold">Agenda</p>
+                                                        <p className="text-xs text-[var(--text-primary)]">{latestLog.agenda}</p>
+                                                    </div>
+                                                )}
+                                                {latestLog.mom_content && (
+                                                    <div>
+                                                        <p className="text-[10px] text-[var(--text-muted)] font-semibold">MOM</p>
+                                                        <p className="text-xs text-[var(--text-secondary)] line-clamp-3 italic">"{latestLog.mom_content}"</p>
+                                                    </div>
+                                                )}
+                                                {latestLog.mom_link && (
+                                                    <div className="pt-1">
+                                                        <a href={latestLog.mom_link} target="_blank" rel="noopener noreferrer" className="text-xs text-blue-600 hover:underline flex items-center gap-1">
+                                                            <LinkIcon className="h-3 w-3" /> View Document
+                                                        </a>
+                                                    </div>
+                                                )}
+                                            </div>
+
+                                            {/* Next Action */}
+                                            {latestLog.next_action && (
+                                                <div className="flex items-start gap-2 p-2 bg-amber-50 dark:bg-amber-900/10 rounded border border-amber-100 dark:border-amber-900/20">
+                                                    <ArrowRight className="h-3 w-3 text-amber-600 mt-0.5" />
+                                                    <div>
+                                                        <p className="text-[10px] font-bold text-amber-700 dark:text-amber-500">Next Action</p>
+                                                        <p className="text-xs text-amber-800 dark:text-amber-400">{latestLog.next_action}</p>
+                                                    </div>
+                                                </div>
+                                            )}
+
+                                            <button
+                                                onClick={() => setActiveTab("logbook")}
+                                                className="w-full text-center text-xs text-indigo-600 hover:underline pt-1 border-t border-[var(--glass-border)] mt-1"
+                                            >
+                                                View Full History
+                                            </button>
+                                        </div>
+                                    );
+                                })()
+                            ) : (
+                                <div className="text-center py-8">
+                                    <div className="w-12 h-12 bg-gray-50 dark:bg-indigo-900/20 text-indigo-500 rounded-full flex items-center justify-center mx-auto mb-3 border border-gray-100 dark:border-none">
+                                        <MessageSquare className="h-6 w-6" />
+                                    </div>
+                                    <h3 className="text-sm font-bold text-[var(--text-primary)] mb-1">No Interactions Yet</h3>
+                                    <p className="text-xs text-[var(--text-secondary)] mb-4 max-w-[200px] mx-auto">
+                                        Record meetings, calls, or notes for this client.
+                                    </p>
+                                    <button
+                                        onClick={() => {
+                                            setMeetingForm(prev => ({ ...prev, opportunity_id: "", meeting_type: "online" }));
+                                            setShowMeetingForm(true);
+                                        }}
+                                        className="px-4 py-2 bg-[#e8c559] text-[#171611] font-bold rounded-lg hover:bg-[#d4b44e] transition-colors text-xs flex items-center justify-center gap-2 mx-auto shadow-sm"
+                                    >
+                                        <Plus className="h-3.5 w-3.5" /> Add First Interaction
+                                    </button>
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Reminders Card (Birthdays & Inactivity) */}
+                        <div className="p-4 rounded-xl bg-white dark:bg-[#1c2120] border border-[var(--glass-border)]">
+                            <h3 className="font-bold text-[var(--text-primary)] mb-4 flex items-center gap-2">
+                                <Clock className="h-4 w-4" /> Reminders & Alerts
+                            </h3>
+                            <div className="space-y-4">
+                                {/* Birthdays */}
+                                <div className="p-3 rounded-lg bg-gray-50 dark:bg-white/5 border border-[var(--glass-border)]">
+                                    <h4 className="text-sm font-bold text-[var(--text-primary)] mb-2 flex items-center gap-2">
+                                        <Sparkles className="h-4 w-4 text-pink-500" /> Upcoming Birthdays (30 Days)
+                                    </h4>
+                                    {(() => {
+                                        const upcomingBirthdays = contacts.filter(c => {
+                                            if (!c.birth_date) return false;
+                                            const today = new Date();
+                                            today.setHours(0, 0, 0, 0);
+                                            const birthDate = new Date(c.birth_date);
+                                            const nextBirthday = new Date(today.getFullYear(), birthDate.getMonth(), birthDate.getDate());
+                                            if (nextBirthday < today) nextBirthday.setFullYear(today.getFullYear() + 1);
+                                            const diffDays = Math.ceil((nextBirthday.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+                                            return diffDays <= 30;
+                                        }).sort((a, b) => {
+                                            const getNextBirthday = (d: string) => {
+                                                const today = new Date();
+                                                today.setHours(0, 0, 0, 0);
+                                                const bd = new Date(d);
+                                                const next = new Date(today.getFullYear(), bd.getMonth(), bd.getDate());
+                                                if (next < today) next.setFullYear(today.getFullYear() + 1);
+                                                return next;
+                                            };
+                                            return getNextBirthday(a.birth_date!).getTime() - getNextBirthday(b.birth_date!).getTime();
+                                        });
+
+                                        if (upcomingBirthdays.length === 0) return <p className="text-xs text-[var(--text-muted)] italic">No upcoming birthdays.</p>;
+
+                                        return (
+                                            <ul className="space-y-2">
+                                                {upcomingBirthdays.map(c => {
+                                                    const bdate = new Date(c.birth_date!);
+                                                    const today = new Date();
+                                                    const nextBirthday = new Date(today.getFullYear(), bdate.getMonth(), bdate.getDate());
+                                                    if (nextBirthday < today) nextBirthday.setFullYear(today.getFullYear() + 1);
+                                                    const dayDiff = Math.ceil((nextBirthday.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+
+                                                    return (
+                                                        <li key={c.id} className="text-xs flex justify-between items-center text-[var(--text-secondary)]">
+                                                            <span>{c.name} ({c.position || '-'})</span>
+                                                            <span className="font-bold text-pink-600 bg-pink-50 dark:bg-pink-900/20 px-2 py-0.5 rounded-full">
+                                                                {dayDiff === 0 ? "Today!" : `${bdate.getDate()} ${bdate.toLocaleString('default', { month: 'short' })}`}
+                                                            </span>
+                                                        </li>
+                                                    );
+                                                })}
+                                            </ul>
+                                        );
+                                    })()}
+                                </div>
+
+                                {/* Inactivity Alert */}
+                                <div className="p-3 rounded-lg bg-gray-50 dark:bg-white/5 border border-[var(--glass-border)]">
+                                    <h4 className="text-sm font-bold text-[var(--text-primary)] mb-2 flex items-center gap-2">
+                                        <History className="h-4 w-4 text-blue-500" /> Inactivity Status
+                                    </h4>
+                                    {(() => {
+                                        const lastInteraction = logbook.length > 0 ? new Date(logbook[0].date) : (client?.created_at ? new Date(client.created_at) : null);
+                                        if (!lastInteraction) return <p className="text-xs text-[var(--text-muted)]">No data.</p>;
+
+                                        const daysInactive = Math.floor((new Date().getTime() - lastInteraction.getTime()) / (1000 * 60 * 60 * 24));
+
+                                        let alertColor = "text-green-600 bg-green-50 dark:bg-green-900/20";
+                                        let message = "Active";
+                                        if (daysInactive > 90) { alertColor = "text-red-600 bg-red-50 dark:bg-red-900/20"; message = "Critical Inactivity"; }
+                                        else if (daysInactive > 30) { alertColor = "text-amber-600 bg-amber-50 dark:bg-amber-900/20"; message = "Needs Attention"; }
+                                        else if (daysInactive > 14) { alertColor = "text-yellow-600 bg-yellow-50 dark:bg-yellow-900/20"; message = "Slowing Down"; }
+
+                                        return (
+                                            <div className="flex items-center justify-between">
+                                                <div className="flex flex-col">
+                                                    <span className="text-xs text-[var(--text-muted)]">Days since last interaction</span>
+                                                    <span className="text-2xl font-bold text-[var(--text-primary)]">{daysInactive}</span>
+                                                </div>
+                                                <span className={`px-2 py-1 rounded-full text-xs font-bold ${alertColor}`}>
+                                                    {message}
+                                                </span>
+                                            </div>
+                                        );
+                                    })()}
+                                </div>
+                            </div>
                         </div>
 
                         <div className="p-4 rounded-xl bg-white dark:bg-[#1c2120] border border-[var(--glass-border)]">
@@ -1130,7 +1486,7 @@ export default function ClientDetailPage() {
                                             setOpportunityForm({ title: "", stage: "prospect", status: "on_going", value: 0, priority: "medium", opportunity_type: "", cash_in: 0, notes: "", created_at: "" });
                                             setShowOpportunityForm(true);
                                         }}
-                                        className="px-4 py-2 bg-[#e8c559] text-[#171611] font-bold rounded-xl hover:bg-[#d4b44e] transition-colors flex items-center gap-2"
+                                        className="px-4 py-2 bg-[#e8c559] text-white font-bold rounded-xl hover:bg-[#d4b44e] transition-colors flex items-center gap-2"
                                     >
                                         <Plus className="h-4 w-4" /> Add Opportunity
                                     </button>
@@ -1250,226 +1606,197 @@ export default function ClientDetailPage() {
                         <div className="space-y-6">
                             <div className="flex items-center justify-between mb-2">
                                 <h3 className="text-lg font-bold text-[var(--text-primary)]">Logbook</h3>
-                                <Link
-                                    href="/dashboard/bisdev/opportunities"
-                                    className="px-3 py-1.5 rounded-lg border border-[var(--glass-border)] text-xs font-medium hover:bg-amber-50 dark:hover:bg-amber-900/20 text-[var(--text-secondary)] hover:text-amber-600 transition-colors flex items-center gap-2"
-                                >
-                                    <LayoutGrid className="h-3.5 w-3.5" />
-                                    Board
-                                </Link>
+                                <div className="flex items-center gap-2">
+                                    <select
+                                        value={selectedLogFilter}
+                                        onChange={(e) => setSelectedLogFilter(e.target.value)}
+                                        className="px-3 py-1.5 rounded-lg border border-[var(--glass-border)] bg-white dark:bg-[#1c2120] text-xs font-medium focus:outline-none focus:ring-1 focus:ring-indigo-500 appearance-none cursor-pointer hover:bg-gray-50 dark:hover:bg-white/5 transition-colors"
+                                    >
+                                        <option value="all">All Interactions</option>
+                                        <option value="general">General Only</option>
+                                        {opportunities.map(opp => (
+                                            <option key={opp.id} value={opp.id}>{opp.title}</option>
+                                        ))}
+                                    </select>
+                                    <Link
+                                        href="/dashboard/bisdev/opportunities"
+                                        className="px-3 py-1.5 rounded-lg border border-[var(--glass-border)] text-xs font-medium hover:bg-amber-50 dark:hover:bg-amber-900/20 text-[var(--text-secondary)] hover:text-amber-600 transition-colors flex items-center gap-2"
+                                    >
+                                        <LayoutGrid className="h-3.5 w-3.5" />
+                                        Board
+                                    </Link>
+                                </div>
                             </div>
-                            {/* Logs Grouped by Opportunity - Accordion Style */}
+                            {/* Filtered Timeline Style */}
                             <div className="space-y-4">
                                 {(() => {
-                                    // Group logs
-                                    const groupedLogs: Record<string, { title: string, id: string | null, logs: any[] }> = {
-                                        "General": { title: "General", id: null, logs: [] }
-                                    };
+                                    const filteredLogs = logbook.filter(log => {
+                                        if (selectedLogFilter === 'all') return true;
+                                        if (selectedLogFilter === 'general') return !log.opportunity_id;
+                                        return log.opportunity_id === selectedLogFilter;
+                                    }).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
-                                    // Initialize groups for all opportunities so they appear even if empty
-                                    opportunities.forEach(opp => {
-                                        groupedLogs[opp.id] = { title: opp.title, id: opp.id, logs: [] };
-                                    });
-
-                                    logbook.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()).forEach(log => {
-                                        const key = log.opportunity_id || "General";
-                                        if (!groupedLogs[key]) {
-                                            // Fallback if opportunity not found in list but exists in log
-                                            groupedLogs[key] = {
-                                                title: log.opportunity?.title || "Unknown Opportunity",
-                                                id: log.opportunity_id,
-                                                logs: []
-                                            };
-                                        }
-                                        groupedLogs[key].logs.push(log);
-                                    });
-
-                                    // Render groups
-                                    return Object.values(groupedLogs).map((group) => {
-                                        const isExpanded = expandedLogId === group.title;
-
+                                    if (filteredLogs.length === 0) {
                                         return (
-                                            <div key={group.title} className="bg-white dark:bg-[#1c2120] rounded-xl border border-[var(--glass-border)] overflow-hidden transition-all duration-200">
-                                                <button
-                                                    onClick={() => setExpandedLogId(isExpanded ? null : group.title)}
-                                                    className="w-full flex items-center justify-between p-4 hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
-                                                >
-                                                    <div className="flex items-center gap-3">
-                                                        <div className={`p-2 rounded-lg ${group.id ? 'bg-indigo-100 text-indigo-600' : 'bg-gray-100 text-gray-600'}`}>
-                                                            {group.id ? <TrendingUp className="h-5 w-5" /> : <List className="h-5 w-5" />}
-                                                        </div>
-                                                        <div className="text-left">
-                                                            <h3 className="font-bold text-[var(--text-primary)]">{group.title}</h3>
-                                                            <p className="text-xs text-[var(--text-secondary)]">{group.logs.length} interactions</p>
-                                                        </div>
-                                                    </div>
-                                                    <ChevronRight className={`h-5 w-5 text-[var(--text-muted)] transition-transform duration-200 ${isExpanded ? 'rotate-90' : ''}`} />
-                                                </button>
+                                            <div className="text-center py-12 bg-white dark:bg-[#1c2120] rounded-xl border border-[var(--glass-border)] text-[var(--text-muted)]">
+                                                <History className="h-8 w-8 mx-auto mb-3 opacity-20" />
+                                                <p>No interactions found for this filter.</p>
+                                            </div>
+                                        );
+                                    }
 
-                                                {isExpanded && (
-                                                    <div className="border-t border-[var(--glass-border)] bg-gray-50 dark:bg-black/20 p-4">
-                                                        {/* Add Interaction Button for this Context */}
-                                                        <div className="mb-6 flex justify-between items-center bg-white dark:bg-[#1c2120] p-3 rounded-lg border border-[var(--glass-border)]">
-                                                            <span className="text-sm font-medium text-[var(--text-secondary)]">Log new interaction for {group.title}</span>
-                                                            <div className="flex gap-2">
-                                                                <button
-                                                                    onClick={() => {
-                                                                        setMeetingForm(prev => ({ ...prev, opportunity_id: group.id || "", meeting_type: "online" }));
-                                                                        setShowMeetingForm(true);
-                                                                    }}
-                                                                    className="px-3 py-1.5 text-xs font-bold rounded-lg bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border border-indigo-200 transition-colors"
-                                                                >
-                                                                    + Add Interaction
-                                                                </button>
+                                    return (
+                                        <div className="relative border-l-2 border-[var(--glass-border)] ml-4 space-y-6 pt-2 pb-2">
+                                            {filteredLogs.map((log) => (
+                                                <div key={`${log.type}-${log.id}`} className="relative pl-8">
+                                                    {/* Icon Line */}
+                                                    <div className="absolute -left-[9px] top-0 bg-white dark:bg-[#1c2120] p-1 rounded-full border border-[var(--glass-border)] z-10">
+                                                        {getLogIcon(log.type, log.meeting_type || log.note_type)}
+                                                    </div>
+
+                                                    {/* Content Card */}
+                                                    <div className="p-3 rounded-xl bg-white dark:bg-[#1c2120] border border-[var(--glass-border)] shadow-sm hover:border-[#e8c559]/30 transition-colors">
+                                                        <div className="flex justify-between items-start mb-2">
+                                                            <div className="flex flex-col gap-1">
+                                                                <div className="flex items-center gap-2">
+                                                                    <span className="font-bold text-[var(--text-primary)] capitalize text-sm">
+                                                                        {log.type === 'journey'
+                                                                            ? `Stage Updated: ${STAGE_CONFIG[log.to_stage as CRMStage]?.label || log.to_stage}`
+                                                                            : (MEETING_TYPES[log.meeting_type as MeetingType]?.label || log.meeting_type || 'Interaction')}
+                                                                    </span>
+                                                                    {/* Mood Display */}
+                                                                    {log.type === 'meeting' && log.mood && MOOD_CONFIG[log.mood as MoodType] && (
+                                                                        <span className="text-lg" title={`Mood: ${MOOD_CONFIG[log.mood as MoodType].label}`}>
+                                                                            {MOOD_CONFIG[log.mood as MoodType].icon}
+                                                                        </span>
+                                                                    )}
+                                                                    <span className="text-[10px] text-[var(--text-muted)]">• {formatDateTime(log.date)}</span>
+                                                                </div>
+                                                                {/* Opportunity Badge if in "All" view */}
+                                                                {selectedLogFilter === 'all' && log.opportunity?.title && (
+                                                                    <div className="flex items-center gap-1">
+                                                                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-50 text-blue-600 border border-blue-100 flex items-center gap-1 max-w-fit">
+                                                                            <TrendingUp className="h-3 w-3" />
+                                                                            {log.opportunity.title}
+                                                                        </span>
+                                                                    </div>
+                                                                )}
+                                                            </div>
+                                                            <div className="flex gap-1">
+                                                                {(log.type === 'meeting') && hasFullAccess && (
+                                                                    <>
+                                                                        <button
+                                                                            onClick={() => handleEditMeeting(log)}
+                                                                            className="text-[var(--text-muted)] hover:text-blue-500 transition-colors"
+                                                                            title="Edit"
+                                                                        >
+                                                                            <Edit3 className="h-3 w-3" />
+                                                                        </button>
+                                                                        <button
+                                                                            onClick={() => handleDeleteMeeting(log.id)}
+                                                                            className="text-[var(--text-muted)] hover:text-red-500 transition-colors"
+                                                                            title="Delete"
+                                                                        >
+                                                                            <Trash2 className="h-3 w-3" />
+                                                                        </button>
+                                                                    </>
+                                                                )}
+                                                                {(log.type === 'journey') && hasFullAccess && (
+                                                                    <button
+                                                                        onClick={() => handleDeleteStageLog(log.id)}
+                                                                        className="text-[var(--text-muted)] hover:text-red-500 transition-colors"
+                                                                        title="Delete Stage Log"
+                                                                    >
+                                                                        <Trash2 className="h-3 w-3" />
+                                                                    </button>
+                                                                )}
                                                             </div>
                                                         </div>
 
-                                                        <div className="relative border-l-2 border-[var(--glass-border)] ml-4 space-y-6 pt-2 pb-2">
-                                                            {group.logs.length === 0 ? (
-                                                                <p className="pl-6 text-sm text-[var(--text-muted)] italic">No interactions recorded yet.</p>
-                                                            ) : (
-                                                                group.logs.map((log) => (
-                                                                    <div key={`${log.type}-${log.id}`} className="relative pl-8">
-                                                                        {/* Icon Line */}
-                                                                        <div className="absolute -left-[9px] top-0 bg-white dark:bg-[#1c2120] p-1 rounded-full border border-[var(--glass-border)] z-10">
-                                                                            {getLogIcon(log.type, log.meeting_type || log.note_type)}
-                                                                        </div>
-
-                                                                        {/* Content Card */}
-                                                                        <div className="p-3 rounded-xl bg-white dark:bg-[#1c2120] border border-[var(--glass-border)] shadow-sm hover:border-[#e8c559]/30 transition-colors">
-                                                                            <div className="flex justify-between items-start mb-2">
-                                                                                <div className="flex items-center gap-2">
-                                                                                    <span className="font-bold text-[var(--text-primary)] capitalize text-sm">
-                                                                                        {log.type === 'journey'
-                                                                                            ? `Stage Updated: ${STAGE_CONFIG[log.to_stage as CRMStage]?.label || log.to_stage}`
-                                                                                            : (MEETING_TYPES[log.meeting_type as MeetingType]?.label || log.meeting_type || 'Interaction')}
-                                                                                    </span>
-                                                                                    {/* Mood Display */}
-                                                                                    {log.type === 'meeting' && log.mood && MOOD_CONFIG[log.mood as MoodType] && (
-                                                                                        <span className="text-lg" title={`Mood: ${MOOD_CONFIG[log.mood as MoodType].label}`}>
-                                                                                            {MOOD_CONFIG[log.mood as MoodType].icon}
-                                                                                        </span>
-                                                                                    )}
-                                                                                    <span className="text-[10px] text-[var(--text-muted)]">• {formatDateTime(log.date)}</span>
-                                                                                </div>
-                                                                                <div className="flex gap-1">
-                                                                                    {(log.type === 'meeting') && hasFullAccess && (
-                                                                                        <>
-                                                                                            <button
-                                                                                                onClick={() => handleEditMeeting(log)}
-                                                                                                className="text-[var(--text-muted)] hover:text-blue-500 transition-colors"
-                                                                                                title="Edit"
-                                                                                            >
-                                                                                                <Edit3 className="h-3 w-3" />
-                                                                                            </button>
-                                                                                            <button
-                                                                                                onClick={() => handleDeleteMeeting(log.id)}
-                                                                                                className="text-[var(--text-muted)] hover:text-red-500 transition-colors"
-                                                                                                title="Delete"
-                                                                                            >
-                                                                                                <Trash2 className="h-3 w-3" />
-                                                                                            </button>
-                                                                                        </>
-                                                                                    )}
-                                                                                    {(log.type === 'journey') && hasFullAccess && (
-                                                                                        <button
-                                                                                            onClick={() => handleDeleteStageLog(log.id)}
-                                                                                            className="text-[var(--text-muted)] hover:text-red-500 transition-colors"
-                                                                                            title="Delete Stage Log"
-                                                                                        >
-                                                                                            <Trash2 className="h-3 w-3" />
-                                                                                        </button>
-                                                                                    )}
-                                                                                </div>
-                                                                            </div>
-
-                                                                            <div className="text-sm text-[var(--text-secondary)]">
-                                                                                {log.type === 'journey' && (
-                                                                                    <div className="flex flex-col gap-1">
-                                                                                        <div className="flex items-center gap-2">
-                                                                                            <span className="bg-gray-100 px-2 py-0.5 rounded text-xs line-through text-gray-500">{STAGE_CONFIG[log.from_stage as CRMStage]?.label || 'Unknown'}</span>
-                                                                                            <ChevronRight className="h-3 w-3 text-gray-400" />
-                                                                                            <span className="bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded text-xs font-bold">{STAGE_CONFIG[log.to_stage as CRMStage]?.label}</span>
-                                                                                        </div>
-                                                                                        {log.notes && <p className="mt-2 italic">"{log.notes}"</p>}
-                                                                                    </div>
-                                                                                )}
-
-                                                                                {log.type === 'meeting' && (
-                                                                                    <div className="space-y-2 mt-2">
-                                                                                        {/* Agenda */}
-                                                                                        {log.agenda && (
-                                                                                            <div className="flex items-start gap-2 text-[13px]">
-                                                                                                <FileText className="h-3.5 w-3.5 text-blue-500 mt-0.5 shrink-0" />
-                                                                                                <span className="font-medium">Agenda: {log.agenda}</span>
-                                                                                            </div>
-                                                                                        )}
-
-                                                                                        {/* Attendees */}
-                                                                                        <div className="flex flex-wrap gap-y-1 gap-x-4 text-xs text-[var(--text-secondary)]">
-                                                                                            {log.attendees && (
-                                                                                                <div className="flex items-center gap-1.5" title="External Attendees">
-                                                                                                    <Users className="h-3.5 w-3.5 text-[var(--text-muted)]" />
-                                                                                                    <span>{log.attendees}</span>
-                                                                                                </div>
-                                                                                            )}
-                                                                                            {log.internal_attendees?.length > 0 && (
-                                                                                                <div className="flex items-center gap-1.5" title="Internal PIC">
-                                                                                                    <User className="h-3.5 w-3.5 text-[var(--text-muted)]" />
-                                                                                                    <span>
-                                                                                                        {log.internal_attendees.map((id: string) =>
-                                                                                                            employees.find(e => e.id === id)?.full_name
-                                                                                                        ).filter(Boolean).join(", ")}
-                                                                                                    </span>
-                                                                                                </div>
-                                                                                            )}
-                                                                                        </div>
-
-                                                                                        {/* MOM Link & Content */}
-                                                                                        {(log.mom_link || log.mom_content) && (
-                                                                                            <div className="flex items-center gap-3 text-xs">
-                                                                                                {log.mom_link && (
-                                                                                                    <a
-                                                                                                        href={log.mom_link}
-                                                                                                        target="_blank"
-                                                                                                        rel="noopener noreferrer"
-                                                                                                        className="flex items-center gap-1 text-blue-500 hover:underline"
-                                                                                                        title="Open MOM Link"
-                                                                                                    >
-                                                                                                        <LinkIcon className="h-4 w-4" />
-                                                                                                        <span>MOM Link</span>
-                                                                                                    </a>
-                                                                                                )}
-                                                                                                {log.mom_content && <span className="text-[var(--text-secondary)] italic">"{log.mom_content}"</span>}
-                                                                                            </div>
-                                                                                        )}
-
-                                                                                        {/* Next Action */}
-                                                                                        {log.next_action && (
-                                                                                            <div className="flex items-center gap-2 text-xs bg-amber-500/10 text-amber-600 px-2 py-1 rounded w-fit mt-1">
-                                                                                                <ChevronRight className="h-3 w-3" />
-                                                                                                <span className="font-medium">Next: {log.next_action}</span>
-                                                                                            </div>
-                                                                                        )}
-                                                                                    </div>
-                                                                                )}
-                                                                            </div>
-
-                                                                            {/* Author */}
-                                                                            <div className="mt-2 pt-2 border-t border-[var(--glass-border)] flex items-center gap-2 text-[10px] text-[var(--text-muted)]">
-                                                                                <User className="h-3 w-3" />
-                                                                                <span>{log.created_by_profile?.full_name || "Unknown User"}</span>
-                                                                            </div>
-                                                                        </div>
+                                                        <div className="text-sm text-[var(--text-secondary)]">
+                                                            {log.type === 'journey' && (
+                                                                <div className="flex flex-col gap-1">
+                                                                    <div className="flex items-center gap-2">
+                                                                        <span className="bg-gray-100 px-2 py-0.5 rounded text-xs line-through text-gray-500">{STAGE_CONFIG[log.from_stage as CRMStage]?.label || 'Unknown'}</span>
+                                                                        <ChevronRight className="h-3 w-3 text-gray-400" />
+                                                                        <span className="bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded text-xs font-bold">{STAGE_CONFIG[log.to_stage as CRMStage]?.label}</span>
                                                                     </div>
-                                                                ))
+                                                                    {log.notes && <p className="mt-2 italic">"{log.notes}"</p>}
+                                                                </div>
+                                                            )}
+
+                                                            {log.type === 'meeting' && (
+                                                                <div className="space-y-2 mt-2">
+                                                                    {/* Agenda */}
+                                                                    {log.agenda && (
+                                                                        <div className="flex items-start gap-2 text-[13px]">
+                                                                            <FileText className="h-3.5 w-3.5 text-blue-500 mt-0.5 shrink-0" />
+                                                                            <span className="font-medium">Agenda: {log.agenda}</span>
+                                                                        </div>
+                                                                    )}
+
+                                                                    {/* Attendees */}
+                                                                    <div className="flex flex-wrap gap-y-1 gap-x-4 text-xs text-[var(--text-secondary)]">
+                                                                        {log.attendees && (
+                                                                            <div className="flex items-center gap-1.5" title="External Attendees">
+                                                                                <Users className="h-3.5 w-3.5 text-[var(--text-muted)]" />
+                                                                                <span>{log.attendees}</span>
+                                                                            </div>
+                                                                        )}
+                                                                        {log.internal_attendees?.length > 0 && (
+                                                                            <div className="flex items-center gap-1.5" title="Internal PIC">
+                                                                                <User className="h-3.5 w-3.5 text-[var(--text-muted)]" />
+                                                                                <span>
+                                                                                    {log.internal_attendees.map((id: string) =>
+                                                                                        employees.find(e => e.id === id)?.full_name
+                                                                                    ).filter(Boolean).join(", ")}
+                                                                                </span>
+                                                                            </div>
+                                                                        )}
+                                                                    </div>
+
+                                                                    {/* MOM Link & Content */}
+                                                                    {(log.mom_link || log.mom_content) && (
+                                                                        <div className="flex items-center gap-3 text-xs">
+                                                                            {log.mom_link && (
+                                                                                <a
+                                                                                    href={log.mom_link}
+                                                                                    target="_blank"
+                                                                                    rel="noopener noreferrer"
+                                                                                    className="flex items-center gap-1 text-blue-500 hover:underline"
+                                                                                    title="Open MOM Link"
+                                                                                >
+                                                                                    <LinkIcon className="h-4 w-4" />
+                                                                                    <span>MOM Link</span>
+                                                                                </a>
+                                                                            )}
+                                                                            {log.mom_content && <span className="text-[var(--text-secondary)] italic">"{log.mom_content}"</span>}
+                                                                        </div>
+                                                                    )}
+
+                                                                    {/* Next Action */}
+                                                                    {log.next_action && (
+                                                                        <div className="flex items-center gap-2 text-xs bg-amber-500/10 text-amber-600 px-2 py-1 rounded w-fit mt-1">
+                                                                            <ChevronRight className="h-3 w-3" />
+                                                                            <span className="font-medium">Next: {log.next_action}</span>
+                                                                        </div>
+                                                                    )}
+                                                                </div>
                                                             )}
                                                         </div>
+
+                                                        {/* Author */}
+                                                        <div className="mt-2 pt-2 border-t border-[var(--glass-border)] flex items-center gap-2 text-[10px] text-[var(--text-muted)]">
+                                                            <User className="h-3 w-3" />
+                                                            <span>
+                                                                {employees.find(e => e.id === log.created_by)?.full_name || 'Unknown User'}
+                                                            </span>
+                                                        </div>
                                                     </div>
-                                                )}
-                                            </div>
-                                        );
-                                    });
+                                                </div>
+                                            ))}
+                                        </div>
+                                    );
                                 })()}
                             </div>
                         </div>
@@ -1481,7 +1808,7 @@ export default function ClientDetailPage() {
                     activeTab === "contacts" && (
                         <div className="space-y-4">
                             <button
-                                onClick={() => { setEditingContact(null); setContactForm({ name: "", position: "", email: "", phone: "", is_primary: false, notes: "" }); setShowContactForm(true); }}
+                                onClick={() => { setEditingContact(null); setContactForm({ name: "", position: "", email: "", phone: "", is_primary: false, birth_date: "", notes: "" }); setShowContactForm(true); }}
                                 className="flex items-center gap-2 px-4 py-2 rounded-xl bg-[#e8c559] text-[#171611] font-bold hover:bg-[#d4b44e]"
                             >
                                 <Plus className="h-4 w-4" /> Add Contact
@@ -1508,6 +1835,12 @@ export default function ClientDetailPage() {
                                                             )}
                                                         </div>
                                                         <p className="text-sm text-[var(--text-muted)]">{c.position || "-"}</p>
+                                                        {c.birth_date && (
+                                                            <p className="text-xs text-[var(--text-secondary)] flex items-center gap-1 mt-1">
+                                                                <Sparkles className="h-3 w-3 text-pink-400" />
+                                                                {new Date(c.birth_date).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}
+                                                            </p>
+                                                        )}
                                                     </div>
                                                 </div>
                                                 <div className="flex items-center gap-1">
@@ -1980,14 +2313,25 @@ export default function ClientDetailPage() {
                                         className="w-full px-4 py-2 rounded-xl border border-[var(--glass-border)] bg-white dark:bg-[#232b2a] text-[var(--text-primary)]"
                                     />
                                 </div>
-                                <div>
-                                    <label className="block text-sm font-bold text-[var(--text-primary)] mb-1">Position</label>
-                                    <input
-                                        type="text"
-                                        value={contactForm.position}
-                                        onChange={(e) => setContactForm({ ...contactForm, position: e.target.value })}
-                                        className="w-full px-4 py-2 rounded-xl border border-[var(--glass-border)] bg-white dark:bg-[#232b2a] text-[var(--text-primary)]"
-                                    />
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div>
+                                        <label className="block text-sm font-bold text-[var(--text-primary)] mb-1">Position</label>
+                                        <input
+                                            type="text"
+                                            value={contactForm.position}
+                                            onChange={(e) => setContactForm({ ...contactForm, position: e.target.value })}
+                                            className="w-full px-4 py-2 rounded-xl border border-[var(--glass-border)] bg-white dark:bg-[#232b2a] text-[var(--text-primary)]"
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-bold text-[var(--text-primary)] mb-1">Birth Date</label>
+                                        <input
+                                            type="date"
+                                            value={contactForm.birth_date || ""}
+                                            onChange={(e) => setContactForm({ ...contactForm, birth_date: e.target.value })}
+                                            className="w-full px-4 py-2 rounded-xl border border-[var(--glass-border)] bg-white dark:bg-[#232b2a] text-[var(--text-primary)]"
+                                        />
+                                    </div>
                                 </div>
                                 <div className="grid grid-cols-2 gap-4">
                                     <div>
