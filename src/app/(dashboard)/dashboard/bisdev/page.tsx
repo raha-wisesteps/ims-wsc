@@ -29,6 +29,8 @@ const formatCurrency = (value: number) => {
     return new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0 }).format(value);
 };
 
+import { Opportunity } from "@/lib/services/opportunity.service";
+
 // Colors for charts
 const COLORS = ['#e8c559', '#171611', '#9ca3af', '#f87171', '#34d399', '#60a5fa', '#818cf8'];
 
@@ -122,18 +124,18 @@ export default function BisDevDashboardPage() {
                 setNewTarget(annualTarget); // meaningful default for edit
 
                 // 2. Fetch All Opportunities
-                const { data: opportunities, error } = await supabase
+                const { data: rawOpportunities, error } = await supabase
                     .from('crm_opportunities')
                     .select('*')
                     .order('updated_at', { ascending: false });
 
                 if (error) throw error;
-                if (!opportunities) return;
+                const opportunities = (rawOpportunities || []) as Opportunity[];
 
                 // 3. Calculate Metrics
-                const wonOpps = opportunities.filter(o => o.status === 'closed_won');
-                const lostOpps = opportunities.filter(o => o.status === 'closed_lost');
-                const proposalOpps = opportunities.filter(o => o.stage === 'proposal');
+                const wonOpps = opportunities.filter((o: Opportunity) => o.status === 'closed_won');
+                const lostOpps = opportunities.filter((o: Opportunity) => o.status === 'closed_lost');
+                const proposalOpps = opportunities.filter((o: Opportunity) => o.stage === 'proposal');
 
                 // Counts
                 const salesCount = wonOpps.length;
@@ -146,8 +148,8 @@ export default function BisDevDashboardPage() {
                 const lossRate = totalClosed > 0 ? (lostCount / totalClosed) * 100 : 0;
 
                 // Financials
-                const cashIn = opportunities.reduce((sum, o) => sum + (o.cash_in || 0), 0);
-                const salesBooking = wonOpps.reduce((sum, o) => sum + (o.value || 0), 0);
+                const cashIn = opportunities.reduce((sum: number, o: Opportunity) => sum + (o.cash_in || 0), 0);
+                const salesBooking = wonOpps.reduce((sum: number, o: Opportunity) => sum + (o.value || 0), 0);
 
                 const remainingTargetCashIn = Math.max(0, annualTarget - cashIn);
                 const remainingTargetContract = Math.max(0, annualTarget - salesBooking);
@@ -180,17 +182,7 @@ export default function BisDevDashboardPage() {
                 ];
 
                 // Sales by Product (from Won Opps)
-                const productSales = wonOpps.reduce((acc: any, curr) => {
-                    if (curr.opportunity_type === 'product_based') {
-                        acc['Product Based'] = (acc['Product Based'] || 0) + curr.value;
-                    } else if (curr.opportunity_type === 'customer_based') { // Assuming type usage
-                        // If we want detailed breakdown, we might not have 'product' field. 
-                        // But user asked for 'sales by product'. 
-                        // The schema has `opportunity_type` ('product_based' | 'customer_based'). 
-                        // Let's use that for now as High Level Product/Service split.
-                        // Or maybe by actual product name if exists? No standard product table yet.
-                        // I'll group by opportunity_type for now.
-                    }
+                const productSales = wonOpps.reduce((acc: any, curr: Opportunity) => {
                     const type = curr.opportunity_type === 'product_based' ? 'Product' : 'Service/Customer';
                     acc[type] = (acc[type] || 0) + curr.value;
                     return acc;
@@ -228,7 +220,7 @@ export default function BisDevDashboardPage() {
                 });
 
                 // 5. Recent Activity (Latest 5 Opportunities)
-                const recent = opportunities.slice(0, 5).map(o => ({
+                const recent = opportunities.slice(0, 5).map((o: Opportunity) => ({
                     type: o.status === 'closed_won' ? 'sales' : o.stage === 'proposal' ? 'proposal' : 'opportunity',
                     title: o.title,
                     subtitle: o.status,
@@ -300,8 +292,9 @@ export default function BisDevDashboardPage() {
                             ))}
                         </Pie>
                         <Tooltip
-                            formatter={(value: number) => formatCurrency(value)}
+                            formatter={(value: any) => [formatCurrency(Number(value) || 0), 'Value']}
                             contentStyle={{ backgroundColor: '#1c2120', borderColor: '#333', color: '#fff' }}
+                            itemStyle={{ color: '#fff' }}
                         />
                         <Legend verticalAlign="bottom" height={36} iconType="circle" />
                     </RePieChart>
