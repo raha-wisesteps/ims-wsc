@@ -831,9 +831,6 @@ export default function DashboardPage() {
         }
 
         const now = new Date();
-        const clockInTime = now.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
-        // Consider late if clock in after 08:30
-        const isLate = now.getHours() > 8 || (now.getHours() === 8 && now.getMinutes() > 30);
 
         // Get today's date in YYYY-MM-DD format
         const today = now.toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' }).split('T')[0];
@@ -845,12 +842,22 @@ export default function DashboardPage() {
         const year = offsetDate.getFullYear();
         const month = String(offsetDate.getMonth() + 1).padStart(2, '0');
         const day = String(offsetDate.getDate()).padStart(2, '0');
-        const hours = String(offsetDate.getHours()).padStart(2, '0');
-        const minutes = String(offsetDate.getMinutes()).padStart(2, '0');
+
+        const hoursInt = offsetDate.getHours();
+        const minutesInt = offsetDate.getMinutes();
+        const hours = String(hoursInt).padStart(2, '0');
+        const minutes = String(minutesInt).padStart(2, '0');
+
         const seconds = String(offsetDate.getSeconds()).padStart(2, '0');
         const ms = String(offsetDate.getMilliseconds()).padStart(3, '0');
 
         const clockInTimestamp = `${year}-${month}-${day}T${hours}:${minutes}:${seconds}.${ms}`;
+
+        // Use Jakarta time for display to be consistent with system record
+        const clockInTime = `${hours}:${minutes}`;
+
+        // Consider late if clock in after 08:30 (Jakarta Time)
+        const isLate = hoursInt > 8 || (hoursInt === 8 && minutesInt > 30);
 
         try {
             // Insert or update daily_checkins record
@@ -906,9 +913,8 @@ export default function DashboardPage() {
         if (!profile) return;
 
         const now = new Date();
-        const clockOutTimeStr = now.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
 
-        // Use standard consistent formatting for Local Time
+        // Use standard consistent formatting for Local Time (Jakarta)
         const offsetDate = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Jakarta' }));
         const year = offsetDate.getFullYear();
         const month = String(offsetDate.getMonth() + 1).padStart(2, '0');
@@ -917,6 +923,8 @@ export default function DashboardPage() {
         const minutes = String(offsetDate.getMinutes()).padStart(2, '0');
         const seconds = String(offsetDate.getSeconds()).padStart(2, '0');
         const ms = String(offsetDate.getMilliseconds()).padStart(3, '0');
+
+        const clockOutTimeStr = `${hours}:${minutes}`;
 
         const clockOutTimestamp = `${year}-${month}-${day}T${hours}:${minutes}:${seconds}.${ms}`;
         const today = `${year}-${month}-${day}`;
