@@ -54,7 +54,6 @@ export default function BisDevDashboardPage() {
     const [chartData, setChartData] = useState({
         targetVsCashIn: [] as any[],
         salesByProduct: [] as any[],
-        salesByCustomer: [] as any[],
         targetVsBooking: [] as any[],
     });
 
@@ -68,27 +67,11 @@ export default function BisDevDashboardPage() {
     const handleUpdateTarget = async (e: React.FormEvent) => {
         e.preventDefault();
         try {
-            // Check permissions (redundant with RLS but good for UI feedback)
             if (profile?.role !== 'ceo' && profile?.role !== 'super_admin') {
                 alert("Only CEO or Super Admin can update the target.");
                 return;
             }
 
-            const { error } = await supabase
-                .from('bisdev_config')
-                .update({
-                    annual_target: newTarget,
-                    updated_by: profile.id,
-                    updated_at: new Date().toISOString()
-                })
-                .gt('annual_target', -1); // Dummy filter to update all rows (since there's only 1 row usually, or we should use ID if known)
-
-            // Better: Fetch ID first or just update based on some condition. 
-            // Since we don't have ID in state, we can use a query that matches everything or fetch ID earlier.
-            // Let's rely on the fetchAllData to refresh.
-            // Actually RLS policy allows update if role is correct. 
-            // To be safe, let's fetch the ID in fetchAllData and store it, or just use a broad update if there's only one row.
-            // A safer way without ID:
             const { data: config } = await supabase.from('bisdev_config').select('id').single();
             if (config) {
                 const { error: updateError } = await supabase
@@ -104,8 +87,6 @@ export default function BisDevDashboardPage() {
 
             setIsEditingTarget(false);
             setStats(prev => ({ ...prev, annualTarget: newTarget }));
-            // Recalculate remaining would require re-fetching or duplicate logic. 
-            // Let's just reload page or refetch.
             window.location.reload();
         } catch (error: any) {
             console.error("Error updating target:", error);
@@ -121,7 +102,7 @@ export default function BisDevDashboardPage() {
                 // 1. Fetch Configuration (Annual Target)
                 const { data: configData } = await supabase.from('bisdev_config').select('annual_target').single();
                 const annualTarget = configData?.annual_target || 4000000000;
-                setNewTarget(annualTarget); // meaningful default for edit
+                setNewTarget(annualTarget);
 
                 // 2. Fetch All Opportunities
                 const { data: rawOpportunities, error } = await supabase
@@ -133,23 +114,34 @@ export default function BisDevDashboardPage() {
                 const opportunities = (rawOpportunities || []) as Opportunity[];
 
                 // 3. Calculate Metrics
-                const wonOpps = opportunities.filter((o: Opportunity) => o.status === 'closed_won');
-                const lostOpps = opportunities.filter((o: Opportunity) => o.status === 'closed_lost');
-                const proposalOpps = opportunities.filter((o: Opportunity) => o.stage === 'proposal');
 
-                // Counts
-                const salesCount = wonOpps.length;
-                const proposalCount = proposalOpps.length;
+                // Sales Count: Stage == 'sales'
+                const salesOpps = opportunities.filter((o: Opportunity) => o.stage === 'sales');
+                const salesCount = salesOpps.length;
+
+                // Proposals Sent: Status == 'sent'
+                // Proposals Sent: Status == 'sent' OR Stage > 'proposal'
+                const sentOpps = opportunities.filter((o: Opportunity) =>
+                    (o.stage === 'proposal' && ['sent', 'follow_up'].includes(o.status)) ||
+                    ['leads', 'sales'].includes(o.stage)
+                );
+                const proposalCount = sentOpps.length;
+
+                // Lost Projects: Status == 'closed_lost'
+                const lostOpps = opportunities.filter((o: Opportunity) => o.status === 'closed_lost');
                 const lostCount = lostOpps.length;
 
-                // Rates
-                const totalClosed = salesCount + lostCount;
-                const salesConversion = totalClosed > 0 ? (salesCount / totalClosed) * 100 : 0;
-                const lossRate = totalClosed > 0 ? (lostCount / totalClosed) * 100 : 0;
+                // Sales Conversion: (Sales / Proposals Sent) * 100
+                const salesConversion = proposalCount > 0 ? (salesCount / proposalCount) * 100 : 0;
+
+                // Loss Rate: (Lost / Proposals Sent) * 100
+                const lossRate = proposalCount > 0 ? (lostCount / proposalCount) * 100 : 0;
 
                 // Financials
                 const cashIn = opportunities.reduce((sum: number, o: Opportunity) => sum + (o.cash_in || 0), 0);
-                const salesBooking = wonOpps.reduce((sum: number, o: Opportunity) => sum + (o.value || 0), 0);
+
+                // Sales Booking: Sum of Value in 'sales' stage
+                const salesBooking = salesOpps.reduce((sum: number, o: Opportunity) => sum + (o.value || 0), 0);
 
                 const remainingTargetCashIn = Math.max(0, annualTarget - cashIn);
                 const remainingTargetContract = Math.max(0, annualTarget - salesBooking);
@@ -181,42 +173,20 @@ export default function BisDevDashboardPage() {
                     { name: 'Remaining', value: remainingTargetContract },
                 ];
 
-                // Sales by Product (from Won Opps)
-                const productSales = wonOpps.reduce((acc: any, curr: Opportunity) => {
-                    const type = curr.opportunity_type === 'product_based' ? 'Product' : 'Service/Customer';
+                // Sales by Product Type (from all Ops or just Sales? Usually Composition of Sales)
+                // Assuming composition of 'Sales Booking'
+                const productSales = salesOpps.reduce((acc: any, curr: Opportunity) => {
+                    const type = curr.opportunity_type === 'product_based' ? 'Product Based' : 'Customer Based';
                     acc[type] = (acc[type] || 0) + curr.value;
                     return acc;
                 }, {});
 
                 const salesByProduct = Object.keys(productSales).map(key => ({ name: key, value: productSales[key] }));
 
-                // Sales by Customer (Top 5)
-                // We need to fetch client names. 
-                // Since I selected '*', I might not have client name. 
-                // I need client name.
-                // Let's refetch or just fetch client names separately or modify the query.
-                // Modifying the query above to include client.
-                const { data: oppsWithClient } = await supabase
-                    .from('crm_opportunities')
-                    .select('*, client:crm_clients(company_name)')
-                    .eq('status', 'closed_won');
-
-                const customerSales = (oppsWithClient || []).reduce((acc: any, curr: any) => {
-                    const name = curr.client?.company_name || 'Unknown';
-                    acc[name] = (acc[name] || 0) + curr.value;
-                    return acc;
-                }, {});
-
-                const salesByCustomer = Object.keys(customerSales)
-                    .map(key => ({ name: key, value: customerSales[key] }))
-                    .sort((a, b) => b.value - a.value)
-                    .slice(0, 5); // Top 5
-
                 setChartData({
                     targetVsCashIn,
                     targetVsBooking,
                     salesByProduct: salesByProduct.length ? salesByProduct : [{ name: 'No Data', value: 1 }],
-                    salesByCustomer: salesByCustomer.length ? salesByCustomer : [{ name: 'No Data', value: 1 }],
                 });
 
                 // 5. Recent Activity (Latest 5 Opportunities)
@@ -411,15 +381,42 @@ export default function BisDevDashboardPage() {
             </div>
 
             {/* Charts Grid */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
                 <CustomPieChart title="Target vs Cash In" data={chartData.targetVsCashIn} />
                 <CustomPieChart title="Target vs Sales Booking" data={chartData.targetVsBooking} />
-                <CustomPieChart title="Sales by Product/Type" data={chartData.salesByProduct} />
-                <CustomPieChart title="Sales by Customer (Top 5)" data={chartData.salesByCustomer} />
+                <CustomPieChart title="Sales by Product Type" data={chartData.salesByProduct} />
             </div>
 
-            {/* Quick Actions & Recent */}
+            {/* Layout Swap: Quick Actions Left, Recent Activity Right */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                {/* Left Column: Quick Actions */}
+                <div className="space-y-4">
+                    <Link
+                        href="/dashboard/bisdev/opportunities"
+                        className="block p-6 rounded-2xl bg-[#e8c559] text-[#171611] font-bold shadow-lg hover:shadow-xl hover:scale-[1.02] transition-all"
+                    >
+                        <div className="flex justify-between items-center mb-2">
+                            <LayoutDashboard className="h-6 w-6" />
+                            <ArrowRight className="h-5 w-5" />
+                        </div>
+                        <p className="text-lg">Open Opportunity Board</p>
+                        <p className="text-xs opacity-80 font-normal">Manage your pipeline</p>
+                    </Link>
+
+                    <Link
+                        href="/dashboard/bisdev/crm"
+                        className="block p-6 rounded-2xl bg-white dark:bg-[#1c2120] border border-[var(--glass-border)] hover:border-blue-500 group transition-all"
+                    >
+                        <div className="flex justify-between items-center mb-2">
+                            <Users className="h-6 w-6 text-blue-500" />
+                            <ArrowRight className="h-5 w-5 text-[var(--text-muted)] group-hover:text-blue-500" />
+                        </div>
+                        <p className="text-lg font-bold text-[var(--text-primary)]">CRM Database</p>
+                        <p className="text-xs text-[var(--text-secondary)]">Client directory and history</p>
+                    </Link>
+                </div>
+
+                {/* Right Column: Recent Updates */}
                 <div className="lg:col-span-2">
                     <div className="p-6 rounded-2xl bg-white dark:bg-[#1c2120] border border-[var(--glass-border)]">
                         <div className="flex items-center justify-between mb-6">
@@ -452,32 +449,6 @@ export default function BisDevDashboardPage() {
                             )}
                         </div>
                     </div>
-                </div>
-
-                <div className="space-y-4">
-                    <Link
-                        href="/dashboard/bisdev/opportunities"
-                        className="block p-6 rounded-2xl bg-[#e8c559] text-[#171611] font-bold shadow-lg hover:shadow-xl hover:scale-[1.02] transition-all"
-                    >
-                        <div className="flex justify-between items-center mb-2">
-                            <LayoutDashboard className="h-6 w-6" />
-                            <ArrowRight className="h-5 w-5" />
-                        </div>
-                        <p className="text-lg">Open Opportunity Board</p>
-                        <p className="text-xs opacity-80 font-normal">Manage your pipeline</p>
-                    </Link>
-
-                    <Link
-                        href="/dashboard/bisdev/crm"
-                        className="block p-6 rounded-2xl bg-white dark:bg-[#1c2120] border border-[var(--glass-border)] hover:border-blue-500 group transition-all"
-                    >
-                        <div className="flex justify-between items-center mb-2">
-                            <Users className="h-6 w-6 text-blue-500" />
-                            <ArrowRight className="h-5 w-5 text-[var(--text-muted)] group-hover:text-blue-500" />
-                        </div>
-                        <p className="text-lg font-bold text-[var(--text-primary)]">CRM Database</p>
-                        <p className="text-xs text-[var(--text-secondary)]">Client directory and history</p>
-                    </Link>
                 </div>
             </div>
 

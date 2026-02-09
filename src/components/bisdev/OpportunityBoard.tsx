@@ -17,14 +17,14 @@ const STAGE_CONFIG = {
     prospect: {
         label: "Prospects",
         color: "blue",
-        columns: ["pending", "on_going", "preparation", "follow_up"],
+        columns: ["pending", "on_going", "sent", "follow_up"],
         nextStage: "proposal",
         nextStatus: "pending"
     },
     proposal: {
         label: "Proposals",
         color: "purple",
-        columns: ["pending", "on_going", "preparation", "follow_up"],
+        columns: ["pending", "on_going", "sent", "follow_up"],
         nextStage: "leads",
         nextStatus: "pending"
     },
@@ -47,7 +47,7 @@ const STAGE_CONFIG = {
 const STATUS_LABELS: Record<string, string> = {
     on_going: "On Going",
     pending: "Pending",
-    preparation: "Preparation",
+    sent: "Sent",
     follow_up: "Follow Up",
     low: "Low",
     moderate: "Moderate",
@@ -189,6 +189,56 @@ export default function OpportunityBoard() {
         saveAs(data, `opportunities_${activeTab}_${new Date().toISOString().split('T')[0]}.xlsx`);
     };
 
+    // Edit Modal State
+    const [editingOpp, setEditingOpp] = useState<Opportunity | null>(null);
+    const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+
+    // Edit Form State
+    const [editForm, setEditForm] = useState({
+        title: "",
+        stage: "prospect" as keyof typeof STAGE_CONFIG,
+        status: "pending",
+        value: 0,
+        cash_in: 0,
+        priority: "medium",
+        opportunity_type: "" as "" | "customer_based" | "product_based",
+        notes: ""
+    });
+
+    const openEditModal = (opp: Opportunity) => {
+        setEditingOpp(opp);
+        setEditForm({
+            title: opp.title,
+            stage: opp.stage as any,
+            status: opp.status,
+            value: opp.value,
+            cash_in: opp.cash_in || 0,
+            priority: opp.priority,
+            opportunity_type: opp.opportunity_type || "",
+            notes: opp.notes || ""
+        });
+        setIsEditModalOpen(true);
+    };
+
+    const handleUpdateOpportunity = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!editingOpp) return;
+
+        try {
+            const payload = {
+                ...editForm,
+                opportunity_type: editForm.opportunity_type || undefined
+            };
+            await opportunityService.updateOpportunity(editingOpp.id, payload);
+            setIsEditModalOpen(false);
+            setEditingOpp(null);
+            fetchData();
+        } catch (error) {
+            console.error("Failed to update opportunity", error);
+            alert("Failed to update opportunity");
+        }
+    };
+
     return (
         <div className="flex flex-col h-full w-full">
             {/* Tabs */}
@@ -289,15 +339,18 @@ export default function OpportunityBoard() {
                                                                     <div className="flex-1 mr-2">
                                                                         <div className="flex items-center justify-between mb-1">
                                                                             <h4 className="font-bold text-[var(--text-primary)] line-clamp-2 text-sm leading-snug">{opp.title}</h4>
-                                                                            <Link
-                                                                                href={`/dashboard/bisdev/crm/${opp.client_id}`}
+                                                                            <button
+                                                                                onClick={() => openEditModal(opp)}
                                                                                 className="p-1 rounded hover:bg-[var(--glass-border)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
-                                                                                title="View in CRM"
+                                                                                title="Quick View & Edit"
                                                                             >
                                                                                 <Eye className="h-3.5 w-3.5" />
-                                                                            </Link>
+                                                                            </button>
                                                                         </div>
-                                                                        <p className="text-xs text-[var(--text-secondary)] truncate mb-1">{opp.client?.company_name || 'No Client'}</p>
+                                                                        <div className="flex items-center gap-1 mb-1">
+                                                                            <Building2 className="h-3 w-3 text-[var(--text-secondary)]" />
+                                                                            <p className="text-xs text-[var(--text-secondary)] truncate">{opp.client?.company_name || 'No Client'}</p>
+                                                                        </div>
                                                                         {opp.opportunity_type && (
                                                                             <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium border ${opp.opportunity_type === 'customer_based'
                                                                                 ? 'bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-900/20 dark:text-blue-300 dark:border-blue-800'
@@ -317,14 +370,22 @@ export default function OpportunityBoard() {
 
                                                                 <div className="flex items-end justify-between mt-3 pt-3 border-t border-[var(--glass-border)]">
                                                                     <div className="flex flex-col gap-0.5">
-                                                                        {opp.value > 0 ? (
-                                                                            <span className="text-sm font-mono font-bold text-emerald-600">
-                                                                                {new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumSignificantDigits: 3 }).format(opp.value)}
-                                                                            </span>
+                                                                        {activeTab === 'sales' ? (
+                                                                            <>
+                                                                                <span className="text-[10px] text-[var(--text-muted)] uppercase tracking-wider">Cash In</span>
+                                                                                <span className="text-sm font-mono font-bold text-emerald-600">
+                                                                                    {new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumSignificantDigits: 3 }).format(opp.cash_in || 0)}
+                                                                                </span>
+                                                                            </>
                                                                         ) : (
-                                                                            <span className="text-xs text-[var(--text-muted)]">-</span>
+                                                                            <>
+                                                                                <span className="text-[10px] text-[var(--text-muted)] uppercase tracking-wider">Value</span>
+                                                                                <span className="text-sm font-mono font-bold text-emerald-600">
+                                                                                    {opp.value > 0 ? new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumSignificantDigits: 3 }).format(opp.value) : '-'}
+                                                                                </span>
+                                                                            </>
                                                                         )}
-                                                                        <div className="flex items-center gap-1 text-[10px] text-[var(--text-secondary)]">
+                                                                        <div className="flex items-center gap-1 text-[10px] text-[var(--text-secondary)] mt-1">
                                                                             <Calendar className="h-3 w-3" />
                                                                             <span>{new Date(opp.updated_at).toLocaleDateString()}</span>
                                                                         </div>
@@ -389,7 +450,6 @@ export default function OpportunityBoard() {
                 </div>
             )}
 
-            {/* Table View Placeholder (Can implement later if requested) */}
             {/* Table View */}
             {viewMode === "table" && (
                 <div className="flex-1 bg-[var(--card-bg)] rounded-xl border border-[var(--glass-border)] overflow-hidden flex flex-col">
@@ -467,13 +527,13 @@ export default function OpportunityBoard() {
                                             </td>
                                             <td className="px-6 py-4 text-right">
                                                 <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                                                    <Link
-                                                        href={`/dashboard/bisdev/crm/${opp.client_id}`}
+                                                    <button
+                                                        onClick={() => openEditModal(opp)}
                                                         className="p-1.5 hover:bg-black/5 dark:hover:bg-white/5 text-[var(--text-secondary)] rounded"
-                                                        title="View in CRM"
+                                                        title="Quick Edit"
                                                     >
                                                         <Eye className="h-4 w-4" />
-                                                    </Link>
+                                                    </button>
                                                     {(activeTab === 'prospect' || activeTab === 'proposal') && (
                                                         <button
                                                             onClick={() => handleArchive(opp.id, 'failed')}
@@ -523,6 +583,157 @@ export default function OpportunityBoard() {
                         </table>
                     </div>
                 </div>
+            )}
+
+            {/* Edit Opportunity Modal */}
+            {isEditModalOpen && editingOpp && (
+                <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+                    <div className="w-full max-w-lg bg-white dark:bg-[#1c2120] rounded-2xl shadow-2xl overflow-hidden border border-[var(--glass-border)] flex flex-col max-h-[90vh]">
+                        <div className="p-6 border-b border-[var(--glass-border)] flex justify-between items-center">
+                            <h2 className="text-xl font-bold text-[var(--text-primary)]">Edit Opportunity</h2>
+                            <button
+                                onClick={() => setIsEditModalOpen(false)}
+                                className="p-2 rounded-lg hover:bg-red-50 text-[var(--text-secondary)] hover:text-red-500 transition-colors"
+                            >
+                                <X className="w-5 h-5" />
+                            </button>
+                        </div>
+                        <div className="p-6 overflow-y-auto">
+                            <form onSubmit={handleUpdateOpportunity} className="space-y-4">
+                                <div>
+                                    <label className="block text-sm font-bold text-[var(--text-primary)] mb-1">Title</label>
+                                    <input
+                                        type="text"
+                                        required
+                                        value={editForm.title}
+                                        onChange={(e) => setEditForm({ ...editForm, title: e.target.value })}
+                                        className="w-full px-4 py-2 rounded-xl border border-[var(--glass-border)] bg-white dark:bg-[#232b2a] text-[var(--text-primary)]"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-bold text-[var(--text-primary)] mb-1">Type</label>
+                                    <select
+                                        value={editForm.opportunity_type}
+                                        onChange={(e) => setEditForm({ ...editForm, opportunity_type: e.target.value as any })}
+                                        className="w-full px-4 py-2 rounded-xl border border-[var(--glass-border)] bg-white dark:bg-[#232b2a] text-[var(--text-primary)]"
+                                    >
+                                        <option value="">-- Select Type --</option>
+                                        <option value="customer_based">Customer Based</option>
+                                        <option value="product_based">Product Based</option>
+                                    </select>
+                                </div>
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div>
+                                        <label className="block text-sm font-bold text-[var(--text-primary)] mb-1">Stage</label>
+                                        <select
+                                            disabled
+                                            value={editForm.stage}
+                                            className="w-full px-4 py-2 rounded-xl border border-[var(--glass-border)] bg-gray-50 dark:bg-[#2c3332] text-[var(--text-muted)] cursor-not-allowed uppercase"
+                                        >
+                                            {Object.entries(STAGE_CONFIG).map(([key, config]) => (
+                                                <option key={key} value={key}>{config.label}</option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-bold text-[var(--text-primary)] mb-1">Status</label>
+                                        <select
+                                            value={editForm.status}
+                                            onChange={(e) => setEditForm({ ...editForm, status: e.target.value })}
+                                            className="w-full px-4 py-2 rounded-xl border border-[var(--glass-border)] bg-white dark:bg-[#232b2a] text-[var(--text-primary)] capitalize"
+                                        >
+                                            {STAGE_CONFIG[editForm.stage as keyof typeof STAGE_CONFIG]?.columns.map((status) => (
+                                                <option key={status} value={status}>{STATUS_LABELS[status] || status.replace('_', ' ')}</option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                </div>
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div>
+                                        <label className="block text-sm font-bold text-[var(--text-primary)] mb-1">Value (IDR)</label>
+                                        <input
+                                            type="text"
+                                            value={editForm.value}
+                                            onChange={(e) => {
+                                                const val = e.target.value.replace(/[^0-9]/g, '');
+                                                setEditForm({ ...editForm, value: val ? parseFloat(val) : 0 });
+                                            }}
+                                            className="w-full px-4 py-2 rounded-xl border border-[var(--glass-border)] bg-white dark:bg-[#232b2a] text-[var(--text-primary)]"
+                                        />
+                                        <p className="text-xs text-[var(--text-muted)] mt-1 font-mono">
+                                            {new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR' }).format(editForm.value)}
+                                        </p>
+                                    </div>
+                                    <div>
+                                        <label className="block text-sm font-bold text-[var(--text-primary)] mb-1">Cash In (Paid)</label>
+                                        <div className="flex gap-2">
+                                            <input
+                                                type="text"
+                                                value={editForm.cash_in}
+                                                onChange={(e) => {
+                                                    const val = e.target.value.replace(/[^0-9]/g, '');
+                                                    setEditForm({ ...editForm, cash_in: val ? parseFloat(val) : 0 });
+                                                }}
+                                                className="w-full px-4 py-2 rounded-xl border border-[var(--glass-border)] bg-white dark:bg-[#232b2a] text-[var(--text-primary)]"
+                                            />
+                                            <button
+                                                type="button"
+                                                onClick={() => setEditForm({ ...editForm, cash_in: editForm.value })}
+                                                className="px-3 py-2 rounded-xl bg-emerald-100 text-emerald-700 hover:bg-emerald-200 border border-emerald-200 text-xs font-bold whitespace-nowrap transition-colors"
+                                                title="Set to Full Value"
+                                            >
+                                                Full Payment
+                                            </button>
+                                        </div>
+                                        <p className="text-xs text-[var(--text-muted)] mt-1 font-mono">
+                                            {new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR' }).format(editForm.cash_in)}
+                                        </p>
+                                    </div>
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-bold text-[var(--text-primary)] mb-1">Priority</label>
+                                    <select
+                                        value={editForm.priority}
+                                        onChange={(e) => setEditForm({ ...editForm, priority: e.target.value })}
+                                        className="w-full px-4 py-2 rounded-xl border border-[var(--glass-border)] bg-white dark:bg-[#232b2a] text-[var(--text-primary)]"
+                                    >
+                                        <option value="low">Low</option>
+                                        <option value="medium">Medium</option>
+                                        <option value="high">High</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-bold text-[var(--text-primary)] mb-1">Notes</label>
+                                    <textarea
+                                        rows={3}
+                                        value={editForm.notes}
+                                        onChange={(e) => setEditForm({ ...editForm, notes: e.target.value })}
+                                        className="w-full px-4 py-2 rounded-xl border border-[var(--glass-border)] bg-white dark:bg-[#232b2a] text-[var(--text-primary)]"
+                                    />
+                                </div>
+                                <div className="flex justify-end gap-3 pt-4 border-t border-[var(--glass-border)] mt-4">
+                                    <button
+                                        type="button"
+                                        onClick={() => setIsEditModalOpen(false)}
+                                        className="px-4 py-2 rounded-xl border border-[var(--glass-border)] text-[var(--text-secondary)] hover:bg-black/5 dark:hover:bg-white/5"
+                                    >
+                                        Cancel
+                                    </button>
+                                    <button
+                                        type="submit"
+                                        className="px-6 py-2 rounded-xl bg-[#e8c559] text-[#171611] font-bold shadow-lg shadow-amber-500/20 hover:shadow-xl hover:scale-[1.02] transition-all"
+                                    >
+                                        Save Changes
+                                    </button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {isEditModalOpen && (
+                <div className="fixed inset-0 z-40 bg-black/20 backdrop-blur-sm" />
             )}
         </div>
     );

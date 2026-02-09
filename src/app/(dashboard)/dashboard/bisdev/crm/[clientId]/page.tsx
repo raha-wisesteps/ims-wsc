@@ -220,10 +220,10 @@ export default function ClientDetailPage() {
 
     // Opportunity Status Config
     const OPPORTUNITY_STATUSES = {
-        prospect: ["on_going", "pending", "preparation", "follow_up", "failed", "done"],
-        proposal: ["on_going", "pending", "preparation", "follow_up", "failed", "done"],
-        leads: ["pending", "low", "moderate", "hot", "lost", "win"],
-        sales: ["pending", "down_payment", "account_receivable", "full_payment"],
+        prospect: ['pending', 'on_going', 'sent', 'follow_up'],
+        proposal: ['pending', 'on_going', 'sent', 'follow_up'],
+        leads: ['pending', 'low', 'moderate', 'hot'],
+        sales: ['pending', 'down_payment', 'account_receivable', 'full_payment', 'closed_won', 'closed_lost'],
         closed_won: ["won"],
         closed_lost: ["lost"]
     };
@@ -1615,16 +1615,26 @@ export default function ClientDetailPage() {
                                     </div>
                                     <div>
                                         <label className="block text-sm font-bold text-[var(--text-primary)] mb-1">Cash In (Paid)</label>
-                                        <input
-                                            type="text"
-                                            value={opportunityForm.cash_in || 0}
-                                            onChange={(e) => {
-                                                const val = e.target.value.replace(/[^0-9]/g, '');
-                                                setOpportunityForm({ ...opportunityForm, cash_in: val ? parseFloat(val) : 0 });
-                                            }}
-                                            onFocus={(e) => e.target.select()}
-                                            className="w-full px-4 py-2 rounded-xl border border-[var(--glass-border)] bg-white dark:bg-[#232b2a] text-[var(--text-primary)]"
-                                        />
+                                        <div className="flex gap-2">
+                                            <input
+                                                type="text"
+                                                value={opportunityForm.cash_in || 0}
+                                                onChange={(e) => {
+                                                    const val = e.target.value.replace(/[^0-9]/g, '');
+                                                    setOpportunityForm({ ...opportunityForm, cash_in: val ? parseFloat(val) : 0 });
+                                                }}
+                                                onFocus={(e) => e.target.select()}
+                                                className="w-full px-4 py-2 rounded-xl border border-[var(--glass-border)] bg-white dark:bg-[#232b2a] text-[var(--text-primary)]"
+                                            />
+                                            <button
+                                                type="button"
+                                                onClick={() => setOpportunityForm({ ...opportunityForm, cash_in: opportunityForm.value })}
+                                                className="px-3 py-2 rounded-xl bg-emerald-100 text-emerald-700 hover:bg-emerald-200 border border-emerald-200 text-xs font-bold whitespace-nowrap transition-colors"
+                                                title="Set to Full Value"
+                                            >
+                                                Full Payment
+                                            </button>
+                                        </div>
                                     </div>
                                     <div>
                                         <label className="block text-sm font-bold text-[var(--text-primary)] mb-1">Priority</label>
