@@ -60,6 +60,13 @@ interface ProspectItem {
     created_at: string;
     created_by: string;
     sales_person_name?: string;
+    client_id?: string | null;
+    client_name?: string;
+}
+
+interface CRMClient {
+    id: string;
+    company_name: string;
 }
 
 export default function ProspectsPage() {
@@ -74,6 +81,8 @@ export default function ProspectsPage() {
     const [detailItem, setDetailItem] = useState<ProspectItem | null>(null);
     const [draggedItem, setDraggedItem] = useState<ProspectItem | null>(null);
     const [dragOverStatus, setDragOverStatus] = useState<ProspectStatus | null>(null);
+    const [crmClients, setCrmClients] = useState<CRMClient[]>([]);
+    const [selectedClientId, setSelectedClientId] = useState<string | null>(null);
 
     // Check if user has full access (can delete)
     const hasFullAccess = useMemo(() => {
@@ -107,14 +116,39 @@ export default function ProspectsPage() {
         }
     };
 
+    // Fetch CRM Clients for dropdown
+    const fetchCrmClients = async () => {
+        try {
+            const { data, error } = await supabase
+                .from('crm_clients')
+                .select('id, company_name')
+                .order('company_name');
+
+            if (error) throw error;
+            setCrmClients(data || []);
+        } catch (error) {
+            console.error('Error fetching CRM clients:', error);
+        }
+    };
+
     useEffect(() => {
         if (canAccessBisdev) {
             fetchProspectsData();
+            fetchCrmClients();
         }
     }, [canAccessBisdev]);
 
-    // Handle status change (quick update)
+    // Sync selectedClientId when editing
+    useEffect(() => {
+        setSelectedClientId(editingItem?.client_id || null);
+    }, [editingItem]);
+
+    // Handle status change (quick update) with journey logging
     const handleStatusChange = async (id: string, newStatus: ProspectStatus) => {
+        const item = prospectsData.find(p => p.id === id);
+        if (!item) return;
+        const oldStatus = item.status;
+
         try {
             const { error } = await supabase
                 .from('bisdev_prospects')
@@ -122,6 +156,19 @@ export default function ProspectsPage() {
                 .eq('id', id);
 
             if (error) throw error;
+
+            // Log to crm_journey if client_id exists
+            if (item.client_id && profile?.id) {
+                await supabase.from('crm_journey').insert({
+                    client_id: item.client_id,
+                    from_stage: 'prospect',
+                    to_stage: 'prospect',
+                    source_table: 'bisdev_prospects',
+                    source_id: id,
+                    notes: `Status: ${STATUS_CONFIG[oldStatus].label} → ${STATUS_CONFIG[newStatus].label}`,
+                    created_by: profile.id,
+                });
+            }
 
             setProspectsData(prev => prev.map(item =>
                 item.id === id ? { ...item, status: newStatus } : item
@@ -177,6 +224,7 @@ export default function ProspectsPage() {
             start_date: formData.get('start_date') as string || null,
             end_date: formData.get('end_date') as string || null,
             progress: parseInt(formData.get('progress') as string) || 0,
+            client_id: selectedClientId || null,
             created_by: profile?.id,
             updated_at: new Date().toISOString(),
         };
@@ -509,16 +557,35 @@ export default function ProspectsPage() {
                         </div>
 
                         <form onSubmit={handleSubmit} className="p-6 space-y-4">
-                            <div className="grid grid-cols-2 gap-4">
-                                <div>
-                                    <label className="block text-sm font-medium text-[var(--text-secondary)] mb-1">Nama Perusahaan *</label>
-                                    <input type="text" name="company_name" defaultValue={editingItem?.company_name || ''} required className="w-full px-4 py-2 rounded-lg border border-[var(--glass-border)] bg-transparent text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-[#e8c559]" />
-                                </div>
-                                <div>
-                                    <label className="block text-sm font-medium text-[var(--text-secondary)] mb-1">Industri</label>
-                                    <input type="text" name="industry" defaultValue={editingItem?.industry || ''} className="w-full px-4 py-2 rounded-lg border border-[var(--glass-border)] bg-transparent text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-[#e8c559]" />
-                                </div>
+                            {/* Client Dropdown - Required */}
+                            <div>
+                                <label className="block text-sm font-medium text-[var(--text-secondary)] mb-1">Pilih Client (dari CRM) *</label>
+                                <select
+                                    value={selectedClientId || ''}
+                                    onChange={(e) => {
+                                        const clientId = e.target.value || null;
+                                        setSelectedClientId(clientId);
+                                        // Auto-fill company name
+                                        if (clientId) {
+                                            const client = crmClients.find(c => c.id === clientId);
+                                            if (client) {
+                                                const companyInput = document.querySelector('input[name="company_name"]') as HTMLInputElement;
+                                                if (companyInput) companyInput.value = client.company_name;
+                                            }
+                                        }
+                                    }}
+                                    required
+                                    className="w-full px-4 py-2 rounded-lg border border-[var(--glass-border)] bg-transparent text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-[#e8c559]"
+                                >
+                                    <option value="">-- Pilih Client --</option>
+                                    {crmClients.map((client) => (
+                                        <option key={client.id} value={client.id}>{client.company_name}</option>
+                                    ))}
+                                </select>
+                                <p className="text-xs text-[var(--text-muted)] mt-1">Wajib pilih client dari CRM Database. <a href="/dashboard/bisdev/crm" className="text-[#e8c559] underline">Tambah client baru →</a></p>
                             </div>
+
+                            <input type="hidden" name="company_name" value={crmClients.find(c => c.id === selectedClientId)?.company_name || editingItem?.company_name || ''} />
 
                             <div className="grid grid-cols-2 gap-4">
                                 <div>

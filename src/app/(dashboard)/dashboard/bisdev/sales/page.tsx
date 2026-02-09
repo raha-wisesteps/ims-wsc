@@ -63,6 +63,12 @@ interface SalesItem {
     created_at: string;
     created_by: string;
     sales_person_name?: string;
+    client_id?: string | null;
+}
+
+interface CRMClient {
+    id: string;
+    company_name: string;
 }
 
 const formatCurrency = (value: number) => {
@@ -86,6 +92,8 @@ export default function SalesPage() {
     const [detailItem, setDetailItem] = useState<SalesItem | null>(null);
     const [draggedItem, setDraggedItem] = useState<SalesItem | null>(null);
     const [dragOverStatus, setDragOverStatus] = useState<SalesStatus | null>(null);
+    const [crmClients, setCrmClients] = useState<CRMClient[]>([]);
+    const [selectedClientId, setSelectedClientId] = useState<string | null>(null);
 
     // Check if user has full access (can delete)
     const hasFullAccess = useMemo(() => {
@@ -119,14 +127,36 @@ export default function SalesPage() {
         }
     };
 
+    const fetchCrmClients = async () => {
+        try {
+            const { data, error } = await supabase
+                .from('crm_clients')
+                .select('id, company_name')
+                .order('company_name');
+            if (error) throw error;
+            setCrmClients(data || []);
+        } catch (error) {
+            console.error('Error fetching CRM clients:', error);
+        }
+    };
+
     useEffect(() => {
         if (canAccessBisdev) {
             fetchSalesData();
+            fetchCrmClients();
         }
     }, [canAccessBisdev]);
 
-    // Handle status change (for both quick update and drag-drop)
+    useEffect(() => {
+        setSelectedClientId(editingItem?.client_id || null);
+    }, [editingItem]);
+
+    // Handle status change (for both quick update and drag-drop) with journey logging
     const handleStatusChange = async (id: string, newStatus: SalesStatus) => {
+        const item = salesData.find(s => s.id === id);
+        if (!item) return;
+        const oldStatus = item.status;
+
         try {
             const { error } = await supabase
                 .from('bisdev_sales')
@@ -134,6 +164,18 @@ export default function SalesPage() {
                 .eq('id', id);
 
             if (error) throw error;
+
+            if (item.client_id && profile?.id) {
+                await supabase.from('crm_journey').insert({
+                    client_id: item.client_id,
+                    from_stage: 'sales',
+                    to_stage: 'sales',
+                    source_table: 'bisdev_sales',
+                    source_id: id,
+                    notes: `Status: ${STATUS_CONFIG[oldStatus].label} → ${STATUS_CONFIG[newStatus].label}`,
+                    created_by: profile.id,
+                });
+            }
 
             setSalesData(prev => prev.map(item =>
                 item.id === id ? { ...item, status: newStatus } : item
@@ -318,14 +360,6 @@ export default function SalesPage() {
                             <List className="h-4 w-4" />
                         </button>
                     </div>
-
-                    <button
-                        onClick={() => { setEditingItem(null); setShowForm(true); }}
-                        className="flex items-center gap-2 px-4 py-2 rounded-lg bg-gradient-to-r from-[#e8c559] to-[#d4b44a] text-[#171611] font-semibold hover:shadow-lg hover:shadow-[#e8c559]/20 transition-all"
-                    >
-                        <Plus className="h-4 w-4" />
-                        <span>Tambah</span>
-                    </button>
                 </div>
             </div>
 
@@ -362,8 +396,8 @@ export default function SalesPage() {
 
                             {/* Drop Zone */}
                             <div className={`flex-1 space-y-3 p-3 rounded-b-xl min-h-[200px] transition-all ${dragOverStatus === status
-                                    ? 'bg-blue-500/20 border-2 border-dashed border-blue-500'
-                                    : 'bg-black/5 dark:bg-white/5'
+                                ? 'bg-blue-500/20 border-2 border-dashed border-blue-500'
+                                : 'bg-black/5 dark:bg-white/5'
                                 }`}>
                                 {groupedByStatus[status].map((item) => (
                                     <div

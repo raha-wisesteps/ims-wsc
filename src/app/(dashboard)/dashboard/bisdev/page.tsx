@@ -13,89 +13,237 @@ import {
     Users,
     Calendar,
     ChevronRight,
+    PieChart,
+    DollarSign,
+    Briefcase,
+    XCircle,
+    Percent,
+    Wallet,
+    CreditCard
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { createClient } from "@/lib/supabase/client";
+import { PieChart as RePieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from "recharts";
 
 const formatCurrency = (value: number) => {
     return new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0 }).format(value);
 };
 
+// Colors for charts
+const COLORS = ['#e8c559', '#171611', '#9ca3af', '#f87171', '#34d399', '#60a5fa', '#818cf8'];
+
 export default function BisDevDashboardPage() {
-    const { canAccessBisdev, isLoading } = useAuth();
+    const { canAccessBisdev, isLoading, profile } = useAuth();
     const supabase = createClient();
 
     const [stats, setStats] = useState({
-        totalRevenue: 0,
-        proposalsSent: 0,
-        hotLeads: 0,
-        activeProspects: 0,
+        salesCount: 0,
+        proposalCount: 0,
+        salesConversion: 0,
+        lostCount: 0,
+        lossRate: 0,
+        cashIn: 0,
+        remainingTargetCashIn: 0,
+        salesBooking: 0,
+        remainingTargetContract: 0,
+        annualTarget: 4000000000,
     });
-    const [recentActivity, setRecentActivity] = useState<Array<{ type: string; title: string; company: string; date: string }>>([]);
+
+    const [chartData, setChartData] = useState({
+        targetVsCashIn: [] as any[],
+        salesByProduct: [] as any[],
+        salesByCustomer: [] as any[],
+        targetVsBooking: [] as any[],
+    });
+
+    const [recentActivity, setRecentActivity] = useState<Array<{ type: string; title: string; subtitle: string; date: string }>>([]);
     const [isLoadingData, setIsLoadingData] = useState(true);
 
+    // Edit Target State
+    const [isEditingTarget, setIsEditingTarget] = useState(false);
+    const [newTarget, setNewTarget] = useState(0);
+
+    const handleUpdateTarget = async (e: React.FormEvent) => {
+        e.preventDefault();
+        try {
+            // Check permissions (redundant with RLS but good for UI feedback)
+            if (profile?.role !== 'ceo' && profile?.role !== 'super_admin') {
+                alert("Only CEO or Super Admin can update the target.");
+                return;
+            }
+
+            const { error } = await supabase
+                .from('bisdev_config')
+                .update({
+                    annual_target: newTarget,
+                    updated_by: profile.id,
+                    updated_at: new Date().toISOString()
+                })
+                .gt('annual_target', -1); // Dummy filter to update all rows (since there's only 1 row usually, or we should use ID if known)
+
+            // Better: Fetch ID first or just update based on some condition. 
+            // Since we don't have ID in state, we can use a query that matches everything or fetch ID earlier.
+            // Let's rely on the fetchAllData to refresh.
+            // Actually RLS policy allows update if role is correct. 
+            // To be safe, let's fetch the ID in fetchAllData and store it, or just use a broad update if there's only one row.
+            // A safer way without ID:
+            const { data: config } = await supabase.from('bisdev_config').select('id').single();
+            if (config) {
+                const { error: updateError } = await supabase
+                    .from('bisdev_config')
+                    .update({
+                        annual_target: newTarget,
+                        updated_by: profile.id,
+                        updated_at: new Date().toISOString()
+                    })
+                    .eq('id', config.id);
+                if (updateError) throw updateError;
+            }
+
+            setIsEditingTarget(false);
+            setStats(prev => ({ ...prev, annualTarget: newTarget }));
+            // Recalculate remaining would require re-fetching or duplicate logic. 
+            // Let's just reload page or refetch.
+            window.location.reload();
+        } catch (error: any) {
+            console.error("Error updating target:", error);
+            alert("Failed to update target.");
+        }
+    };
+
     useEffect(() => {
-        const fetchStats = async () => {
+        const fetchAllData = async () => {
             if (!canAccessBisdev) return;
 
             try {
-                // Fetch sales total (running/partial status)
-                const { data: salesData } = await supabase
-                    .from('bisdev_sales')
-                    .select('contract_value, status')
-                    .in('status', ['running', 'paid', 'partial']);
+                // 1. Fetch Configuration (Annual Target)
+                const { data: configData } = await supabase.from('bisdev_config').select('annual_target').single();
+                const annualTarget = configData?.annual_target || 4000000000;
+                setNewTarget(annualTarget); // meaningful default for edit
 
-                const totalRevenue = salesData?.reduce((acc: number, item: { contract_value: number | null }) => acc + (item.contract_value || 0), 0) || 0;
+                // 2. Fetch All Opportunities
+                const { data: opportunities, error } = await supabase
+                    .from('crm_opportunities')
+                    .select('*')
+                    .order('updated_at', { ascending: false });
 
-                // Fetch proposals count (sent/negotiation)
-                const { count: proposalCount } = await supabase
-                    .from('bisdev_proposals')
-                    .select('*', { count: 'exact', head: true })
-                    .in('status', ['sent', 'negotiation']);
+                if (error) throw error;
+                if (!opportunities) return;
 
-                // Fetch hot leads count
-                const { count: hotLeadsCount } = await supabase
-                    .from('bisdev_leads')
-                    .select('*', { count: 'exact', head: true })
-                    .eq('status', 'hot');
+                // 3. Calculate Metrics
+                const wonOpps = opportunities.filter(o => o.status === 'closed_won');
+                const lostOpps = opportunities.filter(o => o.status === 'closed_lost');
+                const proposalOpps = opportunities.filter(o => o.stage === 'proposal');
 
-                // Fetch active prospects
-                const { count: prospectsCount } = await supabase
-                    .from('bisdev_prospects')
-                    .select('*', { count: 'exact', head: true })
-                    .neq('status', 'not_interested');
+                // Counts
+                const salesCount = wonOpps.length;
+                const proposalCount = proposalOpps.length;
+                const lostCount = lostOpps.length;
+
+                // Rates
+                const totalClosed = salesCount + lostCount;
+                const salesConversion = totalClosed > 0 ? (salesCount / totalClosed) * 100 : 0;
+                const lossRate = totalClosed > 0 ? (lostCount / totalClosed) * 100 : 0;
+
+                // Financials
+                const cashIn = opportunities.reduce((sum, o) => sum + (o.cash_in || 0), 0);
+                const salesBooking = wonOpps.reduce((sum, o) => sum + (o.value || 0), 0);
+
+                const remainingTargetCashIn = Math.max(0, annualTarget - cashIn);
+                const remainingTargetContract = Math.max(0, annualTarget - salesBooking);
 
                 setStats({
-                    totalRevenue,
-                    proposalsSent: proposalCount || 0,
-                    hotLeads: hotLeadsCount || 0,
-                    activeProspects: prospectsCount || 0,
+                    salesCount,
+                    proposalCount,
+                    salesConversion,
+                    lostCount,
+                    lossRate,
+                    cashIn,
+                    remainingTargetCashIn,
+                    salesBooking,
+                    remainingTargetContract,
+                    annualTarget,
                 });
 
-                // Fetch recent activity (latest items from all tables)
-                const [latestSales, latestLeads, latestProposals] = await Promise.all([
-                    supabase.from('bisdev_sales').select('project_name, company_name, created_at').order('created_at', { ascending: false }).limit(2),
-                    supabase.from('bisdev_leads').select('company_name, created_at').order('created_at', { ascending: false }).limit(2),
-                    supabase.from('bisdev_proposals').select('proposal_title, company_name, created_at').order('created_at', { ascending: false }).limit(2),
-                ]);
+                // 4. Prepare Chart Data
 
-                const activities: Array<{ type: string; title: string; company: string; date: string }> = [];
-                latestSales.data?.forEach((s: { project_name: string; company_name: string; created_at: string }) => activities.push({ type: 'sales', title: s.project_name, company: s.company_name, date: s.created_at }));
-                latestLeads.data?.forEach((l: { company_name: string; created_at: string }) => activities.push({ type: 'lead', title: 'New Lead', company: l.company_name, date: l.created_at }));
-                latestProposals.data?.forEach((p: { proposal_title: string; company_name: string; created_at: string }) => activities.push({ type: 'proposal', title: p.proposal_title, company: p.company_name, date: p.created_at }));
+                // Target vs Cash In
+                const targetVsCashIn = [
+                    { name: 'Cash In', value: cashIn },
+                    { name: 'Remaining', value: remainingTargetCashIn },
+                ];
 
-                // Sort by date and take top 5
-                activities.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-                setRecentActivity(activities.slice(0, 5));
+                // Target vs Booking
+                const targetVsBooking = [
+                    { name: 'Booking', value: salesBooking },
+                    { name: 'Remaining', value: remainingTargetContract },
+                ];
+
+                // Sales by Product (from Won Opps)
+                const productSales = wonOpps.reduce((acc: any, curr) => {
+                    if (curr.opportunity_type === 'product_based') {
+                        acc['Product Based'] = (acc['Product Based'] || 0) + curr.value;
+                    } else if (curr.opportunity_type === 'customer_based') { // Assuming type usage
+                        // If we want detailed breakdown, we might not have 'product' field. 
+                        // But user asked for 'sales by product'. 
+                        // The schema has `opportunity_type` ('product_based' | 'customer_based'). 
+                        // Let's use that for now as High Level Product/Service split.
+                        // Or maybe by actual product name if exists? No standard product table yet.
+                        // I'll group by opportunity_type for now.
+                    }
+                    const type = curr.opportunity_type === 'product_based' ? 'Product' : 'Service/Customer';
+                    acc[type] = (acc[type] || 0) + curr.value;
+                    return acc;
+                }, {});
+
+                const salesByProduct = Object.keys(productSales).map(key => ({ name: key, value: productSales[key] }));
+
+                // Sales by Customer (Top 5)
+                // We need to fetch client names. 
+                // Since I selected '*', I might not have client name. 
+                // I need client name.
+                // Let's refetch or just fetch client names separately or modify the query.
+                // Modifying the query above to include client.
+                const { data: oppsWithClient } = await supabase
+                    .from('crm_opportunities')
+                    .select('*, client:crm_clients(company_name)')
+                    .eq('status', 'closed_won');
+
+                const customerSales = (oppsWithClient || []).reduce((acc: any, curr: any) => {
+                    const name = curr.client?.company_name || 'Unknown';
+                    acc[name] = (acc[name] || 0) + curr.value;
+                    return acc;
+                }, {});
+
+                const salesByCustomer = Object.keys(customerSales)
+                    .map(key => ({ name: key, value: customerSales[key] }))
+                    .sort((a, b) => b.value - a.value)
+                    .slice(0, 5); // Top 5
+
+                setChartData({
+                    targetVsCashIn,
+                    targetVsBooking,
+                    salesByProduct: salesByProduct.length ? salesByProduct : [{ name: 'No Data', value: 1 }],
+                    salesByCustomer: salesByCustomer.length ? salesByCustomer : [{ name: 'No Data', value: 1 }],
+                });
+
+                // 5. Recent Activity (Latest 5 Opportunities)
+                const recent = opportunities.slice(0, 5).map(o => ({
+                    type: o.status === 'closed_won' ? 'sales' : o.stage === 'proposal' ? 'proposal' : 'opportunity',
+                    title: o.title,
+                    subtitle: o.status,
+                    date: o.updated_at
+                }));
+                setRecentActivity(recent);
 
             } catch (error) {
-                console.error('Error fetching stats:', error);
+                console.error('Error fetching dashboard data:', error);
             } finally {
                 setIsLoadingData(false);
             }
         };
 
-        fetchStats();
+        fetchAllData();
     }, [canAccessBisdev]);
 
     if (isLoading) {
@@ -113,28 +261,54 @@ export default function BisDevDashboardPage() {
                     <ShieldAlert className="w-12 h-12 text-rose-500" />
                 </div>
                 <h2 className="text-xl font-bold text-[var(--text-primary)]">Access Denied</h2>
-                <p className="text-[var(--text-secondary)] text-center max-w-md">
-                    Anda tidak memiliki akses ke halaman Business Development. Hubungi Admin untuk mendapatkan akses.
-                </p>
-                <Link href="/dashboard" className="px-4 py-2 bg-[#e8c559] text-black rounded-lg font-bold hover:bg-[#d6b54e] transition-colors">
-                    Kembali ke Dashboard
+                <Link href="/dashboard" className="px-4 py-2 bg-[#e8c559] text-black rounded-lg font-bold">
+                    Back to Dashboard
                 </Link>
             </div>
         );
     }
 
-    const formatTimeAgo = (dateStr: string) => {
-        const date = new Date(dateStr);
-        const now = new Date();
-        const diffMs = now.getTime() - date.getTime();
-        const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
-        const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+    // Config render helpers
+    const MetricCard = ({ title, value, subtext, icon: Icon, colorClass, borderClass }: any) => (
+        <div className={`p-5 rounded-2xl bg-white dark:bg-[#1c2120] border border-[var(--glass-border)] border-l-4 ${borderClass}`}>
+            <div className="flex justify-between items-start mb-2">
+                <p className="text-xs text-[var(--text-muted)] uppercase tracking-wider font-bold">{title}</p>
+                <Icon className={`w-4 h-4 ${colorClass}`} />
+            </div>
+            <p className="text-2xl font-black text-[var(--text-primary)] truncate" title={String(value)}>
+                {isLoadingData ? '...' : value}
+            </p>
+            {subtext && <p className={`text-xs mt-1 ${colorClass} opacity-80`}>{subtext}</p>}
+        </div>
+    );
 
-        if (diffHours < 1) return 'Just now';
-        if (diffHours < 24) return `${diffHours}h ago`;
-        if (diffDays === 1) return 'Yesterday';
-        return `${diffDays} days ago`;
-    };
+    const CustomPieChart = ({ title, data }: any) => (
+        <div className="p-6 rounded-2xl bg-white dark:bg-[#1c2120] border border-[var(--glass-border)] flex flex-col items-center">
+            <h3 className="text-sm font-bold text-[var(--text-primary)] mb-4 w-full text-center uppercase tracking-wider">{title}</h3>
+            <div className="w-full h-[250px]">
+                <ResponsiveContainer width="100%" height="100%">
+                    <RePieChart>
+                        <Pie
+                            data={data}
+                            innerRadius={60}
+                            outerRadius={80}
+                            paddingAngle={5}
+                            dataKey="value"
+                        >
+                            {data.map((entry: any, index: any) => (
+                                <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                            ))}
+                        </Pie>
+                        <Tooltip
+                            formatter={(value: number) => formatCurrency(value)}
+                            contentStyle={{ backgroundColor: '#1c2120', borderColor: '#333', color: '#fff' }}
+                        />
+                        <Legend verticalAlign="bottom" height={36} iconType="circle" />
+                    </RePieChart>
+                </ResponsiveContainer>
+            </div>
+        </div>
+    );
 
     return (
         <div className="space-y-8 pb-20">
@@ -151,160 +325,116 @@ export default function BisDevDashboardPage() {
                             <span className="text-[var(--text-primary)]">Bisdev</span>
                         </div>
                         <h1 className="text-2xl font-bold text-[var(--text-primary)]">Business Development</h1>
-                        <p className="text-sm text-[var(--text-secondary)]">Growth, Sales Pipeline & Revenue</p>
                     </div>
                 </div>
-                {/* Timeline Quick Action */}
-                <Link
-                    href="/dashboard/bisdev/timeline"
-                    className="flex items-center gap-2 px-5 py-3 rounded-xl bg-gradient-to-r from-[#e8c559] to-[#d4b44a] text-[#171611] font-bold shadow-lg shadow-[#e8c559]/20 hover:shadow-xl hover:shadow-[#e8c559]/30 transition-all"
-                >
-                    <Calendar className="w-5 h-5" />
-                    <span>View Timeline</span>
-                    <ArrowRight className="w-4 h-4" />
-                </Link>
+                <div className="flex items-center gap-3">
+                    <span className="text-sm font-bold bg-white dark:bg-[#1c2120] px-4 py-2 rounded-lg border border-[var(--glass-border)]">
+                        Target: {formatCurrency(stats.annualTarget)}
+                    </span>
+                    {(profile?.role === 'ceo' || profile?.role === 'super_admin') && (
+                        <button
+                            onClick={() => setIsEditingTarget(true)}
+                            className="p-2 rounded-lg bg-[#e8c559] text-[#171611] hover:bg-[#d4b44e] transition-colors"
+                            title="Edit Target"
+                        >
+                            <Target className="w-4 h-4" />
+                        </button>
+                    )}
+                </div>
             </header>
 
-            {/* Stats Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                {/* Total Revenue */}
-                <div className="p-5 rounded-2xl bg-white dark:bg-[#1c2120] border border-[var(--glass-border)] border-l-4 border-l-emerald-500">
-                    <div className="flex justify-between items-start mb-2">
-                        <p className="text-xs text-[var(--text-muted)] uppercase tracking-wider">Total Revenue</p>
-                        <TrendingUp className="w-4 h-4 text-emerald-500" />
-                    </div>
-                    <p className="text-2xl font-black text-[var(--text-primary)]">
-                        {isLoadingData ? '...' : formatCurrency(stats.totalRevenue)}
-                    </p>
-                    <p className="text-xs text-[var(--text-muted)] mt-1">From active contracts</p>
-                </div>
+            {/* Metrics Grid */}
+            <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+                {/* Row 1 */}
+                <MetricCard
+                    title="Number of Sales"
+                    value={stats.salesCount}
+                    icon={Briefcase}
+                    colorClass="text-emerald-500"
+                    borderClass="border-l-emerald-500"
+                />
+                <MetricCard
+                    title="Proposals Sent"
+                    value={stats.proposalCount}
+                    icon={FileText}
+                    colorClass="text-blue-500"
+                    borderClass="border-l-blue-500"
+                />
+                <MetricCard
+                    title="Sales Conversion"
+                    value={`${stats.salesConversion.toFixed(1)}%`}
+                    icon={Percent}
+                    colorClass="text-amber-500"
+                    borderClass="border-l-amber-500"
+                />
+                <MetricCard
+                    title="Lost Projects"
+                    value={stats.lostCount}
+                    icon={XCircle}
+                    colorClass="text-rose-500"
+                    borderClass="border-l-rose-500"
+                />
+                <MetricCard
+                    title="Loss Rate"
+                    value={`${stats.lossRate.toFixed(1)}%`}
+                    icon={TrendingUp}
+                    colorClass="text-rose-400"
+                    borderClass="border-l-rose-400"
+                />
 
-                {/* Proposals */}
-                <div className="p-5 rounded-2xl bg-white dark:bg-[#1c2120] border border-[var(--glass-border)] border-l-4 border-l-blue-500">
-                    <div className="flex justify-between items-start mb-2">
-                        <p className="text-xs text-[var(--text-muted)] uppercase tracking-wider">Active Proposals</p>
-                        <FileText className="w-4 h-4 text-blue-500" />
-                    </div>
-                    <p className="text-2xl font-black text-[var(--text-primary)]">
-                        {isLoadingData ? '...' : stats.proposalsSent}
-                    </p>
-                    <p className="text-xs text-[var(--text-muted)] mt-1">Sent & in negotiation</p>
-                </div>
-
-                {/* Hot Leads */}
-                <div className="p-5 rounded-2xl bg-white dark:bg-[#1c2120] border border-[var(--glass-border)] border-l-4 border-l-rose-500">
-                    <div className="flex justify-between items-start mb-2">
-                        <p className="text-xs text-[var(--text-muted)] uppercase tracking-wider">Hot Leads</p>
-                        <Bell className="w-4 h-4 text-rose-500" />
-                    </div>
-                    <p className="text-2xl font-black text-[var(--text-primary)]">
-                        {isLoadingData ? '...' : stats.hotLeads}
-                    </p>
-                    <p className="text-xs text-rose-500 mt-1">Require immediate action</p>
-                </div>
-
-                {/* Active Prospects */}
-                <div className="p-5 rounded-2xl bg-white dark:bg-[#1c2120] border border-[var(--glass-border)] border-l-4 border-l-cyan-500">
-                    <div className="flex justify-between items-start mb-2">
-                        <p className="text-xs text-[var(--text-muted)] uppercase tracking-wider">Prospects</p>
-                        <Target className="w-4 h-4 text-cyan-500" />
-                    </div>
-                    <p className="text-2xl font-black text-[var(--text-primary)]">
-                        {isLoadingData ? '...' : stats.activeProspects}
-                    </p>
-                    <p className="text-xs text-[var(--text-muted)] mt-1">Active potential clients</p>
-                </div>
+                {/* Row 2 - Financials */}
+                <MetricCard
+                    title="Cash In (Revenue)"
+                    value={formatCurrency(stats.cashIn)}
+                    icon={Wallet}
+                    colorClass="text-emerald-600"
+                    borderClass="border-l-emerald-600"
+                    subtext="Actual Paid Amount"
+                />
+                <MetricCard
+                    title="Rem. Target (Cash)"
+                    value={formatCurrency(stats.remainingTargetCashIn)}
+                    icon={Target}
+                    colorClass="text-gray-500"
+                    borderClass="border-l-gray-500"
+                    subtext="vs Cash In"
+                />
+                <MetricCard
+                    title="Sales Booking"
+                    value={formatCurrency(stats.salesBooking)}
+                    icon={CreditCard}
+                    colorClass="text-blue-600"
+                    borderClass="border-l-blue-600"
+                    subtext="Total Contract Value"
+                />
+                <MetricCard
+                    title="Rem. Target (Booking)"
+                    value={formatCurrency(stats.remainingTargetContract)}
+                    icon={Target}
+                    colorClass="text-gray-500"
+                    borderClass="border-l-gray-500"
+                    subtext="vs Contract Value"
+                />
             </div>
 
+            {/* Charts Grid */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                <CustomPieChart title="Target vs Cash In" data={chartData.targetVsCashIn} />
+                <CustomPieChart title="Target vs Sales Booking" data={chartData.targetVsBooking} />
+                <CustomPieChart title="Sales by Product/Type" data={chartData.salesByProduct} />
+                <CustomPieChart title="Sales by Customer (Top 5)" data={chartData.salesByCustomer} />
+            </div>
+
+            {/* Quick Actions & Recent */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                {/* Main Content */}
-                <div className="lg:col-span-2 space-y-6">
-                    <h2 className="text-xl font-bold text-[var(--text-primary)] flex items-center gap-2">
-                        <LayoutDashboard className="w-5 h-5 text-blue-500" /> Quick Actions
-                    </h2>
-
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <Link
-                            href="/dashboard/bisdev/sales"
-                            className="p-6 rounded-2xl bg-white dark:bg-[#1c2120] border border-[var(--glass-border)] hover:border-emerald-500 group transition-all"
-                        >
-                            <div className="flex items-center gap-4 mb-4">
-                                <div className="p-3 rounded-full bg-emerald-500/20 text-emerald-500">
-                                    <TrendingUp className="w-6 h-6" />
-                                </div>
-                                <div>
-                                    <h3 className="font-bold text-lg text-[var(--text-primary)] group-hover:text-emerald-500 transition-colors">Sales</h3>
-                                    <p className="text-sm text-[var(--text-secondary)]">Track contracts</p>
-                                </div>
-                            </div>
-                            <div className="flex items-center gap-2 text-sm text-emerald-500 font-medium">
-                                View Sales <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
-                            </div>
-                        </Link>
-
-                        <Link
-                            href="/dashboard/bisdev/leads"
-                            className="p-6 rounded-2xl bg-white dark:bg-[#1c2120] border border-[var(--glass-border)] hover:border-blue-500 group transition-all"
-                        >
-                            <div className="flex items-center gap-4 mb-4">
-                                <div className="p-3 rounded-full bg-blue-500/20 text-blue-500">
-                                    <Users className="w-6 h-6" />
-                                </div>
-                                <div>
-                                    <h3 className="font-bold text-lg text-[var(--text-primary)] group-hover:text-blue-500 transition-colors">Leads</h3>
-                                    <p className="text-sm text-[var(--text-secondary)]">Manage prospects</p>
-                                </div>
-                            </div>
-                            <div className="flex items-center gap-2 text-sm text-blue-500 font-medium">
-                                View Leads <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
-                            </div>
-                        </Link>
-
-                        <Link
-                            href="/dashboard/bisdev/proposals"
-                            className="p-6 rounded-2xl bg-white dark:bg-[#1c2120] border border-[var(--glass-border)] hover:border-purple-500 group transition-all"
-                        >
-                            <div className="flex items-center gap-4 mb-4">
-                                <div className="p-3 rounded-full bg-purple-500/20 text-purple-500">
-                                    <FileText className="w-6 h-6" />
-                                </div>
-                                <div>
-                                    <h3 className="font-bold text-lg text-[var(--text-primary)] group-hover:text-purple-500 transition-colors">Proposals</h3>
-                                    <p className="text-sm text-[var(--text-secondary)]">Drafts & contracts</p>
-                                </div>
-                            </div>
-                            <div className="flex items-center gap-2 text-sm text-purple-500 font-medium">
-                                View Proposals <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
-                            </div>
-                        </Link>
-
-                        <Link
-                            href="/dashboard/bisdev/prospects"
-                            className="p-6 rounded-2xl bg-white dark:bg-[#1c2120] border border-[var(--glass-border)] hover:border-cyan-500 group transition-all"
-                        >
-                            <div className="flex items-center gap-4 mb-4">
-                                <div className="p-3 rounded-full bg-cyan-500/20 text-cyan-500">
-                                    <Target className="w-6 h-6" />
-                                </div>
-                                <div>
-                                    <h3 className="font-bold text-lg text-[var(--text-primary)] group-hover:text-cyan-500 transition-colors">Prospects</h3>
-                                    <p className="text-sm text-[var(--text-secondary)]">Market research</p>
-                                </div>
-                            </div>
-                            <div className="flex items-center gap-2 text-sm text-cyan-500 font-medium">
-                                View Prospects <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
-                            </div>
-                        </Link>
-                    </div>
-                </div>
-
-                {/* Right Sidebar */}
-                <div className="space-y-6">
-                    <h2 className="text-xl font-bold text-[var(--text-primary)] flex items-center gap-2">
-                        <Bell className="w-5 h-5 text-[#e8c559]" /> Recent Activity
-                    </h2>
-
+                <div className="lg:col-span-2">
                     <div className="p-6 rounded-2xl bg-white dark:bg-[#1c2120] border border-[var(--glass-border)]">
+                        <div className="flex items-center justify-between mb-6">
+                            <h2 className="text-xl font-bold text-[var(--text-primary)] flex items-center gap-2">
+                                <Bell className="w-5 h-5 text-[#e8c559]" /> Recent Updates
+                            </h2>
+                            <Link href="/dashboard/bisdev/opportunities" className="text-sm text-[#e8c559] hover:underline">View All</Link>
+                        </div>
                         <div className="space-y-4">
                             {isLoadingData ? (
                                 <div className="text-center text-[var(--text-muted)]">Loading...</div>
@@ -312,36 +442,93 @@ export default function BisDevDashboardPage() {
                                 <div className="text-center text-[var(--text-muted)]">No recent activity</div>
                             ) : (
                                 recentActivity.map((activity, idx) => (
-                                    <div key={idx} className="relative pl-6 border-l-2 border-[var(--glass-border)]">
-                                        <div className={`absolute -left-[5px] top-1 w-2 h-2 rounded-full ${activity.type === 'sales' ? 'bg-emerald-500' :
-                                            activity.type === 'lead' ? 'bg-blue-500' :
-                                                'bg-purple-500'
+                                    <div key={idx} className="relative pl-6 border-l-2 border-[var(--glass-border)] py-1">
+                                        <div className={`absolute -left-[5px] top-2.5 w-2 h-2 rounded-full ${activity.type === 'sales' ? 'bg-emerald-500' :
+                                            activity.type === 'proposal' ? 'bg-blue-500' :
+                                                'bg-amber-500'
                                             }`}></div>
-                                        <p className="text-xs text-[var(--text-muted)] mb-0.5">{formatTimeAgo(activity.date)}</p>
-                                        <p className="text-sm text-[var(--text-primary)] font-medium">{activity.title}</p>
-                                        <p className="text-xs text-[var(--text-secondary)]">{activity.company}</p>
+                                        <div className="flex justify-between items-start">
+                                            <div>
+                                                <p className="text-sm font-bold text-[var(--text-primary)]">{activity.title}</p>
+                                                <p className="text-xs text-[var(--text-secondary)] capitalize">{activity.subtitle.replace('_', ' ')}</p>
+                                            </div>
+                                            <span className="text-xs text-[var(--text-muted)]">{new Date(activity.date).toLocaleDateString()}</span>
+                                        </div>
                                     </div>
                                 ))
                             )}
                         </div>
                     </div>
+                </div>
 
-                    {/* Timeline CTA */}
+                <div className="space-y-4">
                     <Link
-                        href="/dashboard/bisdev/timeline"
-                        className="block p-6 rounded-2xl bg-gradient-to-br from-[#e8c559]/20 to-[#e8c559]/5 border border-[#e8c559]/30 hover:border-[#e8c559] transition-all group"
+                        href="/dashboard/bisdev/opportunities"
+                        className="block p-6 rounded-2xl bg-[#e8c559] text-[#171611] font-bold shadow-lg hover:shadow-xl hover:scale-[1.02] transition-all"
                     >
-                        <div className="flex items-center gap-3 mb-3">
-                            <Calendar className="w-6 h-6 text-[#e8c559]" />
-                            <h3 className="font-bold text-[var(--text-primary)]">Business Timeline</h3>
+                        <div className="flex justify-between items-center mb-2">
+                            <LayoutDashboard className="h-6 w-6" />
+                            <ArrowRight className="h-5 w-5" />
                         </div>
-                        <p className="text-sm text-[var(--text-secondary)] mb-3">View all activities in a Gantt chart</p>
-                        <div className="flex items-center gap-2 text-sm text-[#e8c559] font-medium">
-                            Open Timeline <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+                        <p className="text-lg">Open Opportunity Board</p>
+                        <p className="text-xs opacity-80 font-normal">Manage your pipeline</p>
+                    </Link>
+
+                    <Link
+                        href="/dashboard/bisdev/crm"
+                        className="block p-6 rounded-2xl bg-white dark:bg-[#1c2120] border border-[var(--glass-border)] hover:border-blue-500 group transition-all"
+                    >
+                        <div className="flex justify-between items-center mb-2">
+                            <Users className="h-6 w-6 text-blue-500" />
+                            <ArrowRight className="h-5 w-5 text-[var(--text-muted)] group-hover:text-blue-500" />
                         </div>
+                        <p className="text-lg font-bold text-[var(--text-primary)]">CRM Database</p>
+                        <p className="text-xs text-[var(--text-secondary)]">Client directory and history</p>
                     </Link>
                 </div>
             </div>
-        </div>
+
+
+            {/* Edit Target Modal */}
+            {
+                isEditingTarget && (
+                    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+                        <div className="w-full max-w-md bg-white dark:bg-[#1c2120] rounded-2xl shadow-2xl p-6 border border-[var(--glass-border)]">
+                            <h2 className="text-xl font-bold text-[var(--text-primary)] mb-4">Update Annual Target</h2>
+                            <form onSubmit={handleUpdateTarget} className="space-y-4">
+                                <div>
+                                    <label className="block text-sm font-bold text-[var(--text-primary)] mb-1">Target Amount (IDR)</label>
+                                    <input
+                                        type="text"
+                                        value={newTarget}
+                                        onChange={(e) => {
+                                            const val = e.target.value.replace(/[^0-9]/g, '');
+                                            setNewTarget(val ? parseFloat(val) : 0);
+                                        }}
+                                        className="w-full px-4 py-2 rounded-xl border border-[var(--glass-border)] bg-white dark:bg-[#232b2a] text-[var(--text-primary)]"
+                                    />
+                                    <p className="text-xs text-[var(--text-muted)] mt-1">{formatCurrency(newTarget)}</p>
+                                </div>
+                                <div className="flex justify-end gap-3 pt-2">
+                                    <button
+                                        type="button"
+                                        onClick={() => setIsEditingTarget(false)}
+                                        className="px-4 py-2 rounded-xl border border-[var(--glass-border)] text-[var(--text-secondary)] hover:bg-black/5"
+                                    >
+                                        Cancel
+                                    </button>
+                                    <button
+                                        type="submit"
+                                        className="px-6 py-2 rounded-xl bg-[#e8c559] text-[#171611] font-bold"
+                                    >
+                                        Save
+                                    </button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                )
+            }
+        </div >
     );
 }

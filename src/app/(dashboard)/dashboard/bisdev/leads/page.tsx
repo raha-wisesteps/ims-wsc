@@ -60,6 +60,12 @@ interface LeadItem {
     created_at: string;
     created_by: string;
     sales_person_name?: string;
+    client_id?: string | null;
+}
+
+interface CRMClient {
+    id: string;
+    company_name: string;
 }
 
 export default function LeadsPage() {
@@ -74,6 +80,8 @@ export default function LeadsPage() {
     const [detailItem, setDetailItem] = useState<LeadItem | null>(null);
     const [draggedItem, setDraggedItem] = useState<LeadItem | null>(null);
     const [dragOverStatus, setDragOverStatus] = useState<LeadStatus | null>(null);
+    const [crmClients, setCrmClients] = useState<CRMClient[]>([]);
+    const [selectedClientId, setSelectedClientId] = useState<string | null>(null);
 
     const hasFullAccess = useMemo(() => {
         if (!profile) return false;
@@ -100,17 +108,54 @@ export default function LeadsPage() {
         }
     };
 
+    const fetchCrmClients = async () => {
+        try {
+            const { data, error } = await supabase
+                .from('crm_clients')
+                .select('id, company_name')
+                .order('company_name');
+            if (error) throw error;
+            setCrmClients(data || []);
+        } catch (error) {
+            console.error('Error fetching CRM clients:', error);
+        }
+    };
+
     useEffect(() => {
-        if (canAccessBisdev) fetchLeadsData();
+        if (canAccessBisdev) {
+            fetchLeadsData();
+            fetchCrmClients();
+        }
     }, [canAccessBisdev]);
 
+    useEffect(() => {
+        setSelectedClientId(editingItem?.client_id || null);
+    }, [editingItem]);
+
     const handleStatusChange = async (id: string, newStatus: LeadStatus) => {
+        const item = leadsData.find(l => l.id === id);
+        if (!item) return;
+        const oldStatus = item.status;
+
         try {
             const { error } = await supabase
                 .from('bisdev_leads')
                 .update({ status: newStatus, updated_at: new Date().toISOString() })
                 .eq('id', id);
             if (error) throw error;
+
+            if (item.client_id && profile?.id) {
+                await supabase.from('crm_journey').insert({
+                    client_id: item.client_id,
+                    from_stage: 'lead',
+                    to_stage: 'lead',
+                    source_table: 'bisdev_leads',
+                    source_id: id,
+                    notes: `Status: ${STATUS_CONFIG[oldStatus].label} → ${STATUS_CONFIG[newStatus].label}`,
+                    created_by: profile.id,
+                });
+            }
+
             setLeadsData(prev => prev.map(item => item.id === id ? { ...item, status: newStatus } : item));
         } catch (error) {
             console.error('Error:', error);
@@ -226,9 +271,6 @@ export default function LeadsPage() {
                         <button onClick={() => setViewMode("board")} className={`p-2 rounded-md ${viewMode === "board" ? "bg-[#e8c559] text-[#171611]" : "text-[var(--text-secondary)]"}`}><LayoutGrid className="h-4 w-4" /></button>
                         <button onClick={() => setViewMode("list")} className={`p-2 rounded-md ${viewMode === "list" ? "bg-[#e8c559] text-[#171611]" : "text-[var(--text-secondary)]"}`}><List className="h-4 w-4" /></button>
                     </div>
-                    <button onClick={() => { setEditingItem(null); setShowForm(true); }} className="flex items-center gap-2 px-4 py-2 rounded-lg bg-gradient-to-r from-[#e8c559] to-[#d4b44a] text-[#171611] font-semibold">
-                        <Plus className="h-4 w-4" /><span>Tambah</span>
-                    </button>
                 </div>
             </div>
 

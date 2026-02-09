@@ -62,6 +62,12 @@ interface ProposalItem {
     created_at: string;
     created_by: string;
     sales_person_name?: string;
+    client_id?: string | null;
+}
+
+interface CRMClient {
+    id: string;
+    company_name: string;
 }
 
 const formatCurrency = (value: number) => {
@@ -85,6 +91,8 @@ export default function ProposalsPage() {
     const [detailItem, setDetailItem] = useState<ProposalItem | null>(null);
     const [draggedItem, setDraggedItem] = useState<ProposalItem | null>(null);
     const [dragOverStatus, setDragOverStatus] = useState<ProposalStatus | null>(null);
+    const [crmClients, setCrmClients] = useState<CRMClient[]>([]);
+    const [selectedClientId, setSelectedClientId] = useState<string | null>(null);
 
     // Check if user has full access (can delete)
     const hasFullAccess = useMemo(() => {
@@ -118,14 +126,39 @@ export default function ProposalsPage() {
         }
     };
 
+    // Fetch CRM Clients for dropdown
+    const fetchCrmClients = async () => {
+        try {
+            const { data, error } = await supabase
+                .from('crm_clients')
+                .select('id, company_name')
+                .order('company_name');
+
+            if (error) throw error;
+            setCrmClients(data || []);
+        } catch (error) {
+            console.error('Error fetching CRM clients:', error);
+        }
+    };
+
     useEffect(() => {
         if (canAccessBisdev) {
             fetchProposalsData();
+            fetchCrmClients();
         }
     }, [canAccessBisdev]);
 
-    // Handle status change (quick update)
+    // Sync selectedClientId when editing
+    useEffect(() => {
+        setSelectedClientId(editingItem?.client_id || null);
+    }, [editingItem]);
+
+    // Handle status change (quick update) with journey logging
     const handleStatusChange = async (id: string, newStatus: ProposalStatus) => {
+        const item = proposalsData.find(p => p.id === id);
+        if (!item) return;
+        const oldStatus = item.status;
+
         try {
             const { error } = await supabase
                 .from('bisdev_proposals')
@@ -133,6 +166,19 @@ export default function ProposalsPage() {
                 .eq('id', id);
 
             if (error) throw error;
+
+            // Log to crm_journey if client_id exists
+            if (item.client_id && profile?.id) {
+                await supabase.from('crm_journey').insert({
+                    client_id: item.client_id,
+                    from_stage: 'proposal',
+                    to_stage: 'proposal',
+                    source_table: 'bisdev_proposals',
+                    source_id: id,
+                    notes: `Status: ${STATUS_CONFIG[oldStatus].label} → ${STATUS_CONFIG[newStatus].label}`,
+                    created_by: profile.id,
+                });
+            }
 
             setProposalsData(prev => prev.map(item =>
                 item.id === id ? { ...item, status: newStatus } : item
@@ -303,15 +349,6 @@ export default function ProposalsPage() {
                             <List className="h-4 w-4" />
                         </button>
                     </div>
-
-                    {/* Add Button */}
-                    <button
-                        onClick={() => { setEditingItem(null); setShowForm(true); }}
-                        className="flex items-center gap-2 px-4 py-2 rounded-lg bg-gradient-to-r from-[#e8c559] to-[#d4b44a] text-[#171611] font-semibold hover:shadow-lg hover:shadow-[#e8c559]/20 transition-all"
-                    >
-                        <Plus className="h-4 w-4" />
-                        <span>Tambah</span>
-                    </button>
                 </div>
             </div>
 
