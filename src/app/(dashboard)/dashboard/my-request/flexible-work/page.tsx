@@ -50,7 +50,23 @@ export default function FlexibleWorkPage() {
         fetchHistory();
     }, [user]);
 
-    // Quotas
+    const [minDate, setMinDate] = useState("");
+
+    useEffect(() => {
+        // Calculate min date (tomorrow) in local time
+        const now = new Date();
+        const tomorrow = new Date(now);
+        tomorrow.setDate(tomorrow.getDate() + 1);
+
+        // Format to YYYY-MM-DD using local time explicitly
+        const year = tomorrow.getFullYear();
+        const month = String(tomorrow.getMonth() + 1).padStart(2, '0');
+        const day = String(tomorrow.getDate()).padStart(2, '0');
+
+        const minDateStr = `${year}-${month}-${day}`;
+        setMinDate(minDateStr);
+    }, []);
+
     const wfhUsed = leaveQuota?.wfh_weekly_used || 0;
     const wfhLimit = leaveQuota?.wfh_weekly_limit || 1;
     const wfhRemaining = wfhLimit - wfhUsed;
@@ -95,6 +111,13 @@ export default function FlexibleWorkPage() {
             setError(`Jatah WFH minggu ini tidak mencukupi. Sisa: ${wfhRemaining}`);
             return;
         }
+
+        // Validate H-1 on submit as well
+        if (minDate && startDate < minDate) {
+            setError(`Tanggal tidak valid. Minimal H-1 (${new Date(minDate).toLocaleDateString('id-ID')})`);
+            return;
+        }
+
         if (workType === "wfa") {
             if (isIntern) {
                 setError("Akses ditolak: Intern tidak diizinkan mengambil WFA.");
@@ -246,11 +269,25 @@ export default function FlexibleWorkPage() {
                             <input
                                 type="date"
                                 value={startDate}
-                                onChange={(e) => setStartDate(e.target.value)}
-                                min={new Date().toISOString().split('T')[0]}
+                                onChange={(e) => {
+                                    const val = e.target.value;
+
+                                    // Robust check: if minDate is set and val is less than minDate, block/error it
+                                    if (minDate && val < minDate) {
+                                        setStartDate(val);
+                                        setError(`Tanggal tidak valid. Minimal H-1 (${new Date(minDate).toLocaleDateString('id-ID')})`);
+                                    } else {
+                                        setStartDate(val);
+                                        if (error?.includes("Tanggal tidak valid")) setError(null);
+                                    }
+                                }}
+                                min={minDate}
                                 className="w-full px-4 py-3 rounded-lg bg-[var(--surface-color)] border border-[var(--glass-border)] text-[var(--text-primary)] focus:outline-none focus:border-purple-500 transition-colors"
                                 required
                             />
+                            <p className="text-xs text-[var(--text-muted)] mt-1">
+                                * Pengajuan minimal H-1 {minDate && `(Paling cepat: ${new Date(minDate).toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })})`}
+                            </p>
                         </div>
                         {workType === "wfa" && (
                             <div>
