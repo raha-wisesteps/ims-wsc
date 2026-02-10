@@ -174,10 +174,10 @@ export default function BisDevDashboardPage() {
                         .eq('to_stage', 'proposal')
                         .in('status', ['sent', 'follow_up']);
 
-                    const journeyIds = new Set((journeys || []).map(j => j.opportunity_id));
+                    const journeyIds = new Set((journeys || []).map((j: { opportunity_id: string }) => j.opportunity_id));
 
                     // Also check current state (just in case journey is missing or migration issue)
-                    opportunities.forEach(o => {
+                    opportunities.forEach((o: Opportunity) => {
                         if (o.stage === 'proposal' && ['sent', 'follow_up'].includes(o.status)) {
                             journeyIds.add(o.id);
                         }
