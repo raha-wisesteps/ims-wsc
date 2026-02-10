@@ -247,6 +247,8 @@ export default function ClientDetailPage() {
     // Date editing state
     const [isEditingDate, setIsEditingDate] = useState(false);
     const [tempDate, setTempDate] = useState("");
+    const [isEditingNotes, setIsEditingNotes] = useState(false);
+    const [tempNotes, setTempNotes] = useState("");
 
     // Meeting form with opportunity selection
     const [meetingForm, setMeetingForm] = useState({
@@ -305,6 +307,7 @@ export default function ClientDetailPage() {
                 setTempDescription(clientData.description || "");
                 setTempSource(clientData.source || "");
                 setTempDate(clientData.created_at ? new Date(clientData.created_at).toISOString().slice(0, 10) : "");
+                setTempNotes(clientData.notes || "");
             }
 
             // Fetch contacts
@@ -434,6 +437,23 @@ export default function ClientDetailPage() {
         } catch (error) {
             console.error("Error updating date:", error);
             alert("Failed to update date");
+        }
+    };
+
+    const handleSaveNotes = async () => {
+        try {
+            const { error } = await supabase
+                .from("crm_clients")
+                .update({ notes: tempNotes })
+                .eq("id", clientId);
+
+            if (error) throw error;
+
+            setClient(prev => prev ? { ...prev, notes: tempNotes } : null);
+            setIsEditingNotes(false);
+        } catch (error) {
+            console.error("Error updating notes:", error);
+            alert("Failed to update notes");
         }
     };
 
@@ -1464,12 +1484,54 @@ export default function ClientDetailPage() {
                             </div>
                         </div>
 
-                        {client.notes && (
-                            <div className="md:col-span-2 p-4 rounded-xl bg-white dark:bg-[#1c2120] border border-[var(--glass-border)]">
-                                <h3 className="font-bold text-[var(--text-primary)] mb-2">Notes</h3>
-                                <p className="text-sm text-[var(--text-secondary)] whitespace-pre-wrap">{client.notes}</p>
+                        {/* Notes Section - Editable */}
+                        <div className="md:col-span-2 p-4 rounded-xl bg-white dark:bg-[#1c2120] border border-[var(--glass-border)]">
+                            <div className="flex justify-between items-center mb-2">
+                                <h3 className="font-bold text-[var(--text-primary)]">Notes</h3>
+                                {!isEditingNotes && (
+                                    <button
+                                        onClick={() => setIsEditingNotes(true)}
+                                        className="p-1 rounded hover:bg-black/5 dark:hover:bg-white/5 text-[#e8c559]"
+                                        title="Edit Notes"
+                                    >
+                                        <Edit3 className="h-3 w-3" />
+                                    </button>
+                                )}
                             </div>
-                        )}
+
+                            {isEditingNotes ? (
+                                <div className="space-y-2">
+                                    <textarea
+                                        value={tempNotes}
+                                        onChange={(e) => setTempNotes(e.target.value)}
+                                        className="w-full text-sm p-2 rounded-lg border border-[var(--glass-border)] bg-[var(--glass-bg)] focus:outline-none focus:ring-1 focus:ring-[#e8c559]"
+                                        rows={4}
+                                        placeholder="Enter notes..."
+                                    />
+                                    <div className="flex justify-end gap-2">
+                                        <button
+                                            onClick={() => {
+                                                setIsEditingNotes(false);
+                                                setTempNotes(client.notes || "");
+                                            }}
+                                            className="px-2 py-1 text-xs rounded bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600"
+                                        >
+                                            Cancel
+                                        </button>
+                                        <button
+                                            onClick={handleSaveNotes}
+                                            className="px-2 py-1 text-xs rounded bg-[#e8c559] text-[#171611] font-bold hover:bg-[#d4b44e]"
+                                        >
+                                            Save
+                                        </button>
+                                    </div>
+                                </div>
+                            ) : (
+                                <p className="text-sm text-[var(--text-secondary)] whitespace-pre-wrap">
+                                    {client.notes || <span className="text-[var(--text-muted)] italic">No notes added.</span>}
+                                </p>
+                            )}
+                        </div>
                     </div>
                 )
                 }

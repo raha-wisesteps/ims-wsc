@@ -49,7 +49,10 @@ export default function BisDevDashboardPage() {
         salesBooking: 0,
         remainingTargetContract: 0,
         annualTarget: 4000000000,
+        totalLeadsValue: 0,
     });
+
+    const [topClients, setTopClients] = useState<Array<{ name: string; value: number }>>([]);
 
     const [chartData, setChartData] = useState({
         targetVsCashIn: [] as any[],
@@ -144,19 +147,44 @@ export default function BisDevDashboardPage() {
                     return year === selectedYear;
                 });
 
+                // Fetch Clients for Leaderboard
+                // Fetch Clients for Leaderboard
+                const { data: clientsData } = await supabase.from('crm_clients').select('id, company_name');
+                const clientMap = new Map((clientsData || []).map((c: any) => [c.id, c.company_name]));
+
                 // 3. Calculate Metrics
 
                 // Sales Count: Stage == 'sales'
                 const salesOpps = opportunities.filter((o: Opportunity) => o.stage === 'sales');
                 const salesCount = salesOpps.length;
 
-                // Proposals Sent: Status == 'sent'
                 // Proposals Sent: Status == 'sent' OR Stage > 'proposal'
-                const sentOpps = opportunities.filter((o: Opportunity) =>
-                    (o.stage === 'proposal' && ['sent', 'follow_up'].includes(o.status)) ||
-                    ['leads', 'sales'].includes(o.stage)
-                );
-                const proposalCount = sentOpps.length;
+                // Logic: 
+                // 1. Fetch journey logs for these opportunities to see if they EVER entered 'proposal' stage with 'sent' status.
+                // 2. Or if they are currently in that state.
+                const oppIds = opportunities.map(o => o.id);
+                let proposalCount = 0;
+
+                if (oppIds.length > 0) {
+                    // Query journey for historical "sent" proposals
+                    const { data: journeys } = await supabase
+                        .from('crm_journey')
+                        .select('opportunity_id')
+                        .in('opportunity_id', oppIds)
+                        .eq('to_stage', 'proposal')
+                        .in('status', ['sent', 'follow_up']);
+
+                    const journeyIds = new Set((journeys || []).map(j => j.opportunity_id));
+
+                    // Also check current state (just in case journey is missing or migration issue)
+                    opportunities.forEach(o => {
+                        if (o.stage === 'proposal' && ['sent', 'follow_up'].includes(o.status)) {
+                            journeyIds.add(o.id);
+                        }
+                    });
+
+                    proposalCount = journeyIds.size;
+                }
 
                 // Lost Projects: Stage == 'leads' AND Status == 'closed_lost'
                 const lostOpps = opportunities.filter((o: Opportunity) =>
@@ -178,6 +206,40 @@ export default function BisDevDashboardPage() {
 
                 const remainingTargetCashIn = Math.max(0, annualTarget - cashIn);
                 const remainingTargetContract = Math.max(0, annualTarget - salesBooking);
+                const totalLeadsValue = opportunities.reduce((sum, o) => sum + (o.value || 0), 0);
+
+                // Top Clients (Closed Won) - Based on ALL time or selected year? 
+                // Context: "Top Clients" usually implies all-time value or current fiscal year. 
+                // Given the filter above restricts `opportunities` to `selectedYear`, the current logic only shows top clients FOR THAT YEAR.
+                // If the user wants an all-time leaderboard, we should use `rawOpportunities`.
+                // However, "Dashboard" usually reflects the selected period. 
+                // Let's ensure the status check is correct. 'closed_won' is the standard.
+                // Let's also debug if `client_id` is missing.
+
+                // Top Clients (Closed Won) - ALL TIME
+                // Using `allOpportunities` to show leaderboard regardless of creation year.
+                // Condition: Stage is 'sales' (implies conversion) OR Status is explicitly 'won'/'closed_won'.
+                const clientSales: Record<string, number> = {};
+                const topClientsSource = allOpportunities.length > 0 ? allOpportunities : opportunities;
+
+                topClientsSource.forEach(o => {
+                    // Check if it's a won deal
+                    const isWon = o.stage === 'sales' || ['won', 'closed_won', 'full_payment'].includes(o.status);
+
+                    if (isWon && o.client_id) {
+                        const val = Number(o.value) || 0;
+                        clientSales[o.client_id] = (clientSales[o.client_id] || 0) + val;
+                    }
+                });
+
+                const topClientsList = Object.entries(clientSales)
+                    .map(([clientId, value]) => ({
+                        name: (clientMap.get(clientId) as string) || 'Unknown Client',
+                        value: value
+                    }))
+                    .sort((a, b) => b.value - a.value)
+                    .slice(0, 5);
+                setTopClients(topClientsList);
 
                 setStats({
                     salesCount,
@@ -190,6 +252,7 @@ export default function BisDevDashboardPage() {
                     salesBooking,
                     remainingTargetContract,
                     annualTarget,
+                    totalLeadsValue,
                 });
 
                 // 4. Prepare Chart Data
@@ -355,6 +418,7 @@ export default function BisDevDashboardPage() {
             </header>
 
             {/* Metrics Grid */}
+            {/* Metrics Grid */}
             <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
                 {/* Row 1 */}
                 <MetricCard
@@ -391,6 +455,14 @@ export default function BisDevDashboardPage() {
                     icon={TrendingUp}
                     colorClass="text-rose-400"
                     borderClass="border-l-rose-400"
+                />
+                <MetricCard
+                    title="Total Leads Value"
+                    value={formatCurrency(stats.totalLeadsValue)}
+                    icon={DollarSign}
+                    colorClass="text-indigo-500"
+                    borderClass="border-l-indigo-500"
+                    subtext="Potential Value"
                 />
 
                 {/* Row 2 - Financials */}
@@ -492,6 +564,35 @@ export default function BisDevDashboardPage() {
                                             </div>
                                             <span className="text-xs text-[var(--text-muted)]">{new Date(activity.date).toLocaleDateString()}</span>
                                         </div>
+                                    </div>
+                                ))
+                            )}
+                        </div>
+                    </div>
+
+                    {/* Top Clients Leaderboard */}
+                    <div className="mt-6 p-6 rounded-2xl bg-white dark:bg-[#1c2120] border border-[var(--glass-border)]">
+                        <div className="flex items-center justify-between mb-6">
+                            <h2 className="text-xl font-bold text-[var(--text-primary)] flex items-center gap-2">
+                                <Users className="w-5 h-5 text-[#e8c559]" /> Top Clients
+                            </h2>
+                        </div>
+                        <div className="space-y-4">
+                            {isLoadingData ? (
+                                <div className="text-center text-[var(--text-muted)]">Loading...</div>
+                            ) : topClients.length === 0 ? (
+                                <div className="text-center text-[var(--text-muted)]">No sales data yet</div>
+                            ) : (
+                                topClients.map((client, idx) => (
+                                    <div key={idx} className="flex items-center justify-between p-3 rounded-xl bg-[var(--glass-bg)] border border-[var(--glass-border)]">
+                                        <div className="flex items-center gap-3">
+                                            <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-xs text-white
+                                                ${idx === 0 ? 'bg-yellow-500' : idx === 1 ? 'bg-gray-400' : idx === 2 ? 'bg-orange-400' : 'bg-blue-500'}`}>
+                                                {idx + 1}
+                                            </div>
+                                            <p className="font-bold text-[var(--text-primary)]">{client.name}</p>
+                                        </div>
+                                        <p className="font-mono font-bold text-[#e8c559]">{formatCurrency(client.value)}</p>
                                     </div>
                                 ))
                             )}
