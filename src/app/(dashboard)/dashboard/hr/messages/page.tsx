@@ -17,7 +17,8 @@ import {
     FileText,
     Calendar,
     Wrench,
-    Lightbulb
+    Lightbulb,
+    Trash2
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { announcementService } from "@/services/announcement";
@@ -410,7 +411,7 @@ export default function MessageCenterPage() {
                                             const CatIcon = catParams.icon;
 
                                             return (
-                                                <div key={msg.id} className="p-5 hover:bg-black/5 dark:hover:bg-white/5 transition-colors group">
+                                                <div key={msg.id} className="p-5 hover:bg-black/5 dark:hover:bg-white/5 transition-colors group relative">
                                                     <div className="flex items-start justify-between mb-2">
                                                         <div className="flex items-center gap-2">
                                                             <Badge variant="outline" className={`${catParams.bg} ${catParams.color} ${catParams.border} hover:${catParams.bg} gap-1`}>
@@ -422,9 +423,31 @@ export default function MessageCenterPage() {
                                                                 {new Date(msg.created_at).toLocaleDateString()}
                                                             </span>
                                                         </div>
-                                                        <Badge variant="secondary" className="text-[10px] uppercase">
-                                                            {msg.audience_type === 'individual' ? 'Private' : msg.audience_type}
-                                                        </Badge>
+                                                        <div className="flex items-center gap-2">
+                                                            <Badge variant="secondary" className="text-[10px] uppercase">
+                                                                {msg.audience_type === 'individual' ? 'Private' : msg.audience_type}
+                                                            </Badge>
+                                                            <button
+                                                                onClick={async (e) => {
+                                                                    e.stopPropagation();
+                                                                    if (confirm("Are you sure you want to delete this message?")) {
+                                                                        try {
+                                                                            // Optimistic update
+                                                                            setMessageHistory(prev => prev.filter(m => m.id !== msg.id));
+                                                                            await announcementService.deleteAnnouncement(msg.id);
+                                                                        } catch (error) {
+                                                                            console.error("Failed to delete", error);
+                                                                            alert("Failed to delete message");
+                                                                            loadHistory(); // Revert
+                                                                        }
+                                                                    }
+                                                                }}
+                                                                className="p-1.5 rounded-lg text-rose-500 hover:bg-rose-500/10 opacity-0 group-hover:opacity-100 transition-opacity"
+                                                                title="Delete Message"
+                                                            >
+                                                                <Trash2 className="w-4 h-4" />
+                                                            </button>
+                                                        </div>
                                                     </div>
 
                                                     <h4 className="font-bold text-[var(--text-primary)] text-sm mb-1">{msg.title}</h4>

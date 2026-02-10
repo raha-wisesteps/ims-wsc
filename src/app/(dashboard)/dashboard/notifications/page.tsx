@@ -191,6 +191,26 @@ export default function NotificationsPage() {
         }
     };
 
+    const deleteNotification = async (e: React.MouseEvent, id: string) => {
+        e.stopPropagation(); // Prevent triggering the click on the notification item
+        if (!user) return;
+
+        // Optimistic update
+        const previousNotifications = [...notifications];
+        setNotifications(notifications.filter(n => n.id !== id));
+
+        const { error } = await supabase
+            .from('notifications')
+            .delete()
+            .eq('id', id);
+
+        if (error) {
+            console.error('Error deleting notification:', error);
+            // Revert on error
+            setNotifications(previousNotifications);
+        }
+    };
+
     const formatTime = (dateString: string) => {
         return new Date(dateString).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" });
     };
@@ -307,7 +327,7 @@ export default function NotificationsPage() {
                                                 <div
                                                     key={notif.id}
                                                     onClick={() => handleNotificationClick(notif)}
-                                                    className={`p-5 hover:bg-black/5 dark:hover:bg-white/5 transition-colors cursor-pointer flex gap-4 ${!notif.read ? "bg-[#e8c559]/5" : ""
+                                                    className={`p-5 hover:bg-black/5 dark:hover:bg-white/5 transition-colors cursor-pointer flex gap-4 group ${!notif.read ? "bg-[#e8c559]/5" : ""
                                                         }`}
                                                 >
                                                     {/* Icon */}
@@ -331,9 +351,22 @@ export default function NotificationsPage() {
                                                                     </span>
                                                                 )}
                                                             </div>
-                                                            <span className="text-xs text-[var(--text-muted)] shrink-0">
-                                                                {formatTime(notif.created_at)}
-                                                            </span>
+                                                            <div className="flex items-center gap-2">
+                                                                <span className="text-xs text-[var(--text-muted)] shrink-0">
+                                                                    {formatTime(notif.created_at)}
+                                                                </span>
+                                                                <button
+                                                                    onClick={(e) => deleteNotification(e, notif.id)}
+                                                                    className="p-1.5 rounded-lg text-rose-500 hover:bg-rose-500/10 opacity-0 group-hover:opacity-100 transition-opacity"
+                                                                    title="Hapus notifikasi"
+                                                                >
+                                                                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                                                        <path d="M3 6h18" />
+                                                                        <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" />
+                                                                        <path d="M8 6V4c0-1 1-2 2-2h4c0 1 1 2 2 2v2" />
+                                                                    </svg>
+                                                                </button>
+                                                            </div>
                                                         </div>
                                                         <p className="text-sm text-[var(--text-secondary)] leading-relaxed">
                                                             {notif.message}
@@ -355,3 +388,4 @@ export default function NotificationsPage() {
         </div>
     );
 }
+

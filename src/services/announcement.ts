@@ -60,5 +60,21 @@ export const announcementService = {
     async fetchArchive(): Promise<Announcement[]> {
         // Can be same as fetchAnnouncements for now, maybe with pagination later
         return this.fetchAnnouncements();
+    },
+
+    /**
+     * Delete an announcement.
+     * RLS ensures only permitted roles can delete.
+     */
+    async deleteAnnouncement(id: string): Promise<void> {
+        const { error } = await supabase
+            .from('announcements')
+            .delete()
+            .eq('id', id);
+
+        if (error) {
+            console.error("Error deleting announcement:", error);
+            throw error;
+        }
     }
 };

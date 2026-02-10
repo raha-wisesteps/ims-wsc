@@ -176,7 +176,6 @@ export default function Header({
                         <div className="absolute right-0 top-12 w-80 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl shadow-2xl overflow-hidden z-[300]">
                             <div className="p-4 border-b border-zinc-200 dark:border-zinc-800 flex justify-between items-center bg-gray-50/50 dark:bg-zinc-900/50">
                                 <h3 className="font-bold text-gray-900 dark:text-gray-100">Notifications</h3>
-                                <Link href="/dashboard/notifications" className="text-[10px] text-[var(--primary)] hover:underline">View All</Link>
                             </div>
                             <div className="max-h-[300px] overflow-y-auto bg-white dark:bg-zinc-900">
                                 {recentNotifs.length === 0 ? (
