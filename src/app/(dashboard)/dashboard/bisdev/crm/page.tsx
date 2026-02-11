@@ -229,19 +229,8 @@ export default function CRMPage() {
                     });
                 }
 
-                // Log journey entry with source and notes as first entry
-                const journeyNotes = [
-                    formData.source ? `Source: ${formData.source}` : null,
-                    formData.notes ? formData.notes : null
-                ].filter(Boolean).join(' | ') || 'Client added to CRM';
-
-                await supabase.from("crm_journey").insert({
-                    client_id: newClient.id,
-                    from_stage: null,
-                    to_stage: "prospect",
-                    notes: journeyNotes,
-                    created_by: profile.id,
-                });
+                // Log journey entry removed as per user request (Client added to CRM)
+                // The user felt it was unnecessary and potentially confusing ("Unknown > Prospect")
 
                 // Automatically add "new" tag
                 await supabase.from("crm_client_tags").insert({
