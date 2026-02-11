@@ -427,11 +427,15 @@ export default function OpportunityBoard() {
 
                                                                         {(() => {
                                                                             if (activeTab === 'sales') {
-                                                                                const canComplete = !['down_payment', 'account_receivable'].includes(opp.status);
+                                                                                // Only allow "Won" if status is Full Payment AND Cash In equals Value
+                                                                                const isFullPayment = opp.status === 'full_payment';
+                                                                                const isPaidInFull = (opp.cash_in || 0) >= (opp.value || 0);
+                                                                                const canComplete = isFullPayment && isPaidInFull;
+
                                                                                 return (
                                                                                     <button
                                                                                         onClick={() => handleArchive(opp.id, 'won')}
-                                                                                        title="Mark Completed (Won)"
+                                                                                        title={canComplete ? "Mark Completed (Won)" : "Requires Full Payment Status & 100% Cash In"}
                                                                                         disabled={!canComplete}
                                                                                         className={`p-1 rounded transition-colors ${!canComplete
                                                                                             ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
@@ -629,17 +633,24 @@ export default function OpportunityBoard() {
                                                     )}
 
                                                     {activeTab === 'sales' ? (
-                                                        <button
-                                                            onClick={() => handleArchive(opp.id, 'won')}
-                                                            title="Mark Completed (Won)"
-                                                            disabled={['down_payment', 'account_receivable'].includes(opp.status)}
-                                                            className={`p-1.5 rounded transition-colors ${['down_payment', 'account_receivable'].includes(opp.status)
-                                                                ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                                                                : 'hover:bg-emerald-100 text-emerald-500 bg-emerald-50/50'
-                                                                }`}
-                                                        >
-                                                            <CheckCircle className="h-4 w-4" />
-                                                        </button>
+                                                        (() => {
+                                                            const isFullPayment = opp.status === 'full_payment';
+                                                            const isPaidInFull = (opp.cash_in || 0) >= (opp.value || 0);
+                                                            const canComplete = isFullPayment && isPaidInFull;
+                                                            return (
+                                                                <button
+                                                                    onClick={() => handleArchive(opp.id, 'won')}
+                                                                    title={canComplete ? "Mark Completed (Won)" : "Requires Full Payment Status & 100% Cash In"}
+                                                                    disabled={!canComplete}
+                                                                    className={`p-1.5 rounded transition-colors ${!canComplete
+                                                                        ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                                                                        : 'hover:bg-emerald-100 text-emerald-500 bg-emerald-50/50'
+                                                                        }`}
+                                                                >
+                                                                    <CheckCircle className="h-4 w-4" />
+                                                                </button>
+                                                            );
+                                                        })()
                                                     ) : (
                                                         <button
                                                             onClick={() => handleMoveToNextStage(opp.id)}
@@ -663,7 +674,7 @@ export default function OpportunityBoard() {
             {/* Edit Opportunity Modal */}
             {isEditModalOpen && editingOpp && (
                 <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-                    <div className="w-full max-w-lg bg-white dark:bg-[#1c2120] rounded-2xl shadow-2xl overflow-hidden border border-[var(--glass-border)] flex flex-col max-h-[90vh]">
+                    <div className="w-full max-w-md bg-white dark:bg-[#1c2120] rounded-2xl shadow-2xl overflow-hidden border border-[var(--glass-border)] flex flex-col max-h-[90vh]">
                         <div className="p-6 border-b border-[var(--glass-border)] flex justify-between items-center">
                             <h2 className="text-xl font-bold text-[var(--text-primary)]">
                                 {isEditMode ? "Edit Opportunity" : "Opportunity Details"}
@@ -772,7 +783,7 @@ export default function OpportunityBoard() {
                                 // Edit Form
                                 <form onSubmit={handleUpdateOpportunity} className="space-y-4">
                                     <div>
-                                        <label className="block text-sm font-bold text-[var(--text-primary)] mb-1">Title</label>
+                                        <label className="block text-sm font-bold text-[var(--text-primary)] mb-1">Title *</label>
                                         <input
                                             type="text"
                                             required
@@ -831,44 +842,53 @@ export default function OpportunityBoard() {
                                     <div className="grid grid-cols-2 gap-4">
                                         <div className={editForm.stage === 'sales' ? "" : "col-span-2"}>
                                             <label className="block text-sm font-bold text-[var(--text-primary)] mb-1">Value (IDR)</label>
-                                            <input
-                                                type="text"
-                                                value={editForm.value}
-                                                onChange={(e) => {
-                                                    const val = e.target.value.replace(/[^0-9]/g, '');
-                                                    setEditForm({ ...editForm, value: val ? parseFloat(val) : 0 });
-                                                }}
-                                                className="w-full px-4 py-2 rounded-xl border border-[var(--glass-border)] bg-white dark:bg-[#232b2a] text-[var(--text-primary)]"
-                                            />
-                                            <p className="text-xs text-[var(--text-muted)] mt-1 font-mono">
-                                                {new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR' }).format(editForm.value)}
-                                            </p>
+                                            <div className="space-y-1">
+                                                <input
+                                                    type="text"
+                                                    value={editForm.value}
+                                                    onChange={(e) => {
+                                                        const val = e.target.value.replace(/[^0-9]/g, '');
+                                                        setEditForm({ ...editForm, value: val ? parseFloat(val) : 0 });
+                                                    }}
+                                                    className="w-full px-4 py-2 rounded-xl border border-[var(--glass-border)] bg-white dark:bg-[#232b2a] text-[var(--text-primary)]"
+                                                />
+                                                {editForm.value > 0 && (
+                                                    <p className="text-xs text-[var(--text-muted)]">
+                                                        Rp {editForm.value.toLocaleString('id-ID')}
+                                                    </p>
+                                                )}
+                                            </div>
                                         </div>
                                         {editForm.stage === 'sales' && (
                                             <div>
-                                                <label className="block text-sm font-bold text-[var(--text-primary)] mb-1">Cash In (Paid)</label>
-                                                <div className="flex gap-2">
-                                                    <input
-                                                        type="text"
-                                                        value={editForm.cash_in}
-                                                        onChange={(e) => {
-                                                            const val = e.target.value.replace(/[^0-9]/g, '');
-                                                            setEditForm({ ...editForm, cash_in: val ? parseFloat(val) : 0 });
-                                                        }}
-                                                        className="w-full px-4 py-2 rounded-xl border border-[var(--glass-border)] bg-white dark:bg-[#232b2a] text-[var(--text-primary)]"
-                                                    />
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => setEditForm({ ...editForm, cash_in: editForm.value })}
-                                                        className="px-3 py-2 rounded-xl bg-emerald-100 text-emerald-700 hover:bg-emerald-200 border border-emerald-200 text-xs font-bold whitespace-nowrap transition-colors"
-                                                        title="Set to Full Value"
-                                                    >
-                                                        Full Payment
-                                                    </button>
+                                                <label className="block text-sm font-bold text-[var(--text-primary)] mb-1">Cash In (IDR)</label>
+                                                <div className="space-y-1">
+                                                    <div className="flex gap-2">
+                                                        <input
+                                                            type="text"
+                                                            value={editForm.cash_in}
+                                                            onChange={(e) => {
+                                                                const val = e.target.value.replace(/[^0-9]/g, '');
+                                                                setEditForm({ ...editForm, cash_in: val ? parseFloat(val) : 0 });
+                                                            }}
+                                                            className="w-full px-4 py-2 rounded-xl border border-[var(--glass-border)] bg-white dark:bg-[#232b2a] text-[var(--text-primary)]"
+                                                        />
+                                                        {/* Keeping Full Payment button but sizing it better */}
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => setEditForm({ ...editForm, cash_in: editForm.value })}
+                                                            className="px-2 py-2 rounded-xl bg-emerald-100 text-emerald-700 hover:bg-emerald-200 border border-emerald-200 text-[10px] font-bold whitespace-nowrap transition-colors"
+                                                            title="Set to Full Value"
+                                                        >
+                                                            Full
+                                                        </button>
+                                                    </div>
+                                                    {editForm.cash_in > 0 && (
+                                                        <p className="text-xs text-[var(--text-muted)]">
+                                                            Rp {editForm.cash_in.toLocaleString('id-ID')}
+                                                        </p>
+                                                    )}
                                                 </div>
-                                                <p className="text-xs text-[var(--text-muted)] mt-1 font-mono">
-                                                    {new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR' }).format(editForm.cash_in)}
-                                                </p>
                                             </div>
                                         )}
                                     </div>
@@ -893,17 +913,17 @@ export default function OpportunityBoard() {
                                             className="w-full px-4 py-2 rounded-xl border border-[var(--glass-border)] bg-white dark:bg-[#232b2a] text-[var(--text-primary)]"
                                         />
                                     </div>
-                                    <div className="flex justify-end gap-3 pt-4 border-t border-[var(--glass-border)] mt-4">
+                                    <div className="flex justify-end gap-3 pt-4 mt-2">
                                         <button
                                             type="button"
                                             onClick={() => setIsEditModalOpen(false)}
-                                            className="px-4 py-2 text-sm font-medium text-[var(--text-secondary)] hover:bg-black/5 dark:hover:bg-white/5 rounded-lg transition-colors"
+                                            className="px-4 py-2 rounded-xl border border-[var(--glass-border)] text-[var(--text-secondary)]"
                                         >
                                             Cancel
                                         </button>
                                         <button
                                             type="submit"
-                                            className="px-4 py-2 bg-[#e8c559] text-[#171611] font-bold rounded-xl hover:bg-[#d4b44e] transition-colors"
+                                            className="px-6 py-2 rounded-xl bg-[#e8c559] text-[#171611] font-bold hover:bg-[#d4b44e]"
                                         >
                                             Save Changes
                                         </button>

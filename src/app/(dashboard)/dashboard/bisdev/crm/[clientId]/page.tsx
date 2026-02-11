@@ -45,6 +45,8 @@ import {
     Angry,
     LayoutGrid,
     History,
+    ChevronDown,
+    Check,
 } from "lucide-react";
 
 // Configs
@@ -97,6 +99,11 @@ const MOOD_CONFIG = {
     good: { label: "Good", icon: <Smile className="h-5 w-5" />, color: "bg-blue-100 text-blue-600" },
     excellent: { label: "Excellent", icon: <Trophy className="h-5 w-5" />, color: "bg-green-100 text-green-600" },
 };
+
+const MONTHS = [
+    "Januari", "Februari", "Maret", "April", "Mei", "Juni",
+    "Juli", "Agustus", "September", "Oktober", "November", "Desember"
+];
 
 const NOTE_TYPES = {
     general: { label: "General", color: "bg-gray-500" },
@@ -198,6 +205,7 @@ export default function ClientDetailPage() {
     const [contacts, setContacts] = useState<Contact[]>([]);
     const [opportunities, setOpportunities] = useState<any[]>([]); // Use any for now or import Opportunity type
     const [logbook, setLogbook] = useState<any[]>([]); // Combined Log
+    const [journeyHistory, setJourneyHistory] = useState<any[]>([]); // Added for strict conversion logic
     const [tags, setTags] = useState<ClientTag[]>([]);
     const [employees, setEmployees] = useState<Employee[]>([]);
     const [isLoading, setIsLoading] = useState(true);
@@ -232,7 +240,7 @@ export default function ClientDetailPage() {
         prospect: ['pending', 'on_going', 'sent', 'follow_up'],
         proposal: ['pending', 'on_going', 'sent', 'follow_up'],
         leads: ['pending', 'low', 'moderate', 'hot'],
-        sales: ['pending', 'down_payment', 'account_receivable', 'full_payment', 'closed_won', 'closed_lost'],
+        sales: ['pending', 'down_payment', 'account_receivable', 'full_payment', 'won'],
         closed_won: ["won"],
         closed_lost: ["lost"]
     };
@@ -267,6 +275,15 @@ export default function ClientDetailPage() {
     });
 
     const [selectedTag, setSelectedTag] = useState<CRMTag>("new");
+
+    // State for MOM expansion
+    const [expandedMomLogs, setExpandedMomLogs] = useState<Set<string>>(new Set());
+    const toggleMomExpansion = (id: string) => {
+        const newSet = new Set(expandedMomLogs);
+        if (newSet.has(id)) newSet.delete(id);
+        else newSet.add(id);
+        setExpandedMomLogs(newSet);
+    };
 
     const [contactForm, setContactForm] = useState({
         name: "",
@@ -363,6 +380,7 @@ export default function ClientDetailPage() {
             ].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
             setLogbook(combinedLogs);
+            setJourneyHistory(journeyData || []);
 
             // Fetch tags
             const { data: tagsData } = await supabase
@@ -990,30 +1008,61 @@ export default function ClientDetailPage() {
                 {activeTab === "overview" && (
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
                         {(() => {
-                            const totalSales = opportunities.filter(o => o.status === 'won').reduce((sum, o) => sum + (o.value || 0), 0);
-                            const totalCashIn = opportunities.reduce((sum, o) => sum + (o.cash_in || 0), 0);
-                            const totalLeads = opportunities.length;
-                            const wonCount = opportunities.filter(o => o.status === 'won').length;
-                            const conversionRate = opportunities.length > 0 ? ((wonCount / opportunities.length) * 100).toFixed(1) : 0;
+                            // Metrics Calculation
+                            const salesOpps = opportunities.filter(o => o.stage === 'sales');
+                            const leadsOpps = opportunities.filter(o => o.stage === 'leads');
+
+                            // Conversion Rate: Strict Leads -> Sales
+                            // Numerator: Unique Opportunities that transitioned from 'leads' to 'sales'
+                            const convertedOppsIds = new Set(journeyHistory
+                                .filter((j: any) => j.from_stage === 'leads' && j.to_stage === 'sales')
+                                .map((j: any) => j.opportunity_id)
+                            );
+                            const convertedCount = convertedOppsIds.size;
+
+                            // Denominator: Current Leads + Converted
+                            const totalLeadsFunnel = leadsOpps.length + convertedCount;
+
+                            const conversionRate = totalLeadsFunnel > 0
+                                ? ((convertedCount / totalLeadsFunnel) * 100).toFixed(1)
+                                : '0.0';
+
+                            // Ongoing Sales (Receivables)
+                            const ongoingSalesValue = salesOpps.reduce((sum, o) => sum + (o.value || 0), 0);
+                            const ongoingSalesCashIn = salesOpps.reduce((sum, o) => sum + (o.cash_in || 0), 0);
+
+                            // Total Sales (Won) - Only those marked as 'won'
+                            // User request: "Total Sales (Won)" should strictly be WON status.
+                            const wonSales = salesOpps.filter(o => o.status === 'won');
+                            const totalWonValue = wonSales.reduce((sum, o) => sum + (o.value || 0), 0);
 
                             return (
                                 <>
                                     <div className="p-4 rounded-xl bg-white dark:bg-[#1c2120] border border-[var(--glass-border)] flex flex-col items-center justify-center text-center">
                                         <p className="text-xs text-[var(--text-muted)] uppercase font-bold tracking-wider mb-1">Total Sales (Won)</p>
                                         <p className="text-xl font-bold text-emerald-600">
-                                            Rp {totalSales.toLocaleString('id-ID')}
+                                            Rp {totalWonValue.toLocaleString('id-ID')}
                                         </p>
                                     </div>
+
+                                    {/* Ongoing Sales Card - Cash In / Value */}
                                     <div className="p-4 rounded-xl bg-white dark:bg-[#1c2120] border border-[var(--glass-border)] flex flex-col items-center justify-center text-center">
-                                        <p className="text-xs text-[var(--text-muted)] uppercase font-bold tracking-wider mb-1">Total Cash In</p>
-                                        <p className="text-xl font-bold text-blue-600">
-                                            Rp {totalCashIn.toLocaleString('id-ID')}
-                                        </p>
+                                        <p className="text-xs text-[var(--text-muted)] uppercase font-bold tracking-wider mb-1">Ongoing Sales (Cash In)</p>
+                                        <div className="flex flex-col items-center">
+                                            <span className="text-lg font-bold text-blue-600">
+                                                Rp {ongoingSalesCashIn.toLocaleString('id-ID')}
+                                            </span>
+                                            <span className="text-xs text-[var(--text-secondary)] border-t border-[var(--glass-border)] pt-0.5 mt-0.5 w-full">
+                                                of Rp {ongoingSalesValue.toLocaleString('id-ID')}
+                                            </span>
+                                        </div>
                                     </div>
+
                                     <div className="p-4 rounded-xl bg-white dark:bg-[#1c2120] border border-[var(--glass-border)] flex flex-col items-center justify-center text-center">
                                         <p className="text-xs text-[var(--text-muted)] uppercase font-bold tracking-wider mb-1">Total Leads (Value)</p>
                                         <p className="text-xl font-bold text-amber-600">
-                                            Rp {opportunities.reduce((sum, o) => sum + (o.value || 0), 0).toLocaleString('id-ID')}
+                                            {/* Total Value of ACTIVE leads */}
+                                            Rp {leadsOpps.reduce((sum, o) => sum + (o.value || 0), 0).toLocaleString('id-ID')}
                                         </p>
                                     </div>
                                     <div className="p-4 rounded-xl bg-white dark:bg-[#1c2120] border border-[var(--glass-border)] flex flex-col items-center justify-center text-center">
@@ -1021,6 +1070,7 @@ export default function ClientDetailPage() {
                                         <p className="text-xl font-bold text-purple-600">
                                             {conversionRate}%
                                         </p>
+                                        <p className="text-[10px] text-[var(--text-muted)]">Leads → Sales</p>
                                     </div>
                                 </>
                             );
@@ -1819,20 +1869,34 @@ export default function ClientDetailPage() {
 
                                                                     {/* MOM Link & Content */}
                                                                     {(log.mom_link || log.mom_content) && (
-                                                                        <div className="flex items-center gap-3 text-xs">
+                                                                        <div className="flex flex-col gap-1 text-xs mt-1">
                                                                             {log.mom_link && (
                                                                                 <a
                                                                                     href={log.mom_link}
                                                                                     target="_blank"
                                                                                     rel="noopener noreferrer"
-                                                                                    className="flex items-center gap-1 text-blue-500 hover:underline"
+                                                                                    className="flex items-center gap-1 text-blue-500 hover:underline w-fit mb-1"
                                                                                     title="Open MOM Link"
                                                                                 >
-                                                                                    <LinkIcon className="h-4 w-4" />
-                                                                                    <span>MOM Link</span>
+                                                                                    <LinkIcon className="h-3 w-3" />
+                                                                                    <span>MOM Document</span>
                                                                                 </a>
                                                                             )}
-                                                                            {log.mom_content && <span className="text-[var(--text-secondary)] italic">"{log.mom_content}"</span>}
+                                                                            {log.mom_content && (
+                                                                                <div className="relative">
+                                                                                    <p className={`text-[var(--text-secondary)] italic whitespace-pre-wrap ${expandedMomLogs.has(log.id) ? '' : 'line-clamp-2'}`}>
+                                                                                        "{log.mom_content}"
+                                                                                    </p>
+                                                                                    {log.mom_content.length > 100 && (
+                                                                                        <button
+                                                                                            onClick={() => toggleMomExpansion(log.id)}
+                                                                                            className="text-[10px] text-blue-500 hover:underline mt-0.5 font-medium"
+                                                                                        >
+                                                                                            {expandedMomLogs.has(log.id) ? 'Show Less' : 'View More'}
+                                                                                        </button>
+                                                                                    )}
+                                                                                </div>
+                                                                            )}
                                                                         </div>
                                                                     )}
 
@@ -1900,7 +1964,7 @@ export default function ClientDetailPage() {
                                                         {c.birth_date && (
                                                             <p className="text-xs text-[var(--text-secondary)] flex items-center gap-1 mt-1">
                                                                 <Sparkles className="h-3 w-3 text-pink-400" />
-                                                                {new Date(c.birth_date).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}
+                                                                {new Date(c.birth_date).toLocaleDateString('id-ID', { day: 'numeric', month: 'long' })}
                                                             </p>
                                                         )}
                                                     </div>
@@ -1950,17 +2014,17 @@ export default function ClientDetailPage() {
             {/* Opportunity Form Modal */}
             {
                 showOpportunityForm && (
-                    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-                        <div className="w-full max-w-md bg-white dark:bg-[#1c2120] rounded-2xl shadow-2xl">
-                            <div className="flex items-center justify-between p-6 border-b border-[var(--glass-border)]">
+                    <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+                        <div className="w-full max-w-md bg-white dark:bg-[#1c2120] rounded-2xl shadow-2xl overflow-hidden border border-[var(--glass-border)] flex flex-col max-h-[90vh]">
+                            <div className="flex items-center justify-between p-6 border-b border-[var(--glass-border)] shrink-0">
                                 <h2 className="text-xl font-bold text-[var(--text-primary)]">
                                     {editingOpportunity ? "Edit Opportunity" : "New Opportunity"}
                                 </h2>
-                                <button onClick={() => setShowOpportunityForm(false)} className="p-2 rounded-lg hover:bg-black/10">
+                                <button onClick={() => setShowOpportunityForm(false)} className="p-2 rounded-lg hover:bg-black/10 text-[var(--text-secondary)]">
                                     <X className="h-5 w-5" />
                                 </button>
                             </div>
-                            <form onSubmit={handleSaveOpportunity} className="p-6 space-y-4">
+                            <form onSubmit={handleSaveOpportunity} className="p-6 space-y-4 overflow-y-auto">
                                 <div>
                                     <label className="block text-sm font-bold text-[var(--text-primary)] mb-1">Title *</label>
                                     <input
@@ -2005,7 +2069,7 @@ export default function ClientDetailPage() {
                                                 const defaultStatus = OPPORTUNITY_STATUSES[newStage as keyof typeof OPPORTUNITY_STATUSES]?.[0] || "";
                                                 setOpportunityForm({ ...opportunityForm, stage: newStage, status: defaultStatus });
                                             }}
-                                            className="w-full px-4 py-2 rounded-xl border border-[var(--glass-border)] bg-white dark:bg-[#232b2a] text-[var(--text-primary)]"
+                                            className="w-full px-4 py-2 rounded-xl border border-[var(--glass-border)] bg-white dark:bg-[#232b2a] text-[var(--text-primary)] uppercase"
                                         >
                                             <option value="prospect">Prospect</option>
                                             <option value="proposal">Proposal</option>
@@ -2052,16 +2116,26 @@ export default function ClientDetailPage() {
                                         <div>
                                             <label className="block text-sm font-bold text-[var(--text-primary)] mb-1">Cash In (IDR)</label>
                                             <div className="space-y-1">
-                                                <input
-                                                    type="text"
-                                                    value={opportunityForm.cash_in}
-                                                    onChange={(e) => {
-                                                        const val = e.target.value.replace(/[^0-9]/g, '');
-                                                        setOpportunityForm({ ...opportunityForm, cash_in: val ? parseFloat(val) : 0 });
-                                                    }}
-                                                    onFocus={(e) => e.target.select()}
-                                                    className="w-full px-4 py-2 rounded-xl border border-[var(--glass-border)] bg-white dark:bg-[#232b2a] text-[var(--text-primary)]"
-                                                />
+                                                <div className="flex gap-2">
+                                                    <input
+                                                        type="text"
+                                                        value={opportunityForm.cash_in}
+                                                        onChange={(e) => {
+                                                            const val = e.target.value.replace(/[^0-9]/g, '');
+                                                            setOpportunityForm({ ...opportunityForm, cash_in: val ? parseFloat(val) : 0 });
+                                                        }}
+                                                        onFocus={(e) => e.target.select()}
+                                                        className="w-full px-4 py-2 rounded-xl border border-[var(--glass-border)] bg-white dark:bg-[#232b2a] text-[var(--text-primary)]"
+                                                    />
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setOpportunityForm({ ...opportunityForm, cash_in: opportunityForm.value })}
+                                                        className="px-2 py-2 rounded-xl bg-emerald-100 text-emerald-700 hover:bg-emerald-200 border border-emerald-200 text-[10px] font-bold whitespace-nowrap transition-colors"
+                                                        title="Set to Full Value"
+                                                    >
+                                                        Full
+                                                    </button>
+                                                </div>
                                                 {opportunityForm.cash_in > 0 && (
                                                     <p className="text-xs text-[var(--text-muted)]">
                                                         Rp {opportunityForm.cash_in.toLocaleString('id-ID')}
@@ -2094,13 +2168,27 @@ export default function ClientDetailPage() {
                                         className="w-full px-4 py-2 rounded-xl border border-[var(--glass-border)] bg-white dark:bg-[#232b2a] text-[var(--text-primary)]"
                                     />
                                 </div>
-                                <div className="flex justify-end gap-3 pt-4">
+                                <div className="flex justify-end gap-3 pt-4 mt-auto border-t border-[var(--glass-border)] shrink-0">
                                     <button type="button" onClick={() => setShowOpportunityForm(false)} className="px-4 py-2 rounded-xl border border-[var(--glass-border)] text-[var(--text-secondary)]">
                                         Cancel
                                     </button>
-                                    <button type="submit" className="px-6 py-2 rounded-xl bg-[#e8c559] text-[#171611] font-bold">
-                                        Create Opportunity
-                                    </button>
+                                    <div className="flex flex-col gap-2">
+                                        <button
+                                            type="submit"
+                                            disabled={opportunityForm.stage === 'sales' && (opportunityForm.status === 'won' || opportunityForm.status === 'closed_won') && opportunityForm.cash_in !== opportunityForm.value}
+                                            className={`px-6 py-2 rounded-xl text-[#171611] font-bold transition-colors ${opportunityForm.stage === 'sales' && (opportunityForm.status === 'won' || opportunityForm.status === 'closed_won') && opportunityForm.cash_in !== opportunityForm.value
+                                                ? "bg-gray-300 cursor-not-allowed opacity-50"
+                                                : "bg-[#e8c559] hover:bg-[#d4b44e]"
+                                                }`}
+                                        >
+                                            {editingOpportunity ? "Save Changes" : "Create Opportunity"}
+                                        </button>
+                                        {opportunityForm.stage === 'sales' && (opportunityForm.status === 'won' || opportunityForm.status === 'closed_won') && opportunityForm.cash_in !== opportunityForm.value && (
+                                            <p className="text-xs text-red-500 font-bold text-right">
+                                                "Won" status requires Cash In to equal Value.
+                                            </p>
+                                        )}
+                                    </div>
                                 </div>
                             </form>
                         </div>
@@ -2356,89 +2444,150 @@ export default function ClientDetailPage() {
                 showContactForm && (
                     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
                         <div className="w-full max-w-md bg-white dark:bg-[#1c2120] rounded-2xl shadow-2xl">
-                            <div className="flex items-center justify-between p-6 border-b border-[var(--glass-border)]">
+                            <div className="flex items-center justify-between p-6 border-b border-[var(--glass-border)] bg-gray-50/50 dark:bg-white/5 rounded-t-2xl">
                                 <h2 className="text-xl font-bold text-[var(--text-primary)]">
                                     {editingContact ? "Edit Contact" : "Add Contact"}
                                 </h2>
-                                <button onClick={() => { setShowContactForm(false); setEditingContact(null); }} className="p-2 rounded-lg hover:bg-black/10">
-                                    <X className="h-5 w-5" />
+                                <button onClick={() => { setShowContactForm(false); setEditingContact(null); }} className="p-2 rounded-lg hover:bg-black/10 transition-colors">
+                                    <X className="h-5 w-5 text-[var(--text-secondary)]" />
                                 </button>
                             </div>
-                            <form onSubmit={handleAddContact} className="p-6 space-y-4">
+                            <form onSubmit={handleAddContact} className="p-6 space-y-5">
                                 <div>
-                                    <label className="block text-sm font-bold text-[var(--text-primary)] mb-1">Name *</label>
+                                    <label className="block text-sm font-bold text-[var(--text-primary)] mb-1.5">Name <span className="text-red-500">*</span></label>
                                     <input
                                         type="text"
                                         required
+                                        placeholder="e.g. John Doe"
                                         value={contactForm.name}
                                         onChange={(e) => setContactForm({ ...contactForm, name: e.target.value })}
-                                        className="w-full px-4 py-2 rounded-xl border border-[var(--glass-border)] bg-white dark:bg-[#232b2a] text-[var(--text-primary)]"
+                                        className="w-full px-4 py-2.5 rounded-xl border border-[var(--glass-border)] bg-gray-50 dark:bg-[#232b2a] text-[var(--text-primary)] focus:ring-2 focus:ring-[#e8c559] focus:border-transparent outline-none transition-all"
                                     />
                                 </div>
                                 <div className="grid grid-cols-2 gap-4">
                                     <div>
-                                        <label className="block text-sm font-bold text-[var(--text-primary)] mb-1">Position</label>
+                                        <label className="block text-sm font-bold text-[var(--text-primary)] mb-1.5">Position</label>
                                         <input
                                             type="text"
+                                            placeholder="e.g. Manager"
                                             value={contactForm.position}
                                             onChange={(e) => setContactForm({ ...contactForm, position: e.target.value })}
-                                            className="w-full px-4 py-2 rounded-xl border border-[var(--glass-border)] bg-white dark:bg-[#232b2a] text-[var(--text-primary)]"
+                                            className="w-full px-4 py-2.5 rounded-xl border border-[var(--glass-border)] bg-gray-50 dark:bg-[#232b2a] text-[var(--text-primary)] focus:ring-2 focus:ring-[#e8c559] focus:border-transparent outline-none transition-all"
                                         />
                                     </div>
                                     <div>
-                                        <label className="block text-sm font-bold text-[var(--text-primary)] mb-1">Birth Date</label>
-                                        <input
-                                            type="date"
-                                            value={contactForm.birth_date || ""}
-                                            onChange={(e) => setContactForm({ ...contactForm, birth_date: e.target.value })}
-                                            className="w-full px-4 py-2 rounded-xl border border-[var(--glass-border)] bg-white dark:bg-[#232b2a] text-[var(--text-primary)]"
-                                        />
+                                        <label className="block text-sm font-bold text-[var(--text-primary)] mb-1.5">Birth Date</label>
+                                        <div className="flex gap-2">
+                                            <div className="relative w-24">
+                                                <select
+                                                    value={contactForm.birth_date ? new Date(contactForm.birth_date).getDate() : ""}
+                                                    onChange={(e) => {
+                                                        const day = parseInt(e.target.value);
+                                                        const currentDate = contactForm.birth_date ? new Date(contactForm.birth_date) : new Date(2000, 0, 1);
+                                                        currentDate.setDate(day);
+                                                        currentDate.setFullYear(2000);
+                                                        const newDate = new Date(Date.UTC(2000, currentDate.getMonth(), day));
+                                                        setContactForm({ ...contactForm, birth_date: newDate.toISOString().split('T')[0] });
+                                                    }}
+                                                    className="w-full px-4 py-2.5 rounded-xl border border-[var(--glass-border)] bg-gray-50 dark:bg-[#232b2a] text-[var(--text-primary)] appearance-none focus:ring-2 focus:ring-[#e8c559] focus:border-transparent outline-none transition-all cursor-pointer"
+                                                >
+                                                    <option value="">Day</option>
+                                                    {Array.from({ length: 31 }, (_, i) => i + 1).map(d => (
+                                                        <option key={d} value={d}>{d}</option>
+                                                    ))}
+                                                </select>
+                                                <div className="absolute inset-y-0 right-3 flex items-center pointer-events-none text-[var(--text-muted)]">
+                                                    <ChevronDown className="h-4 w-4" />
+                                                </div>
+                                            </div>
+                                            <div className="relative flex-1">
+                                                <select
+                                                    value={contactForm.birth_date ? new Date(contactForm.birth_date).getMonth() : ""}
+                                                    onChange={(e) => {
+                                                        const month = parseInt(e.target.value);
+                                                        const currentDate = contactForm.birth_date ? new Date(contactForm.birth_date) : new Date(2000, 0, 1);
+                                                        currentDate.setMonth(month);
+                                                        currentDate.setFullYear(2000);
+                                                        const currentDay = currentDate.getDate();
+                                                        const newDate = new Date(Date.UTC(2000, month, currentDay));
+                                                        setContactForm({ ...contactForm, birth_date: newDate.toISOString().split('T')[0] });
+                                                    }}
+                                                    className="w-full px-4 py-2.5 rounded-xl border border-[var(--glass-border)] bg-gray-50 dark:bg-[#232b2a] text-[var(--text-primary)] appearance-none focus:ring-2 focus:ring-[#e8c559] focus:border-transparent outline-none transition-all cursor-pointer"
+                                                >
+                                                    <option value="">Month</option>
+                                                    {MONTHS.map((m, i) => (
+                                                        <option key={i} value={i}>{m}</option>
+                                                    ))}
+                                                </select>
+                                                <div className="absolute inset-y-0 right-3 flex items-center pointer-events-none text-[var(--text-muted)]">
+                                                    <ChevronDown className="h-4 w-4" />
+                                                </div>
+                                            </div>
+                                        </div>
                                     </div>
                                 </div>
                                 <div className="grid grid-cols-2 gap-4">
                                     <div>
-                                        <label className="block text-sm font-bold text-[var(--text-primary)] mb-1">Email</label>
+                                        <label className="block text-sm font-bold text-[var(--text-primary)] mb-1.5">Email</label>
                                         <input
                                             type="email"
+                                            placeholder="email@example.com"
                                             value={contactForm.email}
                                             onChange={(e) => setContactForm({ ...contactForm, email: e.target.value })}
-                                            className="w-full px-4 py-2 rounded-xl border border-[var(--glass-border)] bg-white dark:bg-[#232b2a] text-[var(--text-primary)]"
+                                            className="w-full px-4 py-2.5 rounded-xl border border-[var(--glass-border)] bg-gray-50 dark:bg-[#232b2a] text-[var(--text-primary)] focus:ring-2 focus:ring-[#e8c559] focus:border-transparent outline-none transition-all"
                                         />
                                     </div>
                                     <div>
-                                        <label className="block text-sm font-bold text-[var(--text-primary)] mb-1">Phone</label>
+                                        <label className="block text-sm font-bold text-[var(--text-primary)] mb-1.5">Phone</label>
                                         <input
                                             type="text"
+                                            placeholder="+62..."
                                             value={contactForm.phone}
                                             onChange={(e) => setContactForm({ ...contactForm, phone: e.target.value })}
-                                            className="w-full px-4 py-2 rounded-xl border border-[var(--glass-border)] bg-white dark:bg-[#232b2a] text-[var(--text-primary)]"
+                                            className="w-full px-4 py-2.5 rounded-xl border border-[var(--glass-border)] bg-gray-50 dark:bg-[#232b2a] text-[var(--text-primary)] focus:ring-2 focus:ring-[#e8c559] focus:border-transparent outline-none transition-all"
                                         />
                                     </div>
                                 </div>
                                 <div>
-                                    <label className="block text-sm font-bold text-[var(--text-primary)] mb-1">Notes</label>
+                                    <label className="block text-sm font-bold text-[var(--text-primary)] mb-1.5">Notes</label>
                                     <textarea
-                                        rows={2}
+                                        rows={3}
+                                        placeholder="Additional notes about this contact..."
                                         value={contactForm.notes}
                                         onChange={(e) => setContactForm({ ...contactForm, notes: e.target.value })}
-                                        className="w-full px-4 py-2 rounded-xl border border-[var(--glass-border)] bg-white dark:bg-[#232b2a] text-[var(--text-primary)]"
+                                        className="w-full px-4 py-2.5 rounded-xl border border-[var(--glass-border)] bg-gray-50 dark:bg-[#232b2a] text-[var(--text-primary)] focus:ring-2 focus:ring-[#e8c559] focus:border-transparent outline-none transition-all resize-none"
                                     />
                                 </div>
-                                <label className="flex items-center gap-2">
+
+                                <label className="flex items-center gap-3 p-3 rounded-xl border border-[var(--glass-border)] hover:bg-gray-50 dark:hover:bg-white/5 cursor-pointer transition-colors group">
+                                    <div className={`w-5 h-5 rounded border flex items-center justify-center transition-colors ${contactForm.is_primary ? "bg-[#e8c559] border-[#e8c559]" : "border-gray-300 dark:border-gray-600 group-hover:border-[#e8c559]"}`}>
+                                        {contactForm.is_primary && <Check className="h-3.5 w-3.5 text-black" />}
+                                    </div>
                                     <input
                                         type="checkbox"
                                         checked={contactForm.is_primary}
                                         onChange={(e) => setContactForm({ ...contactForm, is_primary: e.target.checked })}
-                                        className="rounded"
+                                        className="hidden"
                                     />
-                                    <span className="text-sm text-[var(--text-primary)]">Set as primary contact</span>
+                                    <div className="flex flex-col">
+                                        <span className="text-sm font-bold text-[var(--text-primary)]">Primary Contact</span>
+                                        <span className="text-xs text-[var(--text-secondary)]">Set this person as the main point of contact</span>
+                                    </div>
                                 </label>
-                                <div className="flex justify-end gap-3 pt-4">
-                                    <button type="button" onClick={() => { setShowContactForm(false); setEditingContact(null); }} className="px-4 py-2 rounded-xl border border-[var(--glass-border)] text-[var(--text-secondary)]">
+
+                                <div className="flex justify-end gap-3 pt-4 border-t border-[var(--glass-border)]">
+                                    <button
+                                        type="button"
+                                        onClick={() => { setShowContactForm(false); setEditingContact(null); }}
+                                        className="px-6 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300 font-medium hover:bg-gray-50 dark:hover:bg-white/5 transition-colors"
+                                    >
                                         Cancel
                                     </button>
-                                    <button type="submit" className="px-6 py-2 rounded-xl bg-[#e8c559] text-[#171611] font-bold">
-                                        {editingContact ? "Update" : "Add Contact"}
+                                    <button
+                                        type="submit"
+                                        className="px-6 py-2.5 rounded-xl bg-[#e8c559] text-[#171611] font-bold hover:bg-[#d4b44e] shadow-lg shadow-[#e8c559]/20 transition-all transform hover:scale-[1.02] active:scale-[0.98]"
+                                    >
+                                        {editingContact ? "Save Changes" : "Add Contact"}
                                     </button>
                                 </div>
                             </form>

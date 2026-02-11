@@ -1,11 +1,16 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { User, Mail, Lock, Camera, Save, Briefcase, Calendar, Shield, X, Check } from "lucide-react";
+import { User, Mail, Lock, Camera, Save, Briefcase, Calendar, Shield, X, Check, ChevronDown } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { createClient } from "@/lib/supabase/client";
 import Cropper from "react-easy-crop";
 import getCroppedImg from "@/lib/imageUtils";
+
+const MONTHS = [
+    "Januari", "Februari", "Maret", "April", "Mei", "Juni",
+    "Juli", "Agustus", "September", "Oktober", "November", "Desember"
+];
 
 export default function ProfilePage() {
     const { profile, session, user, isLoading: authLoading, refreshProfile } = useAuth();
@@ -703,15 +708,53 @@ export default function ProfilePage() {
                             </div>
 
                             <div className="space-y-2">
-                                <label className="text-xs font-bold text-gray-500 uppercase tracking-wider">Date of Birth</label>
-                                <div className="relative">
-                                    <Calendar className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-black dark:text-gray-500" />
-                                    <input
-                                        type="date"
-                                        value={formData.birthDate}
-                                        onChange={(e) => setFormData({ ...formData, birthDate: e.target.value })}
-                                        className="w-full bg-white/5 border border-white/10 rounded-xl pl-10 pr-4 py-3 text-white focus:outline-none focus:border-[#e8c559]/50 transition-colors dark:[color-scheme:dark]"
-                                    />
+                                <label className="text-xs font-bold text-gray-500 uppercase tracking-wider">Date of Birth (Day/Month)</label>
+                                <div className="flex gap-2">
+                                    <div className="relative w-24">
+                                        <select
+                                            value={formData.birthDate ? new Date(formData.birthDate).getDate() : ""}
+                                            onChange={(e) => {
+                                                const day = parseInt(e.target.value);
+                                                const currentDate = formData.birthDate ? new Date(formData.birthDate) : new Date(2000, 0, 1);
+                                                currentDate.setDate(day);
+                                                currentDate.setFullYear(2000); // Enforce year 2000
+                                                const newDate = new Date(Date.UTC(2000, currentDate.getMonth(), day));
+                                                setFormData({ ...formData, birthDate: newDate.toISOString().split('T')[0] });
+                                            }}
+                                            className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white appearance-none focus:outline-none focus:border-[#e8c559]/50 transition-colors cursor-pointer"
+                                        >
+                                            <option value="">Day</option>
+                                            {Array.from({ length: 31 }, (_, i) => i + 1).map(d => (
+                                                <option key={d} value={d}>{d}</option>
+                                            ))}
+                                        </select>
+                                        <div className="absolute inset-y-0 right-3 flex items-center pointer-events-none text-gray-400">
+                                            <ChevronDown className="h-4 w-4" />
+                                        </div>
+                                    </div>
+                                    <div className="relative flex-1">
+                                        <select
+                                            value={formData.birthDate ? new Date(formData.birthDate).getMonth() : ""}
+                                            onChange={(e) => {
+                                                const month = parseInt(e.target.value);
+                                                const currentDate = formData.birthDate ? new Date(formData.birthDate) : new Date(2000, 0, 1);
+                                                currentDate.setMonth(month);
+                                                currentDate.setFullYear(2000); // Enforce year 2000
+                                                const currentDay = currentDate.getDate();
+                                                const newDate = new Date(Date.UTC(2000, month, currentDay));
+                                                setFormData({ ...formData, birthDate: newDate.toISOString().split('T')[0] });
+                                            }}
+                                            className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white appearance-none focus:outline-none focus:border-[#e8c559]/50 transition-colors cursor-pointer"
+                                        >
+                                            <option value="">Month</option>
+                                            {MONTHS.map((m, i) => (
+                                                <option key={i} value={i}>{m}</option>
+                                            ))}
+                                        </select>
+                                        <div className="absolute inset-y-0 right-3 flex items-center pointer-events-none text-gray-400">
+                                            <ChevronDown className="h-4 w-4" />
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
                         </div>
