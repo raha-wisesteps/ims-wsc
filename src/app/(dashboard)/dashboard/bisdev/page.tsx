@@ -49,7 +49,10 @@ export default function BisDevDashboardPage() {
         salesBooking: 0,
         remainingTargetContract: 0,
         annualTarget: 4000000000,
+
         totalLeadsValue: 0,
+        prospectValue: 0,
+        proposalValue: 0,
     });
 
     const [topClients, setTopClients] = useState<Array<{ name: string; value: number }>>([]);
@@ -135,7 +138,7 @@ export default function BisDevDashboardPage() {
                 // 2. Fetch All Opportunities
                 const { data: rawOpportunities, error } = await supabase
                     .from('crm_opportunities')
-                    .select('*')
+                    .select('*, has_proposal')
                     .order('updated_at', { ascending: false });
 
                 if (error) throw error;
@@ -181,6 +184,10 @@ export default function BisDevDashboardPage() {
                         if (o.stage === 'proposal' && ['sent', 'follow_up'].includes(o.status)) {
                             journeyIds.add(o.id);
                         }
+                        // New Logic: Check manual flag
+                        if (o.has_proposal) {
+                            journeyIds.add(o.id);
+                        }
                     });
 
                     proposalCount = journeyIds.size;
@@ -192,8 +199,31 @@ export default function BisDevDashboardPage() {
                 );
                 const lostCount = lostOpps.length;
 
-                // Sales Conversion: (Sales / Proposals Sent) * 100
-                const salesConversion = proposalCount > 0 ? (salesCount / proposalCount) * 100 : 0;
+                // Sales Conversion: (Qualified Sales / Proposals Sent) * 100
+                // Qualified Sales = Sales that originated from Leads OR have a proposal
+                let qualifiedSalesCount = 0;
+
+                if (salesOpps.length > 0) {
+                    // Check for leads history or proposal flag
+                    const salesOppIds = salesOpps.map(o => o.id);
+
+                    // Fetch journey logs for these sales opportunities to see if they came from 'leads' or 'proposal'
+                    const { data: salesJourneys } = await supabase
+                        .from('crm_journey')
+                        .select('opportunity_id')
+                        .in('opportunity_id', salesOppIds)
+                        .in('from_stage', ['leads', 'proposal']); // Check if they originated from these stages
+
+                    const qualifiedJourneyIds = new Set((salesJourneys || []).map((j: { opportunity_id: string }) => j.opportunity_id));
+
+                    salesOpps.forEach(o => {
+                        if (o.has_proposal || qualifiedJourneyIds.has(o.id)) {
+                            qualifiedSalesCount++;
+                        }
+                    });
+                }
+
+                const salesConversion = proposalCount > 0 ? (qualifiedSalesCount / proposalCount) * 100 : 0;
 
                 // Loss Rate: (Lost / Proposals Sent) * 100
                 const lossRate = proposalCount > 0 ? (lostCount / proposalCount) * 100 : 0;
@@ -207,9 +237,21 @@ export default function BisDevDashboardPage() {
                 const remainingTargetCashIn = Math.max(0, annualTarget - cashIn);
                 const remainingTargetContract = Math.max(0, annualTarget - salesBooking);
 
-                // Total Leads Value: Sum of ALL opportunities value regardless of stage (Lead + Proposal + Sales + Lost)
-                // This represents the total "Pipeline Value" generated.
-                const totalLeadsValue = opportunities.reduce((sum, o) => sum + (o.value || 0), 0);
+                // Prospect Value: Sum of value in 'prospect' stage
+                const prospectValue = opportunities
+                    .filter(o => o.stage === 'prospect')
+                    .reduce((sum, o) => sum + (o.value || 0), 0);
+
+                // Proposal Value: Sum of value in 'proposal' stage
+                const proposalValue = opportunities
+                    .filter(o => o.stage === 'proposal')
+                    .reduce((sum, o) => sum + (o.value || 0), 0);
+
+                // Total Leads Value: Sum of value in 'leads' stage only (Snapshot view)
+                // Decreases when moved to sales.
+                const leadsValue = opportunities
+                    .filter(o => o.stage === 'leads')
+                    .reduce((sum, o) => sum + (o.value || 0), 0);
 
                 // Top Clients (Closed Won) - Based on ALL time or selected year? 
                 // Context: "Top Clients" usually implies all-time value or current fiscal year. 
@@ -255,7 +297,9 @@ export default function BisDevDashboardPage() {
                     salesBooking,
                     remainingTargetContract,
                     annualTarget,
-                    totalLeadsValue,
+                    totalLeadsValue: leadsValue,
+                    prospectValue,
+                    proposalValue,
                 });
 
                 // 4. Prepare Chart Data
@@ -460,12 +504,28 @@ export default function BisDevDashboardPage() {
                     borderClass="border-l-rose-400"
                 />
                 <MetricCard
-                    title="Total Leads Value"
+                    title="Prospect Value"
+                    value={formatCurrency(stats.prospectValue)}
+                    icon={Target}
+                    colorClass="text-purple-500"
+                    borderClass="border-l-purple-500"
+                    subtext="Stage: Prospect"
+                />
+                <MetricCard
+                    title="Proposal Value"
+                    value={formatCurrency(stats.proposalValue)}
+                    icon={FileText}
+                    colorClass="text-blue-500"
+                    borderClass="border-l-blue-500"
+                    subtext="Stage: Proposal"
+                />
+                <MetricCard
+                    title="Leads Value"
                     value={formatCurrency(stats.totalLeadsValue)}
                     icon={DollarSign}
                     colorClass="text-indigo-500"
                     borderClass="border-l-indigo-500"
-                    subtext="Potential Value"
+                    subtext="Stage: Leads"
                 />
 
                 {/* Row 2 - Financials */}

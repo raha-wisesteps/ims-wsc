@@ -233,13 +233,15 @@ export default function ClientDetailPage() {
         opportunity_type: "" as "" | "customer_based" | "product_based",
         cash_in: 0,
         notes: "",
+
         created_at: "", // Added for custom date
+        has_proposal: false,
     });
 
     // Opportunity Status Config
     const OPPORTUNITY_STATUSES = {
         prospect: ['pending', 'on_going', 'sent', 'follow_up'],
-        proposal: ['pending', 'on_going', 'sent', 'follow_up'],
+        proposal: ['pending', 'on_going', 'sent'],
         leads: ['pending', 'low', 'moderate', 'hot'],
         sales: ['pending', 'down_payment', 'account_receivable', 'full_payment', 'won'],
         closed_won: ["won"],
@@ -788,6 +790,7 @@ export default function ClientDetailPage() {
                         notes: opportunityForm.notes || null,
                         created_at: finalDate, // Allow updating created_at
                         updated_at: new Date().toISOString(),
+                        has_proposal: opportunityForm.has_proposal,
                     })
                     .eq("id", editingOpportunity.id);
 
@@ -805,6 +808,30 @@ export default function ClientDetailPage() {
                         created_by: profile.id,
                     });
                 }
+
+                // Auto-create "Proposal Sent" log if has_proposal is checked and log doesn't exist
+                if (opportunityForm.stage === 'sales' && opportunityForm.has_proposal) {
+                    const { data: existingLog } = await supabase
+                        .from('crm_journey')
+                        .select('id')
+                        .eq('opportunity_id', editingOpportunity.id)
+                        .eq('to_stage', 'proposal')
+                        .eq('status', 'sent')
+                        .single();
+
+                    if (!existingLog) {
+                        await supabase.from("crm_journey").insert({
+                            client_id: clientId,
+                            opportunity_id: editingOpportunity.id,
+                            from_stage: 'prospect', // Assumed previous stage
+                            to_stage: 'proposal',
+                            status: 'sent',
+                            notes: 'System Generated: Marked as "Through Proposal" manually.',
+                            created_by: profile.id,
+                            created_at: editingOpportunity.created_at || new Date().toISOString() // Backdate log
+                        });
+                    }
+                }
             } else {
                 // Insert New
                 const newOpp = {
@@ -819,6 +846,7 @@ export default function ClientDetailPage() {
                     notes: opportunityForm.notes || null,
                     created_at: finalDate, // Set custom date
                     created_by: profile.id,
+                    has_proposal: opportunityForm.has_proposal,
                 };
 
                 const { data: opp, error } = await supabase
@@ -843,22 +871,37 @@ export default function ClientDetailPage() {
                     created_at: finalDate, // Sync journey log with custom date
                     created_by: profile.id,
                 });
-            }
 
-            setShowOpportunityForm(false);
-            setEditingOpportunity(null);
-            setOpportunityForm({
-                title: "",
-                stage: "prospect",
-                status: "on_going",
-                value: 0,
-                priority: "medium",
-                opportunity_type: "",
-                cash_in: 0,
-                notes: "",
-                created_at: ""
-            });
-            fetchAllData();
+                // Auto-create "Proposal Sent" log if has_proposal is checked
+                if (opportunityForm.stage === 'sales' && opportunityForm.has_proposal) {
+                    await supabase.from("crm_journey").insert({
+                        client_id: clientId,
+                        opportunity_id: opp.id,
+                        from_stage: 'prospect',
+                        to_stage: 'proposal',
+                        status: 'sent',
+                        notes: 'System Generated: Marked as "Through Proposal" manually.',
+                        created_by: profile.id,
+                        created_at: finalDate // Backdate log to creation time
+                    });
+                }
+
+                setShowOpportunityForm(false);
+                setEditingOpportunity(null);
+                setOpportunityForm({
+                    title: "",
+                    stage: "prospect",
+                    status: "on_going",
+                    value: 0,
+                    priority: "medium",
+                    opportunity_type: "",
+                    cash_in: 0,
+                    notes: "",
+                    created_at: "",
+                    has_proposal: false,
+                });
+                fetchAllData();
+            }
         } catch (error: any) {
             console.error("Error saving opportunity:", error);
             alert(`Failed to save opportunity. Error: ${error.message || JSON.stringify(error)}`);
@@ -877,6 +920,7 @@ export default function ClientDetailPage() {
             cash_in: opp.cash_in || 0,
             notes: opp.notes || "",
             created_at: opp.created_at ? new Date(opp.created_at).toISOString().split('T')[0] : "",
+            has_proposal: opp.has_proposal || false,
         });
         setShowOpportunityForm(true);
     };
@@ -1006,72 +1050,117 @@ export default function ClientDetailPage() {
             <div className="flex-1 overflow-y-auto">
                 {/* Overview Tab */}
                 {/* Dashboard Metrics */}
+                {/* Dashboard Metrics */}
                 {activeTab === "overview" && (
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
                         {(() => {
-                            // Metrics Calculation
+                            // --- Logic aligned with Main Dashboard (src/app/(dashboard)/dashboard/bisdev/page.tsx) ---
+
+                            // 1. Sales Count: Stage == 'sales'
                             const salesOpps = opportunities.filter(o => o.stage === 'sales');
-                            const leadsOpps = opportunities.filter(o => o.stage === 'leads');
+                            const salesCount = salesOpps.length;
 
-                            // Conversion Rate: Strict Leads -> Sales
-                            // Numerator: Unique Opportunities that transitioned from 'leads' to 'sales'
-                            const convertedOppsIds = new Set(journeyHistory
-                                .filter((j: any) => j.from_stage === 'leads' && j.to_stage === 'sales')
-                                .map((j: any) => j.opportunity_id)
-                            );
-                            const convertedCount = convertedOppsIds.size;
+                            // 2. Proposals Sent: Status == 'sent' OR Stage > 'proposal'
+                            // Logic: Journey logs (history) OR Current State OR Manual Flag
+                            const oppIds = opportunities.map(o => o.id);
+                            let proposalCount = 0;
+                            const journeyIds = new Set<string>();
 
-                            // Denominator: Current Leads + Converted
-                            const totalLeadsFunnel = leadsOpps.length + convertedCount;
+                            // a) Check Journey History
+                            if (journeyHistory && journeyHistory.length > 0) {
+                                journeyHistory.forEach((j: any) => {
+                                    if (j.to_stage === 'proposal' && ['sent', 'follow_up'].includes(j.status)) {
+                                        journeyIds.add(j.opportunity_id);
+                                    }
+                                });
+                            }
 
-                            const conversionRate = totalLeadsFunnel > 0
-                                ? ((convertedCount / totalLeadsFunnel) * 100).toFixed(1)
+                            // b) Check Current State & Manual Flag
+                            opportunities.forEach(o => {
+                                if (o.stage === 'proposal' && ['sent', 'follow_up'].includes(o.status)) {
+                                    journeyIds.add(o.id);
+                                }
+                                if (o.has_proposal) {
+                                    journeyIds.add(o.id);
+                                }
+                            });
+                            proposalCount = journeyIds.size;
+
+                            // 3. Sales Conversion: (Qualified Sales / Proposals Sent) * 100
+                            let qualifiedSalesCount = 0;
+                            const salesOppIds = salesOpps.map(o => o.id);
+                            const qualifiedSalesJourneyIds = new Set<string>();
+
+                            if (journeyHistory && journeyHistory.length > 0) {
+                                journeyHistory.forEach((j: any) => {
+                                    if (salesOppIds.includes(j.opportunity_id) && ['leads', 'proposal'].includes(j.from_stage)) {
+                                        qualifiedSalesJourneyIds.add(j.opportunity_id);
+                                    }
+                                });
+                            }
+
+                            salesOpps.forEach(o => {
+                                if (o.has_proposal || qualifiedSalesJourneyIds.has(o.id)) {
+                                    qualifiedSalesCount++;
+                                }
+                            });
+
+                            const conversionRate = proposalCount > 0
+                                ? ((qualifiedSalesCount / proposalCount) * 100).toFixed(1)
                                 : '0.0';
 
-                            // Ongoing Sales (Receivables)
-                            const ongoingSalesValue = salesOpps.reduce((sum, o) => sum + (o.value || 0), 0);
-                            const ongoingSalesCashIn = salesOpps.reduce((sum, o) => sum + (o.cash_in || 0), 0);
+                            // 4. Financials
+                            // Cash In: Sum of cash_in from ALL opportunities (usually sales)
+                            const cashIn = opportunities.reduce((sum, o) => sum + (o.cash_in || 0), 0);
 
-                            // Total Sales (Won) - Only those marked as 'won'
-                            // User request: "Total Sales (Won)" should strictly be WON status.
-                            const wonSales = salesOpps.filter(o => o.status === 'won');
-                            const totalWonValue = wonSales.reduce((sum, o) => sum + (o.value || 0), 0);
+                            // Sales Booking: Sum of Value in 'sales' stage
+                            const salesBooking = salesOpps.reduce((sum, o) => sum + (o.value || 0), 0);
+
+                            // Leads Value: Sum of value in 'leads' stage only (Snapshot view)
+                            const leadsValue = opportunities
+                                .filter(o => o.stage === 'leads')
+                                .reduce((sum, o) => sum + (o.value || 0), 0);
 
                             return (
                                 <>
+                                    {/* Sales Booking (Value) */}
                                     <div className="p-4 rounded-xl bg-white dark:bg-[#1c2120] border border-[var(--glass-border)] flex flex-col items-center justify-center text-center">
-                                        <p className="text-xs text-[var(--text-muted)] uppercase font-bold tracking-wider mb-1">Total Sales (Won)</p>
+                                        <p className="text-xs text-[var(--text-muted)] uppercase font-bold tracking-wider mb-1">Sales Booking</p>
+                                        <p className="text-xl font-bold text-blue-600">
+                                            Rp {salesBooking.toLocaleString('id-ID')}
+                                        </p>
+                                        <p className="text-[10px] text-[var(--text-muted)]">Total Contract Value</p>
+                                    </div>
+
+                                    {/* Cash In (Revenue) */}
+                                    <div className="p-4 rounded-xl bg-white dark:bg-[#1c2120] border border-[var(--glass-border)] flex flex-col items-center justify-center text-center">
+                                        <p className="text-xs text-[var(--text-muted)] uppercase font-bold tracking-wider mb-1">Cash In</p>
                                         <p className="text-xl font-bold text-emerald-600">
-                                            Rp {totalWonValue.toLocaleString('id-ID')}
+                                            Rp {cashIn.toLocaleString('id-ID')}
                                         </p>
+                                        <p className="text-[10px] text-[var(--text-muted)]">Actual Paid Amount</p>
                                     </div>
 
-                                    {/* Ongoing Sales Card - Cash In / Value */}
+                                    {/* Leads Value */}
                                     <div className="p-4 rounded-xl bg-white dark:bg-[#1c2120] border border-[var(--glass-border)] flex flex-col items-center justify-center text-center">
-                                        <p className="text-xs text-[var(--text-muted)] uppercase font-bold tracking-wider mb-1">Ongoing Sales (Cash In)</p>
-                                        <div className="flex flex-col items-center">
-                                            <span className="text-lg font-bold text-blue-600">
-                                                Rp {ongoingSalesCashIn.toLocaleString('id-ID')}
-                                            </span>
-                                            <span className="text-xs text-[var(--text-secondary)] border-t border-[var(--glass-border)] pt-0.5 mt-0.5 w-full">
-                                                of Rp {ongoingSalesValue.toLocaleString('id-ID')}
-                                            </span>
-                                        </div>
+                                        <p className="text-xs text-[var(--text-muted)] uppercase font-bold tracking-wider mb-1">Leads Value</p>
+                                        <p className="text-xl font-bold text-indigo-500">
+                                            Rp {leadsValue.toLocaleString('id-ID')}
+                                        </p>
+                                        <p className="text-[10px] text-[var(--text-muted)]">Stage: Leads</p>
                                     </div>
 
-                                    <div className="p-4 rounded-xl bg-white dark:bg-[#1c2120] border border-[var(--glass-border)] flex flex-col items-center justify-center text-center">
-                                        <p className="text-xs text-[var(--text-muted)] uppercase font-bold tracking-wider mb-1">Total Leads (Value)</p>
-                                        <p className="text-xl font-bold text-amber-600">
-                                            {/* Total Value of ACTIVE leads */}
-                                            Rp {opportunities.reduce((sum, o) => sum + (o.value || 0), 0).toLocaleString('id-ID')}
-                                        </p>
-                                    </div>
+                                    {/* Conversion Rate */}
                                     <div className="p-4 rounded-xl bg-white dark:bg-[#1c2120] border border-[var(--glass-border)] flex flex-col items-center justify-center text-center">
                                         <p className="text-xs text-[var(--text-muted)] uppercase font-bold tracking-wider mb-1">Conversion Rate</p>
-                                        <p className="text-xl font-bold text-purple-600">
+                                        <p className="text-xl font-bold text-amber-500">
                                             {conversionRate}%
                                         </p>
-                                        <p className="text-[10px] text-[var(--text-muted)]">Leads → Sales</p>
+                                        <div className="text-[10px] text-[var(--text-muted)] flex items-center gap-1">
+                                            <span>{salesCount} Sales</span>
+                                            <span>/</span>
+                                            <span>{proposalCount} Proposals</span>
+                                        </div>
                                     </div>
                                 </>
                             );
@@ -1596,7 +1685,7 @@ export default function ClientDetailPage() {
                                     <button
                                         onClick={() => {
                                             setEditingOpportunity(null);
-                                            setOpportunityForm({ title: "", stage: "prospect", status: "on_going", value: 0, priority: "medium", opportunity_type: "", cash_in: 0, notes: "", created_at: "" });
+                                            setOpportunityForm({ title: "", stage: "prospect", status: "on_going", value: 0, priority: "medium", opportunity_type: "", cash_in: 0, notes: "", created_at: "", has_proposal: false });
                                             setShowOpportunityForm(true);
                                         }}
                                         className="px-4 py-2 bg-[#e8c559] text-white font-bold rounded-xl hover:bg-[#d4b44e] transition-colors flex items-center gap-2"
@@ -2156,6 +2245,21 @@ export default function ClientDetailPage() {
                                         </div>
                                     )}
                                 </div>
+                                {opportunityForm.stage === 'sales' && (
+                                    <div className="flex items-center gap-2 bg-gray-50 dark:bg-white/5 p-3 rounded-xl border border-[var(--glass-border)]">
+                                        <input
+                                            type="checkbox"
+                                            id="has_proposal"
+                                            checked={opportunityForm.has_proposal || false}
+                                            onChange={(e) => setOpportunityForm({ ...opportunityForm, has_proposal: e.target.checked })}
+                                            className="w-4 h-4 rounded border-gray-300 text-[#e8c559] focus:ring-[#e8c559]"
+                                        />
+                                        <label htmlFor="has_proposal" className="text-sm font-bold text-[var(--text-primary)] cursor-pointer">
+                                            Melalui Proposal?
+                                        </label>
+                                        <span className="text-xs text-[var(--text-muted)] ml-1">(Centang jika penjualan ini diawali dengan proposal)</span>
+                                    </div>
+                                )}
 
                                 <div>
                                     <label className="block text-sm font-bold text-[var(--text-primary)] mb-1">Priority</label>

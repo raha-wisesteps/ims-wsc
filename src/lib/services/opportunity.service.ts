@@ -29,6 +29,7 @@ export interface Opportunity {
     };
     jira_link?: string;
     drive_link?: string;
+    has_proposal?: boolean;
 }
 
 export const opportunityService = {
