@@ -1,4 +1,4 @@
-@import "tailwindcss";
+﻿@import "tailwindcss";
 
 @plugin "tailwindcss-animate";
 
@@ -77,6 +77,10 @@
   --text-primary: #e9e9e9;
   --text-secondary: #a0a8a6;
   --text-muted: #6b7280;
+
+  /* Tooltip (Charts) */
+  --tooltip-bg: #1c2120;
+  --tooltip-text: #e9e9e9;
 }
 
 /* CSS Variables - Light Mode */
@@ -146,6 +150,10 @@
   --text-primary: #1c2120;
   --text-secondary: #64748b;
   --text-muted: #94a3b8;
+
+  /* Tooltip (Charts) */
+  --tooltip-bg: #ffffff;
+  --tooltip-text: #1c2120;
 }
 
 @theme {
@@ -1137,7 +1145,7 @@ html.dark .career-text-current,
 }
 
 /* ===== BACKGROUND COLORS ===== */
-/* White opacity backgrounds → Black opacity */
+/* White opacity backgrounds â†’ Black opacity */
 .light .bg-white\/5 {
   background-color: rgba(0, 0, 0, 0.03) !important;
 }
@@ -1150,7 +1158,7 @@ html.dark .career-text-current,
   background-color: rgba(0, 0, 0, 0.08) !important;
 }
 
-/* Black opacity backgrounds → lighter in light mode */
+/* Black opacity backgrounds â†’ lighter in light mode */
 .light .bg-black\/10 {
   background-color: rgba(0, 0, 0, 0.03) !important;
 }

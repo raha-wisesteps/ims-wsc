@@ -30,6 +30,17 @@ export interface Opportunity {
     jira_link?: string;
     drive_link?: string;
     has_proposal?: boolean;
+    revenue?: Revenue[]; // Relation to crm_revenue
+}
+
+export interface Revenue {
+    id: string;
+    opportunity_id: string;
+    amount: number;
+    payment_date: string;
+    notes?: string;
+    created_at: string;
+    created_by?: string;
 }
 
 export const opportunityService = {
@@ -44,7 +55,8 @@ export const opportunityService = {
                     id, 
                     company_name,
                     contacts:crm_client_contacts(name, email, phone, position)
-                )
+                ),
+                revenue:crm_revenue(*)
             `)
             .order('updated_at', { ascending: false });
         

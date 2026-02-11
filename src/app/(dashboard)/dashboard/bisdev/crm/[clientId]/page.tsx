@@ -340,10 +340,10 @@ export default function ClientDetailPage() {
 
             setContacts(contactsData || []);
 
-            // Fetch Opportunities
+            // Fetch Opportunities with Revenue
             const { data: opportunitiesData } = await supabase
                 .from("crm_opportunities")
-                .select("*")
+                .select("*, revenue:crm_revenue(*)")
                 .eq("client_id", clientId)
                 .order("updated_at", { ascending: false });
 
@@ -598,11 +598,72 @@ export default function ClientDetailPage() {
 
             setShowTagForm(false);
             fetchAllData(); // Refresh to update UI
-        } catch (error: any) {
+        } catch (error) {
             console.error("Error adding tag:", error);
-            alert(`Failed to add tag: ${error.message || JSON.stringify(error)}`);
+            alert("Failed to add tag");
         }
     };
+
+    // Revenue Management
+    const [revenueForm, setRevenueForm] = useState({
+        amount: 0,
+        payment_date: new Date().toISOString().split('T')[0],
+        notes: ''
+    });
+    const [pendingRevenue, setPendingRevenue] = useState<{ amount: number; payment_date: string; notes: string; _tempId: string }[]>([]);
+
+    const handleAddRevenue = (e: React.MouseEvent) => {
+        e.preventDefault();
+        if (!revenueForm.amount || revenueForm.amount <= 0) return;
+
+        // Add to local pending list instead of DB
+        setPendingRevenue(prev => [
+            ...prev,
+            {
+                amount: revenueForm.amount,
+                payment_date: revenueForm.payment_date,
+                notes: revenueForm.notes,
+                _tempId: crypto.randomUUID()
+            }
+        ]);
+
+        // Reset form
+        setRevenueForm({
+            amount: 0,
+            payment_date: new Date().toISOString().split('T')[0],
+            notes: ''
+        });
+    };
+
+    const handleDeletePendingRevenue = (tempId: string) => {
+        setPendingRevenue(prev => prev.filter(r => r._tempId !== tempId));
+    };
+
+    const handleDeleteRevenue = async (revenueId: string) => {
+        if (!confirm("Are you sure you want to delete this payment record?")) return;
+        try {
+            const { error } = await supabase.from('crm_revenue').delete().eq('id', revenueId);
+            if (error) throw error;
+
+            // Refresh detailed view
+            const { data: updatedOpp } = await supabase
+                .from('crm_opportunities')
+                .select('*, revenue:crm_revenue(*)')
+                .eq('id', editingOpportunity.id)
+                .single();
+
+            if (updatedOpp) {
+                setEditingOpportunity(updatedOpp);
+            }
+
+            fetchAllData();
+        } catch (error) {
+            console.error("Error deleting revenue:", error);
+            alert("Failed to delete payment record.");
+        }
+    };
+
+
 
     const handleDeleteTag = async (tagId: string) => {
         if (!confirm("Remove this tag?")) return;
@@ -784,8 +845,6 @@ export default function ClientDetailPage() {
                         stage: opportunityForm.stage,
                         status: opportunityForm.status,
                         value: opportunityForm.value,
-                        cash_in: opportunityForm.cash_in,
-                        priority: opportunityForm.priority,
                         opportunity_type: opportunityForm.opportunity_type || null,
                         notes: opportunityForm.notes || null,
                         created_at: finalDate, // Allow updating created_at
@@ -832,6 +891,36 @@ export default function ClientDetailPage() {
                         });
                     }
                 }
+
+                // Save pending revenue entries to DB
+                if (pendingRevenue.length > 0) {
+                    const revenueEntries = pendingRevenue.map(r => ({
+                        opportunity_id: editingOpportunity.id,
+                        amount: r.amount,
+                        payment_date: r.payment_date,
+                        notes: r.notes,
+                        created_by: profile.id
+                    }));
+                    const { error: revError } = await supabase.from('crm_revenue').insert(revenueEntries);
+                    if (revError) console.error('Error saving pending revenue:', revError);
+                }
+
+                setShowOpportunityForm(false);
+                setEditingOpportunity(null);
+                setPendingRevenue([]);
+                setOpportunityForm({
+                    title: "",
+                    stage: "prospect",
+                    status: "on_going",
+                    value: 0,
+                    priority: "medium",
+                    opportunity_type: "",
+                    cash_in: 0,
+                    notes: "",
+                    created_at: "",
+                    has_proposal: false,
+                });
+                fetchAllData();
             } else {
                 // Insert New
                 const newOpp = {
@@ -840,7 +929,6 @@ export default function ClientDetailPage() {
                     stage: opportunityForm.stage, // Stage is NOT NULL, check allowed values
                     status: opportunityForm.status, // Status is NOT NULL
                     value: opportunityForm.value,
-                    cash_in: opportunityForm.cash_in,
                     priority: opportunityForm.priority,
                     opportunity_type: opportunityForm.opportunity_type,
                     notes: opportunityForm.notes || null,
@@ -886,8 +974,22 @@ export default function ClientDetailPage() {
                     });
                 }
 
+                // Save pending revenue entries for new opportunity
+                if (pendingRevenue.length > 0) {
+                    const revenueEntries = pendingRevenue.map(r => ({
+                        opportunity_id: opp.id,
+                        amount: r.amount,
+                        payment_date: r.payment_date,
+                        notes: r.notes,
+                        created_by: profile.id
+                    }));
+                    const { error: revError } = await supabase.from('crm_revenue').insert(revenueEntries);
+                    if (revError) console.error('Error saving pending revenue:', revError);
+                }
+
                 setShowOpportunityForm(false);
                 setEditingOpportunity(null);
+                setPendingRevenue([]);
                 setOpportunityForm({
                     title: "",
                     stage: "prospect",
@@ -910,6 +1012,7 @@ export default function ClientDetailPage() {
 
     const openEditOpportunity = (opp: any) => {
         setEditingOpportunity(opp);
+        setPendingRevenue([]);
         setOpportunityForm({
             title: opp.title,
             stage: opp.stage,
@@ -1110,8 +1213,11 @@ export default function ClientDetailPage() {
                                 : '0.0';
 
                             // 4. Financials
-                            // Cash In: Sum of cash_in from ALL opportunities (usually sales)
-                            const cashIn = opportunities.reduce((sum, o) => sum + (o.cash_in || 0), 0);
+                            // Cash In: Sum of payments (revenue) from ALL opportunities
+                            const cashIn = opportunities.reduce((sum, o) => {
+                                const oppRevenue = o.revenue?.reduce((rSum: number, r: any) => rSum + (r.amount || 0), 0) || 0;
+                                return sum + oppRevenue;
+                            }, 0);
 
                             // Sales Booking: Sum of Value in 'sales' stage
                             const salesBooking = salesOpps.reduce((sum, o) => sum + (o.value || 0), 0);
@@ -2213,34 +2319,119 @@ export default function ClientDetailPage() {
                                     </div>
 
                                     {opportunityForm.stage === 'sales' && (
-                                        <div>
-                                            <label className="block text-sm font-bold text-[var(--text-primary)] mb-1">Cash In (IDR)</label>
-                                            <div className="space-y-1">
+                                        <div className="col-span-2 mt-4 border-t border-[var(--glass-border)] pt-4">
+                                            <div className="flex items-center justify-between mb-2">
+                                                <label className="block text-sm font-bold text-[var(--text-primary)]">
+                                                    Revenue & Payments (Cash In)
+                                                </label>
+                                                <div className="text-right">
+                                                    <p className="text-sm font-bold text-emerald-600">
+                                                        Total: Rp {((editingOpportunity?.revenue?.reduce((sum: number, r: any) => sum + r.amount, 0) || 0) + pendingRevenue.reduce((sum, r) => sum + r.amount, 0)).toLocaleString('id-ID')}
+                                                    </p>
+                                                    <p className="text-[10px] text-[var(--text-muted)]">
+                                                        Target: Rp {opportunityForm.value.toLocaleString('id-ID')}
+                                                    </p>
+                                                </div>
+                                            </div>
+
+                                            {/* List of Payments */}
+                                            <div className="space-y-2 mb-4">
+                                                {editingOpportunity?.revenue && editingOpportunity.revenue.length > 0 ? (
+                                                    editingOpportunity.revenue.map((rev: any) => (
+                                                        <div key={rev.id} className="flex items-center justify-between p-2 rounded-lg bg-gray-50 dark:bg-white/5 border border-[var(--glass-border)] text-sm">
+                                                            <div>
+                                                                <p className="font-bold text-[var(--text-primary)]">
+                                                                    Rp {rev.amount.toLocaleString('id-ID')}
+                                                                </p>
+                                                                <div className="flex items-center gap-2 text-[10px] text-[var(--text-secondary)]">
+                                                                    <span>{new Date(rev.payment_date).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
+                                                                    {rev.notes && <span>• {rev.notes}</span>}
+                                                                </div>
+                                                            </div>
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => handleDeleteRevenue(rev.id)}
+                                                                className="p-1.5 text-red-500 hover:bg-red-500/10 rounded"
+                                                                title="Delete Payment"
+                                                            >
+                                                                <Trash2 className="h-4 w-4" />
+                                                            </button>
+                                                        </div>
+                                                    ))
+                                                ) : pendingRevenue.length === 0 ? (
+                                                    <p className="text-xs text-[var(--text-muted)] italic text-center py-2">No payments recorded yet.</p>
+                                                ) : null}
+                                                {/* Pending Revenue (not yet saved) */}
+                                                {pendingRevenue.map((rev) => (
+                                                    <div key={rev._tempId} className="flex items-center justify-between p-2 rounded-lg bg-gray-50 dark:bg-white/5 border border-[var(--glass-border)] text-sm">
+                                                        <div>
+                                                            <p className="font-bold text-[var(--text-primary)]">
+                                                                Rp {rev.amount.toLocaleString('id-ID')}
+                                                            </p>
+                                                            <div className="flex items-center gap-2 text-[10px] text-[var(--text-secondary)]">
+                                                                <span>{new Date(rev.payment_date).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
+                                                                {rev.notes && <span>• {rev.notes}</span>}
+                                                            </div>
+                                                        </div>
+                                                        <button
+                                                            type="button"
+                                                            onClick={() => handleDeletePendingRevenue(rev._tempId)}
+                                                            className="p-1.5 text-red-500 hover:bg-red-500/10 rounded"
+                                                            title="Remove Payment"
+                                                        >
+                                                            <Trash2 className="h-4 w-4" />
+                                                        </button>
+                                                    </div>
+                                                ))}
+                                            </div>
+
+                                            {/* Add Payment Form */}
+                                            <div className="p-3 rounded-xl bg-amber-50/50 dark:bg-amber-900/10 border border-amber-100 dark:border-amber-900/30">
+                                                <p className="text-xs font-bold text-amber-700 dark:text-amber-400 mb-2">Add New Payment</p>
+                                                <div className="grid grid-cols-2 gap-2 mb-2">
+                                                    <div>
+                                                        <label className="block text-[10px] uppercase font-bold text-[var(--text-muted)] mb-1">Amount</label>
+                                                        <input
+                                                            type="text"
+                                                            placeholder="0"
+                                                            value={revenueForm.amount}
+                                                            onChange={(e) => {
+                                                                const val = e.target.value.replace(/[^0-9]/g, '');
+                                                                setRevenueForm({ ...revenueForm, amount: val ? parseFloat(val) : 0 });
+                                                            }}
+                                                            className="w-full px-2 py-1.5 rounded-lg border border-[var(--glass-border)] bg-white dark:bg-[#1c2120] text-sm"
+                                                        />
+                                                        {revenueForm.amount > 0 && (
+                                                            <p className="text-[10px] text-[var(--text-muted)] mt-0.5">Rp {revenueForm.amount.toLocaleString('id-ID')}</p>
+                                                        )}
+                                                    </div>
+                                                    <div>
+                                                        <label className="block text-[10px] uppercase font-bold text-[var(--text-muted)] mb-1">Date</label>
+                                                        <input
+                                                            type="date"
+                                                            value={revenueForm.payment_date}
+                                                            onChange={(e) => setRevenueForm({ ...revenueForm, payment_date: e.target.value })}
+                                                            className="w-full px-2 py-1.5 rounded-lg border border-[var(--glass-border)] bg-white dark:bg-[#1c2120] text-sm"
+                                                        />
+                                                    </div>
+                                                </div>
                                                 <div className="flex gap-2">
                                                     <input
                                                         type="text"
-                                                        value={opportunityForm.cash_in}
-                                                        onChange={(e) => {
-                                                            const val = e.target.value.replace(/[^0-9]/g, '');
-                                                            setOpportunityForm({ ...opportunityForm, cash_in: val ? parseFloat(val) : 0 });
-                                                        }}
-                                                        onFocus={(e) => e.target.select()}
-                                                        className="w-full px-4 py-2 rounded-xl border border-[var(--glass-border)] bg-white dark:bg-[#232b2a] text-[var(--text-primary)]"
+                                                        placeholder="Notes (Optional)"
+                                                        value={revenueForm.notes}
+                                                        onChange={(e) => setRevenueForm({ ...revenueForm, notes: e.target.value })}
+                                                        className="flex-1 px-2 py-1.5 rounded-lg border border-[var(--glass-border)] bg-white dark:bg-[#1c2120] text-sm"
                                                     />
                                                     <button
                                                         type="button"
-                                                        onClick={() => setOpportunityForm({ ...opportunityForm, cash_in: opportunityForm.value })}
-                                                        className="px-2 py-2 rounded-xl bg-emerald-100 text-emerald-700 hover:bg-emerald-200 border border-emerald-200 text-[10px] font-bold whitespace-nowrap transition-colors"
-                                                        title="Set to Full Value"
+                                                        onClick={handleAddRevenue}
+                                                        disabled={!revenueForm.amount || revenueForm.amount <= 0}
+                                                        className="px-3 py-1.5 rounded-lg bg-[#e8c559] text-[#171611] text-xs font-bold hover:bg-[#d4b44e] disabled:opacity-50 disabled:cursor-not-allowed"
                                                     >
-                                                        Full
+                                                        Add
                                                     </button>
                                                 </div>
-                                                {opportunityForm.cash_in > 0 && (
-                                                    <p className="text-xs text-[var(--text-muted)]">
-                                                        Rp {opportunityForm.cash_in.toLocaleString('id-ID')}
-                                                    </p>
-                                                )}
                                             </div>
                                         </div>
                                     )}
@@ -2284,25 +2475,35 @@ export default function ClientDetailPage() {
                                     />
                                 </div>
                                 <div className="flex justify-end gap-3 pt-4 mt-auto border-t border-[var(--glass-border)] shrink-0">
-                                    <button type="button" onClick={() => setShowOpportunityForm(false)} className="px-4 py-2 rounded-xl border border-[var(--glass-border)] text-[var(--text-secondary)]">
+                                    <button type="button" onClick={() => setShowOpportunityForm(false)} className="px-4 py-2 text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors">
                                         Cancel
                                     </button>
-                                    <div className="flex flex-col gap-2">
-                                        <button
-                                            type="submit"
-                                            disabled={opportunityForm.stage === 'sales' && (opportunityForm.status === 'won' || opportunityForm.status === 'closed_won') && opportunityForm.cash_in !== opportunityForm.value}
-                                            className={`px-6 py-2 rounded-xl text-[#171611] font-bold transition-colors ${opportunityForm.stage === 'sales' && (opportunityForm.status === 'won' || opportunityForm.status === 'closed_won') && opportunityForm.cash_in !== opportunityForm.value
-                                                ? "bg-gray-300 cursor-not-allowed opacity-50"
-                                                : "bg-[#e8c559] hover:bg-[#d4b44e]"
-                                                }`}
-                                        >
-                                            {editingOpportunity ? "Save Changes" : "Create Opportunity"}
-                                        </button>
-                                        {opportunityForm.stage === 'sales' && (opportunityForm.status === 'won' || opportunityForm.status === 'closed_won') && opportunityForm.cash_in !== opportunityForm.value && (
-                                            <p className="text-xs text-red-500 font-bold text-right">
-                                                "Won" status requires Cash In to equal Value.
-                                            </p>
-                                        )}
+                                    <div className="flex flex-col items-end gap-2">
+                                        {(() => {
+                                            const currentRevenue = (editingOpportunity?.revenue?.reduce((sum: number, r: any) => sum + r.amount, 0) || 0) + pendingRevenue.reduce((sum: any, r: any) => sum + r.amount, 0);
+                                            const isWonStage = opportunityForm.stage === 'sales' && opportunityForm.status === 'won';
+                                            const isRevenueMismatch = isWonStage && (currentRevenue !== opportunityForm.value);
+
+                                            return (
+                                                <>
+                                                    {isRevenueMismatch && (
+                                                        <p className="text-xs text-red-500 font-bold text-right max-w-[200px]">
+                                                            Mohon pastikan kembali nilai cash in sama dengan nilai sales
+                                                        </p>
+                                                    )}
+                                                    <button
+                                                        type="submit"
+                                                        disabled={isRevenueMismatch}
+                                                        className={`px-6 py-2 rounded-xl font-bold transition-colors ${isRevenueMismatch
+                                                            ? 'bg-gray-300 dark:bg-gray-700 text-gray-500 cursor-not-allowed'
+                                                            : 'bg-[#e8c559] text-[#171611] hover:bg-[#d4b44e]'
+                                                            }`}
+                                                    >
+                                                        {editingOpportunity ? "Save Changes" : "Create Opportunity"}
+                                                    </button>
+                                                </>
+                                            );
+                                        })()}
                                     </div>
                                 </div>
                             </form>
