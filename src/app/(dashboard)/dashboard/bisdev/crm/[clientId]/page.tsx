@@ -212,6 +212,7 @@ export default function ClientDetailPage() {
     const [activeTab, setActiveTab] = useState<TabType>(initialTab || "overview");
     const [expandedLogId, setExpandedLogId] = useState<string | null>(null); // For accordion
     const [selectedLogFilter, setSelectedLogFilter] = useState<string>("all");
+    const [hideStageUpdates, setHideStageUpdates] = useState(true);
 
     // Form states
     const [showMeetingForm, setShowMeetingForm] = useState(false);
@@ -1062,7 +1063,7 @@ export default function ClientDetailPage() {
                                         <p className="text-xs text-[var(--text-muted)] uppercase font-bold tracking-wider mb-1">Total Leads (Value)</p>
                                         <p className="text-xl font-bold text-amber-600">
                                             {/* Total Value of ACTIVE leads */}
-                                            Rp {leadsOpps.reduce((sum, o) => sum + (o.value || 0), 0).toLocaleString('id-ID')}
+                                            Rp {opportunities.reduce((sum, o) => sum + (o.value || 0), 0).toLocaleString('id-ID')}
                                         </p>
                                     </div>
                                     <div className="p-4 rounded-xl bg-white dark:bg-[#1c2120] border border-[var(--glass-border)] flex flex-col items-center justify-center text-center">
@@ -1737,12 +1738,22 @@ export default function ClientDetailPage() {
                                         <LayoutGrid className="h-3.5 w-3.5" />
                                         Board
                                     </Link>
+                                    <label className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-[var(--glass-border)] bg-white dark:bg-[#1c2120] hover:bg-gray-50 dark:hover:bg-white/5 cursor-pointer transition-colors">
+                                        <input
+                                            type="checkbox"
+                                            checked={hideStageUpdates}
+                                            onChange={(e) => setHideStageUpdates(e.target.checked)}
+                                            className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                                        />
+                                        <span className="text-xs font-medium text-[var(--text-secondary)]">Hide Updates</span>
+                                    </label>
                                 </div>
                             </div>
                             {/* Filtered Timeline Style */}
                             <div className="space-y-4">
                                 {(() => {
                                     const filteredLogs = logbook.filter(log => {
+                                        if (hideStageUpdates && log.type === 'journey') return false;
                                         if (selectedLogFilter === 'all') return true;
                                         if (selectedLogFilter === 'general') return !log.opportunity_id;
                                         return log.opportunity_id === selectedLogFilter;

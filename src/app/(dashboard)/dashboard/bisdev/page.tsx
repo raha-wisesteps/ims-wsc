@@ -206,6 +206,9 @@ export default function BisDevDashboardPage() {
 
                 const remainingTargetCashIn = Math.max(0, annualTarget - cashIn);
                 const remainingTargetContract = Math.max(0, annualTarget - salesBooking);
+
+                // Total Leads Value: Sum of ALL opportunities value regardless of stage (Lead + Proposal + Sales + Lost)
+                // This represents the total "Pipeline Value" generated.
                 const totalLeadsValue = opportunities.reduce((sum, o) => sum + (o.value || 0), 0);
 
                 // Top Clients (Closed Won) - Based on ALL time or selected year? 
