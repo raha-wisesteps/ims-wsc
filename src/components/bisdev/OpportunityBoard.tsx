@@ -8,8 +8,7 @@ import Image from "next/image";
 import { Opportunity, opportunityService } from "@/lib/services/opportunity.service";
 import { formatCurrency } from "@/lib/utils"; // Assume utility exists or create inline
 import { createClient } from "@/lib/supabase/client";
-import * as XLSX from "xlsx";
-import { saveAs } from "file-saver";
+
 import { useSearchParams } from "next/navigation";
 
 // Status Configuration 
@@ -167,7 +166,13 @@ export default function OpportunityBoard() {
         }
     };
 
-    const handleExport = () => {
+    const handleExport = async () => {
+        // Dynamic import - only loads xlsx (~200KB) when user clicks Export
+        const [XLSX, { saveAs }] = await Promise.all([
+            import("xlsx"),
+            import("file-saver")
+        ]);
+
         const exportData = filteredOpportunities.map(opp => {
             const client = opp.client;
             // Format ALL contacts
@@ -178,9 +183,8 @@ export default function OpportunityBoard() {
             return {
                 "Opportunity Title": opp.title,
                 "Company Name": client?.company_name || "-",
-                "Type": opp.opportunity_type ? opp.opportunity_type.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase()) : "-", // Add Type
+                "Type": opp.opportunity_type ? opp.opportunity_type.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase()) : "-",
                 "Status": STATUS_LABELS[opp.status] || opp.status,
-                // Stage removed as requested
                 "Value": opp.value,
                 "Priority": opp.priority,
                 "Created At": new Date(opp.created_at).toLocaleDateString(),

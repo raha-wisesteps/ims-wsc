@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useEffect, useState, useMemo } from "react";
+import { createContext, useContext, useEffect, useState, useMemo, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { User, Session, AuthChangeEvent } from "@supabase/supabase-js";
 
@@ -92,7 +92,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     // Fetch profile from Supabase using direct REST API
     const fetchProfile = async (userId: string, accessToken?: string): Promise<Profile | null> => {
-        console.log("Fetching profile for userId:", userId);
+
 
         try {
             const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -118,7 +118,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 }
             );
 
-            console.log("REST API response status:", response.status);
+
 
             if (!response.ok) {
                 const errorText = await response.text();
@@ -128,13 +128,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             }
 
             const data = await response.json();
-            console.log("DEBUG PROFILE DATA:", data); // Debugging access flags
-            console.log("DEBUG FLAGS:", {
-                is_busdev: data[0]?.is_busdev,
-                is_hr: data[0]?.is_hr,
-                role: data[0]?.role,
-                job_type: data[0]?.job_type
-            });
+
 
             if (data && data.length > 0) {
                 return data[0] as Profile;
@@ -177,12 +171,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             }
 
             const data = await response.json();
-            console.log("Leave Quota Raw Data:", data);
+
 
             if (data && data.length > 0) {
                 return data[0] as LeaveQuota;
             }
-            console.warn("No leave quota found for profile:", profileId);
+
             return null;
         } catch (err) {
             console.error("fetchLeaveQuota exception:", err);
@@ -192,7 +186,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     // Fetch active extra leave grants
     const fetchExtraLeave = async (profileId: string, accessToken?: string): Promise<ExtraLeaveGrant[]> => {
-        console.log("Fetching extra leave for:", profileId);
+
         try {
             const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
             const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
@@ -218,7 +212,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             }
 
             const data = await response.json();
-            console.log("Extra leave raw data:", data);
+
             return (data as ExtraLeaveGrant[]) || [];
         } catch (err) {
             console.error("fetchExtraLeave exception:", err);
@@ -238,7 +232,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             while (retries > 0 && !profileData) {
                 profileData = await fetchProfile(userId, accessToken);
                 if (!profileData && retries > 1) {
-                    console.log(`Profile fetch failed, retrying... (${retries - 1} left)`);
+
                     await new Promise(r => setTimeout(r, 500));
                 }
                 retries--;
@@ -267,7 +261,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         // Listen for auth state changes
         const { data: { subscription } } = supabase.auth.onAuthStateChange(
             async (event: AuthChangeEvent, session: Session | null) => {
-                console.log("Auth event:", event, session?.user?.id);
+
 
                 if (!isMounted) return;
 
@@ -299,7 +293,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const fallbackTimeout = setTimeout(async () => {
             // Check both the flag and if we have a profile state
             if (isMounted && !profileLoaded) {
-                console.log("Fallback: onAuthStateChange didn't fire, using getSession");
+
                 const { data: { session } } = await supabase.auth.getSession();
                 setSession(session);
                 if (session?.user && isMounted) {
@@ -327,7 +321,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }, []);
 
     // Refresh functions
-    const refreshProfile = async () => {
+    const refreshProfile = useCallback(async () => {
         if (user) {
             const profileData = await fetchProfile(user.id);
             if (profileData) {
@@ -341,14 +335,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 setExtraLeave(extra);
             }
         }
-    };
+    }, [user]);
 
-    const refreshLeaveQuota = async () => {
+    const refreshLeaveQuota = useCallback(async () => {
         if (profile) {
             const quotaData = await fetchLeaveQuota(profile.id);
             setLeaveQuota(quotaData);
         }
-    };
+    }, [profile]);
 
     // Computed permission helpers
     const isAdmin = useMemo(() => {
@@ -391,7 +385,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return profile.is_office_manager || isAdmin;
     }, [profile, isAdmin]);
 
-    const value: AuthContextType = {
+    const value = useMemo<AuthContextType>(() => ({
         user,
         session,
         profile,
@@ -409,7 +403,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         canAccessOperational,
         refreshProfile,
         refreshLeaveQuota,
-    };
+    }), [user, session, profile, leaveQuota, extraLeave, isLoading, error,
+        isAdmin, isHROrAdmin, isBisdev, isOfficeManager,
+        canAccessCommandCenter, canAccessHR, canAccessBisdev, canAccessOperational,
+        refreshProfile, refreshLeaveQuota]);
 
     return (
         <AuthContext.Provider value={value}>

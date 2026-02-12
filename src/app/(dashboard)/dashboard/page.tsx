@@ -325,19 +325,17 @@ export default function DashboardPage() {
             }
 
             if (data) {
-                console.log("Raw Birthday Data:", data);
                 const today = new Date();
                 const todayMonthDay = `${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
-                console.log("Today's Date Code:", todayMonthDay);
 
                 const todayList = data.filter((p: any) => {
                     if (!p.birth_date) return false;
                     const bdaySlice = p.birth_date.slice(5);
-                    console.log(`Checking ${p.full_name}: ${p.birth_date} (slice: ${bdaySlice}) vs ${todayMonthDay} => ${bdaySlice === todayMonthDay}`);
+
                     return bdaySlice === todayMonthDay;
                 }).map((p: any) => ({ ...p, daysUntil: 0 } as BirthdayPerson));
 
-                console.log("Calculated Today List:", todayList);
+
 
                 const upcomingList = data.map((p: any) => {
                     const days = getDaysUntilBirthday(p.birth_date);
@@ -362,12 +360,11 @@ export default function DashboardPage() {
     useEffect(() => {
         const fetchAllTeamData = async () => {
             if (!profile) {
-                console.log("Skipping fetchTeamData: No profile yet");
                 return;
             }
 
             setIsLoadingTeamData(true);
-            console.log("Fetching team data for profile:", profile.id);
+
 
             try {
                 // 1. Fetch current user's Daily Tasks from daily_tasks table
@@ -380,7 +377,7 @@ export default function DashboardPage() {
 
                 if (tasksError) {
                     console.error("Error fetching tasks:", tasksError);
-                    console.error("Error details:", JSON.stringify(tasksError, null, 2));
+
                 }
                 else {
                     setDailyPlan(myTasks?.map((t: any) => ({
@@ -452,7 +449,7 @@ export default function DashboardPage() {
                 }) || [];
 
                 setTeamStatuses(teamData);
-                console.log("Team data updated with tasks");
+
 
             } catch (error) {
                 console.error("Error fetching team data:", error);
@@ -540,7 +537,7 @@ export default function DashboardPage() {
                 supabase.from('daily_tasks').update({ position: u.position }).eq('id', u.id)
             ));
 
-            console.log("Order saved");
+
         } catch (err) {
             console.error("Failed to save order", err);
         }
@@ -738,8 +735,7 @@ export default function DashboardPage() {
     const [newTaskProject, setNewTaskProject] = useState("General");
     const [newTaskPriority, setNewTaskPriority] = useState<TaskPriority>("medium");
 
-    // Sidebar toggle state
-    const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+
 
     // ============================================
     // HERO CAROUSEL STATE & HANDLERS
