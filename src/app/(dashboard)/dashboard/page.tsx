@@ -22,6 +22,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { createClient } from "@/lib/supabase/client";
 import { announcementService } from "@/services/announcement";
 import { Announcement } from "@/types/announcement";
+import { HERO_MESSAGES, HeroMessage } from "./_constants/hero-messages";
 
 // ============================================
 // DYNAMIC GREETING & MOTIVATIONAL MESSAGES
@@ -810,9 +811,122 @@ export default function DashboardPage() {
     // Motivational message - changes daily
     const motivationalMessage = useMemo(() => getDailyMotivationalMessage(), []);
 
-
-    // Check-in state (dynamic)
+    // Check-in state (dynamic) - Moved up for getDynamicMessage access
     const [checkinState, setCheckinState] = useState(initialCheckinState);
+
+
+    // ONE-TIME: Dynamic Hero Message Logic
+    const [heroMessage, setHeroMessage] = useState<HeroMessage | null>(null);
+    const [clickInteraction, setClickInteraction] = useState({ count: 0, lastClick: 0 });
+    const [isMessageLocked, setIsMessageLocked] = useState(false);
+
+    const getDynamicMessage = (triggerType: 'timer' | 'click' | 'rage_click' = 'timer') => {
+        // 1. RAGE CLICK (Easter Egg)
+        if (triggerType === 'rage_click') {
+            const pool = HERO_MESSAGES.easter_egg;
+            return pool[Math.floor(Math.random() * pool.length)];
+        }
+
+        // 2. INTERACTIVE CLICK
+        if (triggerType === 'click') {
+            const pool = HERO_MESSAGES.interactive;
+            return pool[Math.floor(Math.random() * pool.length)];
+        }
+
+        // 3. TIME BASED (Lunch Break 12:00 - 13:00)
+        const now = new Date();
+        const hour = now.getHours();
+        if (hour === 12) {
+            const pool = HERO_MESSAGES.lunch_break;
+            return pool[Math.floor(Math.random() * pool.length)];
+        }
+
+        // 4. STATUS BASED
+        // Determine status pool key
+        let statusKey = 'office'; // Default
+        const status = checkinState.status || 'office';
+
+        if (status === 'wfh') statusKey = 'wfh';
+        else if (status === 'wfa') statusKey = 'wfa';
+        else if (status === 'sick' || status === 'sakit') statusKey = 'not_working'; // Use specific sick msg if available or general
+        else if (status === 'leave' || status === 'cuti' || status === 'izin') statusKey = 'not_working';
+        else if (status === 'lembur') statusKey = 'lembur';
+        else if (!checkinState.isClockedIn || checkinState.isClockedOut || status === 'away') statusKey = 'away';
+        else statusKey = 'office';
+
+        // Get pool
+        let pool = (HERO_MESSAGES as any)[statusKey] || HERO_MESSAGES.office;
+
+        // Filter for specific status if needed (e.g. sick in not_working)
+        if (statusKey === 'not_working' && (status === 'sick' || status === 'sakit')) {
+            const sickMsg = pool.find((m: any) => m.specialized === 'sick');
+            if (sickMsg && Math.random() > 0.5) return sickMsg; // 50% chance to show sick specific
+        }
+
+        // Pick random
+        let selected = pool[Math.floor(Math.random() * pool.length)];
+
+        // Replace placeholders
+        // Replace placeholders
+        let text = selected.text;
+        // Placeholders removed from constants, simple assignment
+        return { ...selected, text };
+    };
+
+    // Initialize & Timer Rotation
+    useEffect(() => {
+        // Initial load
+        setHeroMessage(getDynamicMessage('timer'));
+
+        // Interval 15 minutes
+        const interval = setInterval(() => {
+            if (!isMessageLocked) {
+                setHeroMessage(getDynamicMessage('timer'));
+            }
+        }, 900000);
+
+        return () => clearInterval(interval);
+    }, [profile, checkinState.status, isMessageLocked]);
+
+    // Time check for Lunch Break entry (check every minute)
+    useEffect(() => {
+        const checkTime = () => {
+            const now = new Date();
+            if (now.getHours() === 12 && now.getMinutes() === 0) {
+                if (!isMessageLocked) {
+                    setHeroMessage(getDynamicMessage('timer')); // Trigger lunch message
+                }
+            }
+        };
+        const interval = setInterval(checkTime, 60000);
+        return () => clearInterval(interval);
+    }, [isMessageLocked]);
+
+    const handleIconClick = () => {
+        if (isMessageLocked) return;
+
+        const now = Date.now();
+        const timeDiff = now - clickInteraction.lastClick;
+
+        let newCount = clickInteraction.count + 1;
+
+        // Reset if too slow (> 1s)
+        if (timeDiff > 1000) newCount = 1;
+
+        setClickInteraction({ count: newCount, lastClick: now });
+
+        if (newCount >= 3) {
+            // Rage click trigger (Easter Egg)
+            setHeroMessage(getDynamicMessage('rage_click'));
+            setClickInteraction({ count: 0, lastClick: now }); // Reset
+            setIsMessageLocked(true); // Lock future updates until refresh
+        } else {
+            // Normal interaction
+            setHeroMessage(getDynamicMessage('click'));
+        }
+    };
+
+
     const [todayCheckinId, setTodayCheckinId] = useState<string | null>(null);
     const [approvedWfhWfaToday, setApprovedWfhWfaToday] = useState<{ type: 'wfh' | 'wfa' } | null>(null);
 
@@ -1206,6 +1320,7 @@ export default function DashboardPage() {
             }
         };
 
+
         fetchTodayCheckinAndApprovals();
     }, [profile]);
 
@@ -1231,8 +1346,6 @@ export default function DashboardPage() {
         }
         return null;
     }, [checkinState.status, checkinState.isLate, checkinState.isForceMajeure, checkinState.isClockedOut]);
-
-
 
     // Update time every minute for greeting changes
     useEffect(() => {
@@ -1832,15 +1945,23 @@ export default function DashboardPage() {
                                                 </div>
                                             </div>
                                         ) : (
-                                            <div className="flex items-start gap-3">
-                                                <div className="w-10 h-10 rounded-xl bg-[#2d2d2d] border border-white/10 flex items-center justify-center text-xl shadow-lg flex-shrink-0">
-                                                    💡
+                                            <div
+                                                className="flex items-start gap-3 cursor-pointer group/message transition-all active:scale-95 select-none"
+                                                onClick={handleIconClick}
+                                                title="Click for motivation! (Don't spam me 😉)"
+                                            >
+                                                <div className="w-10 h-10 rounded-xl bg-[#2d2d2d] border border-white/10 flex items-center justify-center text-xl shadow-lg flex-shrink-0 group-hover/message:bg-[#3d3d3d] transition-colors relative overflow-hidden">
+                                                    <span className="relative z-10">{heroMessage?.emoji || "💡"}</span>
+                                                    {/* Ripple effect hint */}
+                                                    <div className="absolute inset-0 bg-white/5 opacity-0 group-hover/message:opacity-100 transition-opacity" />
                                                 </div>
                                                 <div className="flex-1">
                                                     <p className="font-medium text-sm leading-relaxed" style={{ color: 'white' }}>
-                                                        {greeting.period === "morning" ? "Start your day with a clear plan!" : "Keep up the momentum, you're doing great!"}
+                                                        {heroMessage?.text || (greeting.period === "morning" ? "Start your day with a clear plan!" : "Keep up the momentum, you're doing great!")}
                                                     </p>
-                                                    <p className="text-xs opacity-70 mt-1" style={{ color: 'white' }}>Focus on your top priorities.</p>
+                                                    <p className="text-xs opacity-70 mt-1" style={{ color: 'white' }}>
+                                                        {heroMessage?.subtext || "Focus on your top priorities."}
+                                                    </p>
                                                 </div>
                                             </div>
                                         )}
