@@ -9,20 +9,25 @@ import {
     RotateCcw,
     FileText,
     ChevronRight,
-    History
+    History,
+    Leaf,
+    Trash2
 } from "lucide-react";
+import { Card } from "@/components/ui/card"; // Assuming Card component exists or using div
+import { cn } from "@/lib/utils"; // Assuming utils exist
 
 // Types
 type WasteStatus = "empty" | "half" | "full";
-type WasteNote = "new" | "leftover" | "holiday" | null; // Added 'holiday'
+type WasteNote = "new" | "leftover" | "holiday" | null;
 
 interface DailyLog {
     day: string;
     date: string;
     fullDate: string; // YYYY-MM-DD for comparison
     green: WasteStatus;
+    greenNote: WasteNote;
     yellow: WasteStatus;
-    note: WasteNote;
+    yellowNote: WasteNote;
 }
 
 interface WeeklyReport {
@@ -30,7 +35,17 @@ interface WeeklyReport {
     weekRange: string;
     submittedAt: string;
     logs: DailyLog[];
+    totalGreenWeight: number;
+    totalYellowWeight: number;
+    totalCarbon: number;
 }
+
+// Constants
+const BIN_CAPACITY = 10; // Liters
+const DENSITY_GREEN = 0.03; // kg/L
+const DENSITY_YELLOW = 0.05; // kg/L
+const EMISSION_FACTOR_GREEN = 0.5; // kgCO2e/kg (Placeholder assumption)
+const EMISSION_FACTOR_YELLOW = 2.0; // kgCO2e/kg (Placeholder assumption)
 
 export default function WasteReportPage() {
     // State for selected date (defaults to today)
@@ -43,12 +58,15 @@ export default function WasteReportPage() {
             id: 1,
             weekRange: "01 Jan - 05 Jan 2024",
             submittedAt: "05 Jan 2024, 17:30",
+            totalGreenWeight: 1.5,
+            totalYellowWeight: 2.5,
+            totalCarbon: 5.75,
             logs: [
-                { day: "Mon", date: "01 Jan", fullDate: "2024-01-01", green: "empty", yellow: "empty", note: "holiday" },
-                { day: "Tue", date: "02 Jan", fullDate: "2024-01-02", green: "half", yellow: "half", note: "new" },
-                { day: "Wed", date: "03 Jan", fullDate: "2024-01-03", green: "full", yellow: "full", note: "leftover" },
-                { day: "Thu", date: "04 Jan", fullDate: "2024-01-04", green: "empty", yellow: "empty", note: null },
-                { day: "Fri", date: "05 Jan", fullDate: "2024-01-05", green: "half", yellow: "full", note: "new" },
+                { day: "Mon", date: "01 Jan", fullDate: "2024-01-01", green: "empty", greenNote: "holiday", yellow: "empty", yellowNote: "holiday" },
+                { day: "Tue", date: "02 Jan", fullDate: "2024-01-02", green: "half", greenNote: "new", yellow: "half", yellowNote: "new" },
+                { day: "Wed", date: "03 Jan", fullDate: "2024-01-03", green: "full", greenNote: "leftover", yellow: "full", yellowNote: "leftover" },
+                { day: "Thu", date: "04 Jan", fullDate: "2024-01-04", green: "empty", greenNote: null, yellow: "empty", yellowNote: null },
+                { day: "Fri", date: "05 Jan", fullDate: "2024-01-05", green: "half", greenNote: "new", yellow: "full", yellowNote: "new" },
             ]
         }
     ]);
@@ -76,8 +94,9 @@ export default function WasteReportPage() {
                 date: currentDate.toLocaleDateString('en-US', { day: '2-digit', month: 'short' }),
                 fullDate: currentDate.toISOString().split('T')[0],
                 green: "empty",
+                greenNote: null,
                 yellow: "empty",
-                note: null
+                yellowNote: null,
             });
         }
         setWeekLogs(newLogs);
@@ -109,6 +128,7 @@ export default function WasteReportPage() {
         }
     };
 
+    // Updated Handler: Per-bin Status
     const handleStatusChange = (index: number, type: 'green' | 'yellow') => {
         const currentStatus = weekLogs[index][type];
         const nextStatus: WasteStatus =
@@ -117,12 +137,23 @@ export default function WasteReportPage() {
 
         const updatedLogs = [...weekLogs];
         updatedLogs[index] = { ...updatedLogs[index], [type]: nextStatus };
+
+        // Auto-set note to 'new' if status changes to non-empty and note is null
+        if (nextStatus !== 'empty') {
+            const noteKey = type === 'green' ? 'greenNote' : 'yellowNote';
+            if (updatedLogs[index][noteKey] === null) {
+                updatedLogs[index] = { ...updatedLogs[index], [noteKey]: 'new' };
+            }
+        }
+
         setWeekLogs(updatedLogs);
         setIsDirty(true);
     };
 
-    const handleNoteChange = (index: number) => {
-        const currentNote = weekLogs[index].note;
+    // Updated Handler: Per-bin Note
+    const handleNoteChange = (index: number, type: 'green' | 'yellow') => {
+        const noteKey = type === 'green' ? 'greenNote' : 'yellowNote';
+        const currentNote = weekLogs[index][noteKey];
         let nextNote: WasteNote;
 
         // Cycle: null -> new -> leftover -> holiday -> null
@@ -132,10 +163,55 @@ export default function WasteReportPage() {
         else nextNote = null;
 
         const updatedLogs = [...weekLogs];
-        updatedLogs[index] = { ...updatedLogs[index], note: nextNote };
+        updatedLogs[index] = { ...updatedLogs[index], [noteKey]: nextNote };
         setWeekLogs(updatedLogs);
         setIsDirty(true);
     };
+
+    // --- Calculation Logic ---
+    const calculateStats = (logs: DailyLog[]) => {
+        let totalGreenWeight = 0;
+        let totalYellowWeight = 0;
+        let totalCarbon = 0;
+
+        logs.forEach(log => {
+            // Helper to get fill multiplier
+            const getFillMultiplier = (status: WasteStatus) => {
+                if (status === 'full') return 1.0;
+                if (status === 'half') return 0.5;
+                return 0;
+            };
+
+            // Helper to calculate mass for a bin
+            const calculateBin = (status: WasteStatus, note: WasteNote, density: number, emissionFactor: number) => {
+                // If Empty, leftover, or holiday -> 0 mass added for *today*
+                // Wait. "Sisa Kemarin" means it's waste, but it was already counted yesterday.
+                // So for TODAY's generation calculation, we ignore it.
+                if (status === 'empty' || note === 'holiday' || note === 'leftover' || note === null) {
+                    return { weight: 0, carbon: 0 };
+                }
+
+                // If "New" -> We calculate
+                const volume = BIN_CAPACITY * getFillMultiplier(status);
+                const weight = volume * density;
+                const carbon = weight * emissionFactor;
+                return { weight, carbon };
+            };
+
+            const greenStats = calculateBin(log.green, log.greenNote, DENSITY_GREEN, EMISSION_FACTOR_GREEN);
+            const yellowStats = calculateBin(log.yellow, log.yellowNote, DENSITY_YELLOW, EMISSION_FACTOR_YELLOW);
+
+            totalGreenWeight += greenStats.weight;
+            totalCarbon += greenStats.carbon;
+
+            totalYellowWeight += yellowStats.weight;
+            totalCarbon += yellowStats.carbon;
+        });
+
+        return { totalGreenWeight, totalYellowWeight, totalCarbon };
+    };
+
+    const currentStats = calculateStats(weekLogs);
 
     const handleSubmit = () => {
         setIsSaving(true);
@@ -144,11 +220,14 @@ export default function WasteReportPage() {
             const endDate = weekLogs[4].date;
             const year = selectedDate.getFullYear();
 
+            const stats = calculateStats(weekLogs);
+
             const newReport: WeeklyReport = {
                 id: Date.now(),
                 weekRange: `${startDate} - ${endDate} ${year}`,
                 submittedAt: new Date().toLocaleString(),
-                logs: [...weekLogs]
+                logs: [...weekLogs],
+                ...stats
             };
 
             setHistory([newReport, ...history]);
@@ -199,6 +278,51 @@ export default function WasteReportPage() {
                 </div>
             </div>
 
+            {/* Summary Cards */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                {/* Green Waste Stats */}
+                <div className="glass-panel p-6 rounded-xl border border-emerald-500/20 bg-emerald-500/5 relative overflow-hidden">
+                    <div className="absolute top-0 right-0 p-4 opacity-10">
+                        <Leaf className="w-24 h-24 text-emerald-500" />
+                    </div>
+                    <div className="relative z-10">
+                        <p className="text-emerald-400 text-sm font-bold uppercase tracking-wider mb-2">Total Organik</p>
+                        <div className="flex items-baseline gap-2">
+                            <span className="text-4xl font-black text-white">{currentStats.totalGreenWeight.toFixed(2)}</span>
+                            <span className="text-sm text-gray-400 font-medium">kg</span>
+                        </div>
+                        <p className="text-xs text-gray-500 mt-2">Emission Factor: ~{EMISSION_FACTOR_GREEN} kgCO2e/kg</p>
+                    </div>
+                </div>
+
+                {/* Yellow Waste Stats */}
+                <div className="glass-panel p-6 rounded-xl border border-yellow-500/20 bg-yellow-500/5 relative overflow-hidden">
+                    <div className="absolute top-0 right-0 p-4 opacity-10">
+                        <Trash2 className="w-24 h-24 text-yellow-500" />
+                    </div>
+                    <div className="relative z-10">
+                        <p className="text-yellow-400 text-sm font-bold uppercase tracking-wider mb-2">Total Anorganik</p>
+                        <div className="flex items-baseline gap-2">
+                            <span className="text-4xl font-black text-white">{currentStats.totalYellowWeight.toFixed(2)}</span>
+                            <span className="text-sm text-gray-400 font-medium">kg</span>
+                        </div>
+                        <p className="text-xs text-gray-500 mt-2">Emission Factor: ~{EMISSION_FACTOR_YELLOW} kgCO2e/kg</p>
+                    </div>
+                </div>
+
+                {/* Carbon Emission Stats */}
+                <div className="glass-panel p-6 rounded-xl border border-white/10 bg-white/5 relative overflow-hidden">
+                    <div className="relative z-10">
+                        <p className="text-gray-400 text-sm font-bold uppercase tracking-wider mb-2">Est. Jejak Karbon</p>
+                        <div className="flex items-baseline gap-2">
+                            <span className="text-4xl font-black text-white">{currentStats.totalCarbon.toFixed(2)}</span>
+                            <span className="text-sm text-gray-400 font-medium">kg CO2e</span>
+                        </div>
+                        <p className="text-xs text-gray-500 mt-2">Total Estimated Emissions</p>
+                    </div>
+                </div>
+            </div>
+
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
                 {/* Main Content: Weekly Table & History */}
                 <div className="lg:col-span-2 space-y-8">
@@ -228,26 +352,22 @@ export default function WasteReportPage() {
                                     </button>
                                 </div>
                             </div>
-                            <div className="flex gap-4 text-xs text-gray-400">
-                                <div className="flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-white/10 border border-white/20"></div> Click to toggle</div>
-                            </div>
                         </div>
 
                         <div className="overflow-x-auto">
                             <table className="w-full text-sm">
                                 <thead>
                                     <tr className="text-left text-gray-500 border-b border-white/5">
-                                        <th className="pb-4 font-medium pl-2 w-32">Day</th>
-                                        <th className="pb-4 font-medium text-center">Green (Organic)</th>
-                                        <th className="pb-4 font-medium text-center">Yellow (Anorganic)</th>
-                                        <th className="pb-4 font-medium text-center w-40">Info Label</th>
+                                        <th className="pb-4 font-medium pl-2 w-24">Day</th>
+                                        <th className="pb-4 font-medium text-center">Green (10L)</th>
+                                        <th className="pb-4 font-medium text-center">Yellow (10L)</th>
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-white/5">
                                     {weekLogs.map((log, idx) => (
                                         <tr key={log.day} className={`group hover:bg-white/[0.02] transition-colors ${isToday(log.fullDate) ? 'bg-white/5' : ''}`}>
-                                            <td className="py-4 pl-2">
-                                                <div className="flex flex-col">
+                                            <td className="py-4 pl-2 align-top">
+                                                <div className="flex flex-col mt-2">
                                                     <span className={`font-bold ${isToday(log.fullDate) ? 'text-white' : 'text-gray-400'}`}>
                                                         {log.day} {isToday(log.fullDate) && <span className="ml-2 text-[10px] bg-blue-500 text-white px-1.5 py-0.5 rounded">TODAY</span>}
                                                     </span>
@@ -255,43 +375,62 @@ export default function WasteReportPage() {
                                                 </div>
                                             </td>
 
-                                            {/* Green Bin Status Toggle */}
-                                            <td className="py-4 text-center">
-                                                <button
-                                                    onClick={() => handleStatusChange(idx, 'green')}
-                                                    className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border text-xs font-medium transition-all hover:scale-105 active:scale-95 w-28 justify-center ${getStatusColor(log.green, 'green')}`}
-                                                >
-                                                    <div className={`w-2 h-2 rounded-full ${log.green === 'full' ? 'bg-rose-500' : 'bg-emerald-500'}`}></div>
-                                                    {getStatusLabel(log.green)}
-                                                </button>
+                                            {/* Green Bin Column */}
+                                            <td className="py-4 px-2">
+                                                <div className="flex flex-col gap-2">
+                                                    {/* Status Toggle */}
+                                                    <button
+                                                        onClick={() => handleStatusChange(idx, 'green')}
+                                                        className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg border text-xs font-medium transition-all hover:brightness-110 active:scale-95 justify-center ${getStatusColor(log.green, 'green')}`}
+                                                    >
+                                                        <div className={`w-2 h-2 rounded-full ${log.green === 'full' ? 'bg-rose-500' : 'bg-emerald-500'}`}></div>
+                                                        {getStatusLabel(log.green)}
+                                                    </button>
+
+                                                    {/* Note Toggle */}
+                                                    <button
+                                                        onClick={() => handleNoteChange(idx, 'green')}
+                                                        className={`w-full flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg border text-[10px] font-medium transition-all hover:brightness-110 active:scale-95
+                                                            ${log.greenNote === 'new' ? 'bg-blue-500/10 text-blue-400 border-blue-500/20' :
+                                                                log.greenNote === 'leftover' ? 'bg-orange-500/10 text-orange-400 border-orange-500/20' :
+                                                                    log.greenNote === 'holiday' ? 'bg-purple-500/10 text-purple-400 border-purple-500/20' :
+                                                                        'bg-white/5 text-gray-500 border-transparent hover:border-white/10'}`}
+                                                    >
+                                                        {log.greenNote === 'new' && <span>✨ Baru</span>}
+                                                        {log.greenNote === 'leftover' && <span>🕰️ Sisa</span>}
+                                                        {log.greenNote === 'holiday' && <span>🌴 Libur</span>}
+                                                        {log.greenNote === null && <span>Note...</span>}
+                                                    </button>
+                                                </div>
                                             </td>
 
-                                            {/* Yellow Bin Status Toggle */}
-                                            <td className="py-4 text-center">
-                                                <button
-                                                    onClick={() => handleStatusChange(idx, 'yellow')}
-                                                    className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border text-xs font-medium transition-all hover:scale-105 active:scale-95 w-28 justify-center ${getStatusColor(log.yellow, 'yellow')}`}
-                                                >
-                                                    <div className={`w-2 h-2 rounded-full ${log.yellow === 'full' ? 'bg-rose-500' : 'bg-yellow-500'}`}></div>
-                                                    {getStatusLabel(log.yellow)}
-                                                </button>
-                                            </td>
+                                            {/* Yellow Bin Column */}
+                                            <td className="py-4 px-2">
+                                                <div className="flex flex-col gap-2">
+                                                    {/* Status Toggle */}
+                                                    <button
+                                                        onClick={() => handleStatusChange(idx, 'yellow')}
+                                                        className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg border text-xs font-medium transition-all hover:brightness-110 active:scale-95 justify-center ${getStatusColor(log.yellow, 'yellow')}`}
+                                                    >
+                                                        <div className={`w-2 h-2 rounded-full ${log.yellow === 'full' ? 'bg-rose-500' : 'bg-yellow-500'}`}></div>
+                                                        {getStatusLabel(log.yellow)}
+                                                    </button>
 
-                                            {/* Note / Label Toggle */}
-                                            <td className="py-4 text-center">
-                                                <button
-                                                    onClick={() => handleNoteChange(idx)}
-                                                    className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border text-xs font-medium transition-all hover:scale-105 active:scale-95 w-full justify-center
-                                                        ${log.note === 'new' ? 'bg-blue-500/20 text-blue-400 border-blue-500/30' :
-                                                            log.note === 'leftover' ? 'bg-orange-500/20 text-orange-400 border-orange-500/30' :
-                                                                log.note === 'holiday' ? 'bg-purple-500/20 text-purple-400 border-purple-500/30' :
-                                                                    'bg-white/5 text-gray-500 border-transparent hover:border-white/20'}`}
-                                                >
-                                                    {log.note === 'new' && <span className="flex items-center gap-1">✨ Sampah Baru</span>}
-                                                    {log.note === 'leftover' && <span className="flex items-center gap-1">🕰️ Sisa Kemarin</span>}
-                                                    {log.note === 'holiday' && <span className="flex items-center gap-1">🌴 Libur</span>}
-                                                    {log.note === null && <span>-</span>}
-                                                </button>
+                                                    {/* Note Toggle */}
+                                                    <button
+                                                        onClick={() => handleNoteChange(idx, 'yellow')}
+                                                        className={`w-full flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg border text-[10px] font-medium transition-all hover:brightness-110 active:scale-95
+                                                            ${log.yellowNote === 'new' ? 'bg-blue-500/10 text-blue-400 border-blue-500/20' :
+                                                                log.yellowNote === 'leftover' ? 'bg-orange-500/10 text-orange-400 border-orange-500/20' :
+                                                                    log.yellowNote === 'holiday' ? 'bg-purple-500/10 text-purple-400 border-purple-500/20' :
+                                                                        'bg-white/5 text-gray-500 border-transparent hover:border-white/10'}`}
+                                                    >
+                                                        {log.yellowNote === 'new' && <span>✨ Baru</span>}
+                                                        {log.yellowNote === 'leftover' && <span>🕰️ Sisa</span>}
+                                                        {log.yellowNote === 'holiday' && <span>🌴 Libur</span>}
+                                                        {log.yellowNote === null && <span>Note...</span>}
+                                                    </button>
+                                                </div>
                                             </td>
                                         </tr>
                                     ))}
@@ -317,7 +456,11 @@ export default function WasteReportPage() {
                                         </div>
                                         <div>
                                             <h4 className="font-bold text-white text-sm">{report.weekRange}</h4>
-                                            <p className="text-[10px] text-gray-400">Submitted: {report.submittedAt}</p>
+                                            <p className="text-[10px] text-gray-400">
+                                                Submitted: {report.submittedAt} •
+                                                <span className="text-emerald-400 ml-1">{report.totalGreenWeight.toFixed(2)}kg (G)</span> •
+                                                <span className="text-yellow-400 ml-1">{report.totalYellowWeight.toFixed(2)}kg (Y)</span>
+                                            </p>
                                         </div>
                                     </div>
                                 </div>
@@ -330,7 +473,6 @@ export default function WasteReportPage() {
                                                 <th className="text-left pb-2 w-16">Day</th>
                                                 <th className="text-center pb-2">Green</th>
                                                 <th className="text-center pb-2">Yellow</th>
-                                                <th className="text-center pb-2">Label</th>
                                             </tr>
                                         </thead>
                                         <tbody className="divide-y divide-white/5">
@@ -338,33 +480,30 @@ export default function WasteReportPage() {
                                                 <tr key={i} className="text-gray-300">
                                                     <td className="py-2 font-medium">{log.day}</td>
                                                     <td className="py-2 text-center">
-                                                        <span className={`inline-block px-2 py-0.5 rounded-full text-[10px] capitalize
-                                                            ${log.green === 'full' ? 'bg-rose-500/20 text-rose-400' :
-                                                                log.green === 'half' ? 'bg-emerald-500/20 text-emerald-400' :
-                                                                    'bg-white/5 text-gray-500'}`}>
-                                                            {log.green}
-                                                        </span>
-                                                    </td>
-                                                    <td className="py-2 text-center">
-                                                        <span className={`inline-block px-2 py-0.5 rounded-full text-[10px] capitalize
-                                                            ${log.yellow === 'full' ? 'bg-rose-500/20 text-rose-400' :
-                                                                log.yellow === 'half' ? 'bg-yellow-500/20 text-yellow-500' :
-                                                                    'bg-white/5 text-gray-500'}`}>
-                                                            {log.yellow}
-                                                        </span>
-                                                    </td>
-                                                    <td className="py-2 text-center">
-                                                        {log.note ? (
-                                                            <span className={`inline-block px-2 py-0.5 rounded-full text-[10px]
-                                                                ${log.note === 'new' ? 'bg-blue-500/10 text-blue-400' :
-                                                                    log.note === 'leftover' ? 'bg-orange-500/10 text-orange-400' :
-                                                                        'bg-purple-500/10 text-purple-400'}`}>
-                                                                {log.note === 'new' ? '✨ Baru' :
-                                                                    log.note === 'leftover' ? '🕰️ Sisa' : '🌴 Libur'}
+                                                        <div className="flex flex-col gap-1 items-center">
+                                                            <span className={`inline-block px-2 py-0.5 rounded-full text-[10px] capitalize
+                                                                ${log.green === 'full' ? 'bg-rose-500/20 text-rose-400' :
+                                                                    log.green === 'half' ? 'bg-emerald-500/20 text-emerald-400' :
+                                                                        'bg-white/5 text-gray-500'}`}>
+                                                                {log.green}
                                                             </span>
-                                                        ) : (
-                                                            <span className="text-gray-600">-</span>
-                                                        )}
+                                                            {log.greenNote && (
+                                                                <span className="text-[9px] text-gray-500">({log.greenNote})</span>
+                                                            )}
+                                                        </div>
+                                                    </td>
+                                                    <td className="py-2 text-center">
+                                                        <div className="flex flex-col gap-1 items-center">
+                                                            <span className={`inline-block px-2 py-0.5 rounded-full text-[10px] capitalize
+                                                                ${log.yellow === 'full' ? 'bg-rose-500/20 text-rose-400' :
+                                                                    log.yellow === 'half' ? 'bg-yellow-500/20 text-yellow-500' :
+                                                                        'bg-white/5 text-gray-500'}`}>
+                                                                {log.yellow}
+                                                            </span>
+                                                            {log.yellowNote && (
+                                                                <span className="text-[9px] text-gray-500">({log.yellowNote})</span>
+                                                            )}
+                                                        </div>
                                                     </td>
                                                 </tr>
                                             ))}
@@ -383,24 +522,25 @@ export default function WasteReportPage() {
 
                         <div className="space-y-6">
                             <div className="relative pl-4 border-l-2 border-emerald-500">
-                                <h4 className="text-emerald-500 font-bold text-sm mb-2">🟢 Green Bin (Organic)</h4>
+                                <h4 className="text-emerald-500 font-bold text-sm mb-2">🟢 Green Bin (Organik) - 10L</h4>
                                 <ul className="text-xs text-gray-400 space-y-1 list-disc list-inside">
-                                    <li>Sisa Makanan</li>
-                                    <li>Kulit buah/sayur</li>
-                                    <li>Daun/Tanaman</li>
-                                    <li>Kertas pembungkus makanan (basah)</li>
+                                    <li>Sisa Makanan, Buah, Sayur</li>
+                                    <li>Ampas Kopi</li>
+                                    <li>Daun dan Ranting</li>
+                                    <li>Kertas/Tisu (Basah/Terurai)</li>
                                 </ul>
+                                <p className="text-[10px] text-emerald-500/60 mt-2 font-mono">Density: 0.03 kg/L</p>
                             </div>
 
                             <div className="relative pl-4 border-l-2 border-yellow-500">
-                                <h4 className="text-yellow-500 font-bold text-sm mb-2">🟡 Yellow Bin (Anorganic)</h4>
+                                <h4 className="text-yellow-500 font-bold text-sm mb-2">🟡 Yellow Bin (Anorganik) - 10L</h4>
                                 <ul className="text-xs text-gray-400 space-y-1 list-disc list-inside">
-                                    <li>Plastik kemasan</li>
-                                    <li>Botol minuman</li>
-                                    <li>Kaleng/Logam</li>
-                                    <li>Kertas/Kardus (kering)</li>
-                                    <li>Styrofoam</li>
+                                    <li>Plastik, Kemasan</li>
+                                    <li>Logam, Aluminium Foil</li>
+                                    <li>Styrofoam, Karet</li>
+                                    <li>Tisu Basah</li>
                                 </ul>
+                                <p className="text-[10px] text-yellow-500/60 mt-2 font-mono">Density: 0.05 kg/L</p>
                             </div>
                         </div>
                     </div>
@@ -410,7 +550,11 @@ export default function WasteReportPage() {
                         <p className="text-sm text-gray-300 leading-relaxed">
                             Pastikan update status bin setiap <strong>pulang kerja (17:00)</strong>.
                             <br /><br />
-                            Lakukan <strong>Submit Weekly Report</strong> setiap hari Jumat sore untuk pengarsipan data mingguan.
+                            <strong>✨ Baru:</strong> Sampah baru (dihitung).
+                            <br />
+                            <strong>🕰️ Sisa:</strong> Sisa kemarin (tidak dihitung).
+                            <br />
+                            <strong>🌴 Libur:</strong> Tidak ada sampah (0 kg).
                         </p>
                     </div>
                 </div>
