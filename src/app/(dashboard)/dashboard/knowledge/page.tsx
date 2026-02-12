@@ -5,26 +5,25 @@ import { useAuth } from "@/contexts/AuthContext";
 import { createClient } from "@/lib/supabase/client";
 import { toast } from "sonner";
 import Image from "next/image";
+import { BookOpen } from "lucide-react";
 
 // Access Levels - from basic to confidential
 const ACCESS_LEVELS = [
-    { id: "all", label: "All Levels", icon: "🔓", color: "text-gray-500" },
-    { id: "intern", label: "Intern", icon: "🟢", color: "text-green-500", description: "Basic materials for everyone" },
-    { id: "staff", label: "Staff", icon: "🔵", color: "text-blue-500", description: "Standard procedures" },
-    { id: "senior", label: "Senior", icon: "🟠", color: "text-orange-500", description: "Confidential materials" },
-    { id: "owner", label: "Owner Only", icon: "🔴", color: "text-red-500", description: "Highly confidential" },
+    { id: "all", label: "All Levels", icon: "🔓", color: "text-gray-500", badgeClass: "bg-gray-100 text-gray-700 border-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:border-white/10" },
+    { id: "intern", label: "Intern", icon: "🟢", color: "text-green-500", description: "Basic materials for everyone", badgeClass: "bg-green-100 text-green-700 border-green-200 dark:bg-green-500/20 dark:text-green-300 dark:border-green-500/30" },
+    { id: "staff", label: "Staff", icon: "🔵", color: "text-blue-500", description: "Standard procedures", badgeClass: "bg-blue-100 text-blue-700 border-blue-200 dark:bg-blue-500/20 dark:text-blue-300 dark:border-blue-500/30" },
+    { id: "senior", label: "Senior", icon: "🟠", color: "text-orange-500", description: "Confidential materials", badgeClass: "bg-orange-100 text-orange-700 border-orange-200 dark:bg-orange-500/20 dark:text-orange-300 dark:border-orange-500/30" },
+    { id: "owner", label: "Owner Only", icon: "🔴", color: "text-red-500", description: "Highly confidential", badgeClass: "bg-red-100 text-red-700 border-red-200 dark:bg-red-500/20 dark:text-red-300 dark:border-red-500/30" },
 ];
-
-
 
 // Resource Types (Unified Category/Type)
 const RESOURCE_TYPES = [
     { id: "all", label: "All Types", icon: "📚" },
-    { id: "document", label: "Document", icon: "📄" },
     { id: "video", label: "Video", icon: "🎬" },
+    { id: "document", label: "Document", icon: "📄" },
+    { id: "sop", label: "SOP", icon: "📋" },
     { id: "template", label: "Template", icon: "📋" },
     { id: "link", label: "Link", icon: "🔗" },
-    { id: "sop", label: "SOP", icon: "📋" },
     { id: "mom", label: "MoM", icon: "📝" },
 ];
 
@@ -48,6 +47,10 @@ export interface KnowledgeResource {
     target_roles: string[];
     created_by?: string;
     created_at?: string;
+    // Library Fields
+    is_library_item?: boolean;
+    stock_total?: number;
+    current_borrowers?: { user_id: string; user_name: string; borrowed_at: string }[];
     // Computed/UI fields
     addedBy?: string;
     addedDate?: string;
@@ -57,154 +60,381 @@ export interface KnowledgeResource {
     progress?: number;
 }
 
-// Video Card Component
-function VideoCard({ resource, canManage, onEdit, onDelete }: { resource: KnowledgeResource; canManage: boolean; onEdit: (r: KnowledgeResource) => void; onDelete: (id: string) => void }) {
-    const accessLevel = ACCESS_LEVELS.find(l => l.id === resource.min_access_level);
-    const defaultThumbnail = "/daria-nepriakhina-xY55bL5mZAM-unsplash.jpg";
+const DEFAULT_THUMBNAIL = "/daria-nepriakhina-xY55bL5mZAM-unsplash.jpg";
 
-    const handleVideoClick = () => {
+const getThumbnail = (url?: string | null) => {
+    if (!url || url.trim() === "" || url === "null" || url === "undefined") {
+        return DEFAULT_THUMBNAIL;
+    }
+    // Simple extension check or assume valid if strictly non-empty
+    // But let's check if it looks like a URL
+    try {
+        new URL(url);
+        return url;
+    } catch {
+        return DEFAULT_THUMBNAIL;
+    }
+};
+
+const getTypeBadgeClass = (type: string) => {
+    switch (type) {
+        case 'video': return "bg-red-100 text-red-700 border-red-200 dark:bg-red-500/20 dark:text-red-300 dark:border-red-500/30";
+        case 'document': return "bg-blue-100 text-blue-700 border-blue-200 dark:bg-blue-500/20 dark:text-blue-300 dark:border-blue-500/30";
+        case 'sop': return "bg-orange-100 text-orange-700 border-orange-200 dark:bg-orange-500/20 dark:text-orange-300 dark:border-orange-500/30";
+        case 'link': return "bg-green-100 text-green-700 border-green-200 dark:bg-green-500/20 dark:text-green-300 dark:border-green-500/30";
+        case 'template': return "bg-emerald-100 text-emerald-700 border-emerald-200 dark:bg-emerald-500/20 dark:text-emerald-300 dark:border-emerald-500/30";
+        case 'mom': return "bg-purple-100 text-purple-700 border-purple-200 dark:bg-purple-500/20 dark:text-purple-300 dark:border-purple-500/30";
+        default: return "bg-gray-100 text-gray-700 border-gray-200 dark:bg-gray-500/20 dark:text-gray-300 dark:border-gray-500/30";
+    }
+};
+
+const isValidUrl = (string: string) => {
+    try {
+        new URL(string);
+        return true;
+    } catch (_) {
+        return false;
+    }
+};
+
+// --- Components ---
+
+// Detail Popup Modal
+function ResourceDetailModal({
+    resource,
+    isOpen,
+    onClose,
+    canManage,
+    onEdit,
+    onDelete,
+    onBorrow,
+    onReturn,
+    currentUserId
+}: {
+    resource: KnowledgeResource | null;
+    isOpen: boolean;
+    onClose: () => void;
+    canManage: boolean;
+    onEdit: (r: KnowledgeResource) => void;
+    onDelete: (id: string) => void;
+    onBorrow: (r: KnowledgeResource) => void;
+    onReturn: (r: KnowledgeResource) => void;
+    currentUserId?: string;
+}) {
+    if (!isOpen || !resource) return null;
+
+    const accessLevel = ACCESS_LEVELS.find(l => l.id === resource.min_access_level);
+    const totalStock = resource.stock_total || 0;
+    const currentBorrowers = resource.current_borrowers || [];
+    const availableStock = Math.max(0, totalStock - currentBorrowers.length);
+    const isOut = availableStock === 0;
+    const isBorrowing = currentBorrowers.some(b => b.user_id === currentUserId);
+
+    const handleAction = () => {
         if (resource.resource_url) {
             window.open(resource.resource_url, '_blank');
         }
     };
 
     return (
-        <div
-            onClick={handleVideoClick}
-            className="glass-panel rounded-xl overflow-hidden hover:border-[#e8c559]/30 transition-all group cursor-pointer bg-black/20"
-        >
-            {/* Thumbnail Section */}
-            <div className="relative aspect-video bg-black overflow-hidden">
-                <Image
-                    src={resource.thumbnail_url || defaultThumbnail}
-                    alt={resource.title}
-                    fill
-                    className="object-cover group-hover:scale-105 transition-transform duration-300 opacity-80 group-hover:opacity-60"
-                />
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
+            <div className="bg-white dark:bg-[#171611] border border-gray-200 dark:border-[var(--glass-border)] rounded-2xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[90vh] shadow-[0_0_50px_rgba(0,0,0,0.5)]">
+                {/* Header Image / Thumbnail */}
+                <div className="relative aspect-video w-full bg-gray-100 dark:bg-black">
+                    <Image
+                        src={getThumbnail(resource.thumbnail_url)}
+                        alt={resource.title}
+                        fill
+                        className="object-cover opacity-100 dark:opacity-80"
+                    />
+                    <div className="absolute inset-0 bg-gradient-to-t from-white dark:from-[#171611] to-transparent" />
+                    <button
+                        onClick={onClose}
+                        className="absolute top-4 right-4 p-2 rounded-full bg-black/50 hover:bg-black/70 text-white transition-colors"
+                    >
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                    </button>
 
-                {/* Play Button Overlay */}
-                <div className="absolute inset-0 flex items-center justify-center">
-                    <div className="w-14 h-14 rounded-full bg-[#e8c559]/90 text-[#171611] flex items-center justify-center shadow-[0_0_20px_rgba(232,197,89,0.4)] group-hover:scale-110 transition-transform">
-                        <svg className="w-6 h-6 ml-1" fill="currentColor" viewBox="0 0 24 24">
-                            <path d="M8 5v14l11-7z" />
-                        </svg>
+                    {/* Type & Access Badge */}
+                    <div className="absolute top-4 left-4 flex gap-2">
+                        <span className={`px-3 py-1 rounded-full text-xs font-medium backdrop-blur-md flex items-center gap-1 border uppercase tracking-wider ${getTypeBadgeClass(resource.type)}`}>
+                            {resource.type}
+                        </span>
+                        <span className={`px-3 py-1 rounded-full text-xs font-medium backdrop-blur-md flex items-center gap-1 border ${accessLevel?.badgeClass || 'bg-gray-500 text-white'}`}>
+                            {accessLevel?.icon} <span className="hidden sm:inline">{accessLevel?.label}</span>
+                        </span>
                     </div>
                 </div>
 
-                {/* Access Level Badge */}
-                <div className={`absolute top-2 left-2 px-2 py-1 rounded text-xs font-medium flex items-center gap-1 backdrop-blur-md ${resource.min_access_level === 'owner' ? 'bg-red-500/80 text-white' :
-                    resource.min_access_level === 'senior' ? 'bg-orange-500/80 text-white' :
-                        resource.min_access_level === 'staff' ? 'bg-blue-500/80 text-white' :
-                            'bg-green-500/80 text-white'
-                    }`}>
-                    <span>{accessLevel?.icon}</span>
-                    <span className="hidden sm:inline">{accessLevel?.label}</span>
-                </div>
-            </div>
+                {/* Content */}
+                <div className="p-8 space-y-6 overflow-y-auto">
+                    <div>
+                        <h2 className="text-2xl font-bold text-[var(--text-primary)] mb-2 leading-tight">
+                            {resource.title}
+                        </h2>
+                        <div className="flex items-center gap-4 text-xs text-[var(--text-muted)]">
+                            <span>Posted {new Date(resource.created_at || Date.now()).toLocaleDateString()}</span>
+                            {resource.is_library_item && (
+                                <span className={`${isOut ? 'text-red-500' : 'text-green-500'} font-medium`}>
+                                    Stock: {availableStock}/{totalStock}
+                                </span>
+                            )}
+                        </div>
+                    </div>
 
-            {/* Content Section */}
-            <div className="p-4">
-                <div className="flex justify-between items-start gap-2 mb-2">
-                    <h3 className="font-semibold transition-colors line-clamp-2 text-[var(--text-primary)] group-hover:text-[#e8c559]">
-                        {resource.title}
-                    </h3>
-                    {canManage && (
-                        <div className="flex gap-1 shrink-0" onClick={e => e.stopPropagation()}>
-                            <button onClick={() => onEdit(resource)} className="p-1 hover:text-[#e8c559] text-[var(--text-muted)] transition-colors">
-                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
-                            </button>
-                            <button onClick={() => onDelete(resource.id)} className="p-1 hover:text-red-500 text-[var(--text-muted)] transition-colors">
-                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
-                            </button>
+                    <div className="prose prose-invert prose-sm max-w-none text-[var(--text-secondary)]">
+                        <p className="whitespace-pre-line">{resource.description}</p>
+                    </div>
+
+                    {/* Borrower Info */}
+                    {resource.is_library_item && currentBorrowers.length > 0 && (
+                        <div className="p-4 rounded-xl bg-white/5 border border-white/5">
+                            <h4 className="text-xs font-bold text-[var(--text-primary)] uppercase tracking-wider mb-3">Current Borrowers</h4>
+                            <div className="flex flex-wrap gap-2">
+                                {currentBorrowers.map((b, i) => (
+                                    <div key={i} className="px-3 py-1.5 rounded-lg bg-black/40 border border-white/10 text-xs text-[var(--text-secondary)] flex items-center gap-2">
+                                        <div className="w-2 h-2 rounded-full bg-[#e8c559]"></div>
+                                        {b.user_name}
+                                        <span className="text-[var(--text-muted)] opacity-50">
+                                            ({new Date(b.borrowed_at).toLocaleDateString()})
+                                        </span>
+                                    </div>
+                                ))}
+                            </div>
                         </div>
                     )}
-                </div>
 
-                <p className="text-xs text-[var(--text-secondary)] line-clamp-2 mb-3">
-                    {resource.description}
-                </p>
+                    {/* Actions */}
+                    <div className="flex items-center justify-between pt-4 border-t border-[var(--glass-border)]">
+                        <div className="flex gap-2">
+                            {canManage && (
+                                <>
+                                    <button
+                                        onClick={() => {
+                                            onEdit(resource);
+                                            onClose();
+                                        }}
+                                        className="p-2 rounded-lg text-[var(--text-muted)] hover:text-[#e8c559] hover:bg-[#e8c559]/10 transition-colors tooltip"
+                                        title="Edit"
+                                    >
+                                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
+                                    </button>
+                                    <button
+                                        onClick={() => {
+                                            onDelete(resource.id);
+                                            onClose();
+                                        }}
+                                        className="p-2 rounded-lg text-[var(--text-muted)] hover:text-red-500 hover:bg-red-500/10 transition-colors tooltip"
+                                        title="Delete"
+                                    >
+                                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                                    </button>
+                                </>
+                            )}
+                        </div>
 
-                {/* Meta Info */}
-                <div className="flex items-center justify-between text-[10px] text-[var(--text-muted)]">
-                    <span className="flex items-center gap-1">
-                        {new Date(resource.created_at || Date.now()).toLocaleDateString()}
-                    </span>
+                        <div className="flex gap-3">
+                            {/* Library Actions */}
+                            {resource.is_library_item && isBorrowing && (
+                                <button
+                                    onClick={() => onReturn(resource)}
+                                    className="px-5 py-2.5 rounded-xl border border-[#e8c559] text-[#e8c559] font-bold text-sm hover:bg-[#e8c559]/10 transition-colors"
+                                >
+                                    Return Book
+                                </button>
+                            )}
+                            {resource.is_library_item && !isBorrowing && !isOut && (
+                                <button
+                                    onClick={() => onBorrow(resource)}
+                                    className="px-5 py-2.5 rounded-xl border border-[#e8c559] text-[#e8c559] font-bold text-sm hover:bg-[#e8c559]/10 transition-colors"
+                                >
+                                    Borrow
+                                </button>
+                            )}
+
+                            {/* View Action */}
+                            {resource.resource_url && (
+                                <button
+                                    onClick={handleAction}
+                                    className="px-6 py-2.5 rounded-xl bg-[#e8c559] hover:bg-[#dcb33e] text-[#171611] font-bold text-sm shadow-[0_0_20px_rgba(232,197,89,0.3)] transition-all transform hover:scale-105"
+                                >
+                                    {resource.type === 'video' ? 'Watch Video' : 'View Resource'}
+                                </button>
+                            )}
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
     );
 }
 
-// Document Card Component (Simple)
-function DocumentCard({ resource, canManage, onEdit, onDelete }: { resource: KnowledgeResource; canManage: boolean; onEdit: (r: KnowledgeResource) => void; onDelete: (id: string) => void }) {
+// Video Card Component
+function VideoCard({ resource, onViewDetail }: { resource: KnowledgeResource; onViewDetail: (r: KnowledgeResource) => void; }) {
     const accessLevel = ACCESS_LEVELS.find(l => l.id === resource.min_access_level);
 
-    const getTypeIcon = (type: string) => {
-        switch (type) {
-            case "document": return "📄";
-            case "template": return "📋";
-            case "link": return "🔗";
-            case "mom": return "📝";
-            default: return "📁";
-        }
-    };
+    return (
+        <div className="glass-panel rounded-xl overflow-hidden hover:border-[#e8c559]/30 transition-all group relative bg-white border border-gray-200 dark:bg-black/20 dark:border-[var(--glass-border)]">
+            {/* Thumbnail Section */}
+            <div className="relative aspect-video bg-gray-100 dark:bg-black overflow-hidden">
+                <Image
+                    src={getThumbnail(resource.thumbnail_url)}
+                    alt={resource.title}
+                    fill
+                    className="object-cover group-hover:scale-105 transition-transform duration-300 opacity-100 dark:opacity-80 group-hover:opacity-90 dark:group-hover:opacity-60"
+                />
 
-    const handleClick = () => {
-        if (resource.resource_url) {
-            window.open(resource.resource_url, '_blank');
-        }
-    }
+                {/* Play Icon */}
+                <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                    <div className="w-12 h-12 rounded-full bg-white/10 backdrop-blur-sm flex items-center justify-center text-white group-hover:scale-110 transition-transform">
+                        <svg className="w-5 h-5 ml-1" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z" /></svg>
+                    </div>
+                </div>
+
+                {/* Access Level Badge */}
+                <div className={`absolute top-2 left-2 px-2 py-1 rounded text-xs font-medium flex items-center gap-1 backdrop-blur-md border ${accessLevel?.badgeClass || 'bg-gray-500 text-white'}`}>
+                    <span>{accessLevel?.icon}</span>
+                </div>
+
+                {/* Detail Trigger - Eye Icon */}
+                <button
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        onViewDetail(resource);
+                    }}
+                    className="absolute bottom-2 right-2 p-2 rounded-full bg-[#e8c559] text-[#171611] opacity-0 group-hover:opacity-100 transition-all transform translate-y-2 group-hover:translate-y-0 shadow-lg z-10 hover:bg-[#dcb33e]"
+                >
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>
+                </button>
+            </div>
+
+            {/* Content Section */}
+            <div className="p-4">
+                <h3 className="font-semibold text-[var(--text-primary)] line-clamp-1 mb-1 group-hover:text-[#e8c559] transition-colors" title={resource.title}>
+                    {resource.title}
+                </h3>
+                <p className="text-xs text-[var(--text-secondary)] line-clamp-2">
+                    {resource.description}
+                </p>
+            </div>
+        </div>
+    );
+}
+
+// Digital Document Card (Thumbnail-only, like LibraryCard but without stock)
+// Used for: Dokumen Digital, SOP, Template
+function DigitalDocCard({ resource, onViewDetail }: { resource: KnowledgeResource; onViewDetail: (r: KnowledgeResource) => void; }) {
+    const accessLevel = ACCESS_LEVELS.find(l => l.id === resource.min_access_level);
+    const typeIcon = resource.type === 'sop' ? '📋' : resource.type === 'template' ? '📑' : '📄';
 
     return (
-        <div onClick={handleClick} className="glass-panel p-4 rounded-xl hover:border-[#e8c559]/30 transition-all group cursor-pointer">
-            <div className="flex items-center gap-4">
-                {/* Icon */}
-                <div className="flex-shrink-0 w-12 h-12 rounded-lg bg-[#e8c559]/10 flex items-center justify-center text-2xl">
-                    {getTypeIcon(resource.type)}
+        <div className="flex-shrink-0 w-[160px] flex flex-col group h-full relative">
+            {/* Cover Thumbnail */}
+            <div className="relative aspect-[2/3] rounded-lg overflow-hidden shadow-lg mb-3 bg-gray-100 dark:bg-black/40 border border-gray-200 dark:border-[var(--glass-border)] group-hover:border-[#e8c559]/50 transition-all group-hover:-translate-y-1">
+                <Image
+                    src={getThumbnail(resource.thumbnail_url)}
+                    alt={resource.title}
+                    fill
+                    className="object-cover group-hover:scale-105 transition-transform duration-300"
+                />
+
+                {/* Access Badge */}
+                <div className={`absolute top-2 right-2 px-1.5 py-0.5 rounded text-[10px] font-bold backdrop-blur-md border ${accessLevel?.badgeClass || 'bg-gray-500 text-white'}`}>
+                    {accessLevel?.icon}
+                </div>
+
+                {/* Type Icon (Top Left) */}
+                <div className="absolute top-2 left-2 w-7 h-7 rounded-full bg-white/20 backdrop-blur-md flex items-center justify-center border border-white/20">
+                    <span className="text-xs">{typeIcon}</span>
+                </div>
+
+                {/* Overlay Eye Icon */}
+                <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                    <button
+                        onClick={() => onViewDetail(resource)}
+                        className="p-3 rounded-full bg-[#e8c559] text-[#171611] shadow-lg transform scale-90 group-hover:scale-100 transition-transform hover:bg-[#dcb33e]"
+                    >
+                        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>
+                    </button>
+                </div>
+            </div>
+
+            {/* Title only, no description */}
+            <h4 className="text-sm font-semibold text-[var(--text-primary)] line-clamp-2 leading-tight group-hover:text-[#e8c559] transition-colors" title={resource.title}>
+                {resource.title}
+            </h4>
+        </div>
+    );
+}
+
+// Simple List Card (No thumbnail, clickable, expandable description)
+// Used for: MoM, Useful Links
+function SimpleListCard({ resource, onViewDetail }: { resource: KnowledgeResource; onViewDetail: (r: KnowledgeResource) => void; }) {
+    const [expanded, setExpanded] = useState(false);
+    const accessLevel = ACCESS_LEVELS.find(l => l.id === resource.min_access_level);
+    const typeIcon = resource.type === 'mom' ? '📝' : '🔗';
+    const descriptionLong = (resource.description || '').length > 120;
+
+    return (
+        <div className="glass-panel p-4 rounded-xl hover:border-[#e8c559]/30 transition-all group relative border-l-4 border-l-[#e8c559] bg-white border-y border-r border-gray-200 dark:bg-black/20 dark:border-y-[var(--glass-border)] dark:border-r-[var(--glass-border)]">
+            <div className="flex items-start gap-3">
+                {/* Type Icon */}
+                <div className="flex-shrink-0 w-10 h-10 rounded-lg bg-[#e8c559]/10 flex items-center justify-center text-xl">
+                    {typeIcon}
                 </div>
 
                 {/* Content */}
                 <div className="flex-1 min-w-0">
-                    <div className="flex items-start justify-between gap-2">
-                        <h3 className="font-semibold text-[var(--text-primary)] group-hover:text-[#e8c559] transition-colors truncate">
+                    <div className="flex items-center gap-2 mb-1">
+                        <a
+                            href={resource.resource_url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="font-semibold text-[var(--text-primary)] group-hover:text-[#e8c559] transition-colors hover:underline cursor-pointer"
+                            title={resource.title}
+                        >
                             {resource.title}
-                        </h3>
-                        {/* Access Level Badge */}
-                        <span className={`flex-shrink-0 px-2 py-0.5 rounded text-[10px] font-medium flex items-center gap-1 ${resource.min_access_level === 'owner' ? 'bg-red-500/20 text-red-500' :
-                            resource.min_access_level === 'senior' ? 'bg-orange-500/20 text-orange-500' :
-                                resource.min_access_level === 'staff' ? 'bg-blue-500/20 text-blue-500' :
-                                    'bg-green-500/20 text-green-500'
-                            }`}>
-                            {accessLevel?.icon} {accessLevel?.label}
+                        </a>
+                        <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold border ${accessLevel?.badgeClass || 'bg-gray-500 text-white'}`}>
+                            {accessLevel?.icon}
                         </span>
                     </div>
-                    <p className="text-xs text-[var(--text-secondary)] mt-1 line-clamp-1">
-                        {resource.description}
-                    </p>
 
-                    {/* Meta */}
-                    <div className="flex items-center gap-3 mt-2 text-[10px] text-[var(--text-muted)]">
-                        <span>{new Date(resource.created_at || Date.now()).toLocaleDateString()}</span>
+                    {resource.description && (
+                        <div className="text-sm text-[var(--text-secondary)]">
+                            <p className={expanded ? '' : 'line-clamp-1'}>
+                                {resource.description}
+                            </p>
+                            {descriptionLong && (
+                                <button
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        setExpanded(!expanded);
+                                    }}
+                                    className="text-xs font-medium text-[#e8c559] hover:underline mt-0.5"
+                                >
+                                    {expanded ? 'Show Less' : 'View More'}
+                                </button>
+                            )}
+                        </div>
+                    )}
+
+                    <div className="flex items-center gap-3 mt-1.5 text-[10px] text-[var(--text-muted)]">
+                        <span>{new Date(resource.created_at || '').toLocaleDateString()}</span>
+                        {resource.type === 'link' && resource.resource_url && (
+                            <span className="truncate max-w-[200px] opacity-60">{resource.resource_url}</span>
+                        )}
                     </div>
                 </div>
 
-                {/* Action */}
-                <div className="flex-shrink-0 flex items-center gap-1" onClick={e => e.stopPropagation()}>
-                    {canManage && (
-                        <>
-                            <button onClick={() => onEdit(resource)} className="p-2 rounded-lg text-[var(--text-muted)] hover:text-[#e8c559] hover:bg-[#e8c559]/10 transition-colors">
-                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
-                            </button>
-                            <button onClick={() => onDelete(resource.id)} className="p-2 rounded-lg text-[var(--text-muted)] hover:text-red-500 hover:bg-red-500/10 transition-colors">
-                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
-                            </button>
-                        </>
-                    )}
-                    <button onClick={handleClick} className="p-2 rounded-lg text-[var(--text-muted)] hover:text-[#e8c559] hover:bg-[#e8c559]/10 transition-colors">
-                        {/* Download/Open Button */}
-                        <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
-                            <path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z" />
-                        </svg>
+                {/* Eye Icon (detail) */}
+                <div className="flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity self-center">
+                    <button
+                        onClick={() => onViewDetail(resource)}
+                        className="p-2 rounded-full bg-[#e8c559] text-[#171611] shadow-lg hover:bg-[#dcb33e]"
+                        title="View Details"
+                    >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>
                     </button>
                 </div>
             </div>
@@ -212,62 +442,64 @@ function DocumentCard({ resource, canManage, onEdit, onDelete }: { resource: Kno
     );
 }
 
-// SOP Card Component
-function SOPCard({ resource, canManage, onEdit, onDelete }: { resource: KnowledgeResource; canManage: boolean; onEdit: (r: KnowledgeResource) => void; onDelete: (id: string) => void }) {
+// Library Card Component (Portrait Book Style)
+function LibraryCard({ resource, onViewDetail, onReturn, currentUserId }: { resource: KnowledgeResource; onViewDetail: (r: KnowledgeResource) => void; onReturn: (r: KnowledgeResource) => void; currentUserId?: string }) {
     const accessLevel = ACCESS_LEVELS.find(l => l.id === resource.min_access_level);
-
-    const handleClick = () => {
-        if (resource.resource_url) {
-            window.open(resource.resource_url, '_blank');
-        }
-    }
+    const thumbnail = resource.thumbnail_url || DEFAULT_THUMBNAIL;
+    const totalStock = resource.stock_total || 0;
+    const currentBorrowers = resource.current_borrowers || [];
+    const availableStock = Math.max(0, totalStock - currentBorrowers.length);
+    const isOut = availableStock === 0;
+    const isBorrowing = currentBorrowers.some(b => b.user_id === currentUserId);
 
     return (
-        <div onClick={handleClick} className="glass-panel p-4 rounded-xl hover:border-[#e8c559]/30 transition-all group cursor-pointer border-l-4 border-l-[#e8c559]">
-            <div className="flex items-start gap-4">
-                {/* SOP Icon */}
-                <div className="flex-shrink-0 w-10 h-10 rounded-lg bg-[#e8c559]/20 flex items-center justify-center">
-                    <svg className="w-5 h-5 text-[#e8c559]" fill="currentColor" viewBox="0 0 24 24">
-                        <path d="M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6zM6 20V4h7v5h5v11H6z" />
-                    </svg>
+        <div className="flex-shrink-0 w-[160px] flex flex-col group h-full relative">
+            {/* Book Cover */}
+            <div className="relative aspect-[2/3] rounded-lg overflow-hidden shadow-lg mb-3 bg-[#e8c559]/5 border border-[#e8c559]/20 group-hover:border-[#e8c559]/50 transition-all group-hover:-translate-y-1">
+                <Image
+                    src={getThumbnail(resource.thumbnail_url)}
+                    alt={resource.title}
+                    fill
+                    className="object-cover"
+                />
+
+                {/* Access Badge */}
+                <div className={`absolute top-2 right-2 px-1.5 py-0.5 rounded text-[10px] font-bold backdrop-blur-md border ${accessLevel?.badgeClass || 'bg-gray-500 text-white'}`}>
+                    {accessLevel?.icon}
                 </div>
 
-                {/* Content */}
-                <div className="flex-1 min-w-0">
-                    <div className="flex items-start justify-between gap-2 mb-1">
-                        <h3 className="font-semibold text-[var(--text-primary)] group-hover:text-[#e8c559] transition-colors">
-                            {resource.title}
-                        </h3>
-                        {/* Access Level Badge */}
-                        <span className={`flex-shrink-0 px-2 py-0.5 rounded text-[10px] font-medium flex items-center gap-1 ${resource.min_access_level === 'owner' ? 'bg-red-500/20 text-red-500' :
-                            resource.min_access_level === 'senior' ? 'bg-orange-500/20 text-orange-500' :
-                                resource.min_access_level === 'staff' ? 'bg-blue-500/20 text-blue-500' :
-                                    'bg-green-500/20 text-green-500'
-                            }`}>
-                            {accessLevel?.icon} {accessLevel?.label}
-                        </span>
-                    </div>
-                    <p className="text-sm text-[var(--text-secondary)] mb-2">
-                        {resource.description}
-                    </p>
-
-                    {/* Tags & Meta */}
-                    <div className="flex items-center gap-2 flex-wrap">
-                        <span className="text-[10px] text-[var(--text-muted)] ml-auto">
-                            {new Date(resource.created_at || Date.now()).toLocaleDateString()}
-                        </span>
-                    </div>
-                    {canManage && (
-                        <div className="flex gap-2 mt-2 justify-end" onClick={e => e.stopPropagation()}>
-                            <button onClick={() => onEdit(resource)} className="text-xs text-[var(--text-muted)] hover:text-[#e8c559] flex items-center gap-1">
-                                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg> Edit
-                            </button>
-                            <button onClick={() => onDelete(resource.id)} className="text-xs text-[var(--text-muted)] hover:text-red-500 flex items-center gap-1">
-                                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg> Delete
-                            </button>
-                        </div>
-                    )}
+                {/* Overlay Eye Icon */}
+                <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                    <button
+                        onClick={() => onViewDetail(resource)}
+                        className="p-3 rounded-full bg-[#e8c559] text-[#171611] shadow-lg transform scale-90 group-hover:scale-100 transition-transform hover:bg-[#dcb33e]"
+                    >
+                        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>
+                    </button>
                 </div>
+            </div>
+
+            {/* Title & Info */}
+            <h4 className="text-sm font-semibold text-[var(--text-primary)] line-clamp-2 leading-tight mb-1" title={resource.title}>
+                {resource.title}
+            </h4>
+
+            <div className="flex flex-col gap-1 mt-auto">
+                <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded w-fit ${isOut ? 'bg-red-500/10 text-red-500' : 'bg-green-500/10 text-green-500'}`}>
+                    Stock: {availableStock}/{totalStock}
+                </span>
+
+                {isBorrowing && (
+                    <button
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            onReturn(resource);
+                        }}
+                        className="mt-1 w-full py-1 rounded bg-[#e8c559]/20 text-[#e8c559] text-xs font-bold border border-[#e8c559]/50 hover:bg-[#e8c559] hover:text-[#171611] transition-colors"
+                    >
+                        Return Book
+                    </button>
+                )}
             </div>
         </div>
     );
@@ -279,13 +511,15 @@ export default function KnowledgeHubPage() {
     const [isLoading, setIsLoading] = useState(true);
 
     const [searchQuery, setSearchQuery] = useState("");
-    // Tabs removed as per user request
     const [selectedType, setSelectedType] = useState("all");
     const [selectedRole, setSelectedRole] = useState("all");
     const [selectedAccessLevel, setSelectedAccessLevel] = useState("all");
     const [showAddModal, setShowAddModal] = useState(false);
-    const [modalMode, setModalMode] = useState<"general" | "mom">("general");
     const [editingId, setEditingId] = useState<string | null>(null);
+
+    // Detail Modal State
+    const [selectedResource, setSelectedResource] = useState<KnowledgeResource | null>(null);
+    const [showDetailModal, setShowDetailModal] = useState(false);
 
     // Resources state
     const [resources, setResources] = useState<KnowledgeResource[]>([]);
@@ -315,14 +549,18 @@ export default function KnowledgeHubPage() {
 
     // Form state for Add Resource Modal
     const [isSubmitting, setIsSubmitting] = useState(false);
+    const [thumbnailError, setThumbnailError] = useState("");
     const [newResource, setNewResource] = useState({
         type: "document" as "document" | "video" | "template" | "link" | "sop" | "mom",
         accessLevel: "intern" as "intern" | "staff" | "senior" | "owner",
         title: "",
         description: "",
         resourceUrl: "",
-        thumbnailFile: null as File | null,
+        thumbnailUrl: "",
         targetRoles: "all",
+        // Library Features
+        isLibraryItem: false,
+        stockTotal: 0,
     });
 
     const resetForm = () => {
@@ -332,10 +570,13 @@ export default function KnowledgeHubPage() {
             title: "",
             description: "",
             resourceUrl: "",
-            thumbnailFile: null,
-            targetRoles: "all"
+            thumbnailUrl: "",
+            targetRoles: "all",
+            isLibraryItem: false,
+            stockTotal: 0
         });
         setEditingId(null);
+        setThumbnailError("");
     };
 
     const handleEdit = (resource: KnowledgeResource) => {
@@ -345,13 +586,69 @@ export default function KnowledgeHubPage() {
             title: resource.title,
             description: resource.description,
             resourceUrl: resource.resource_url,
-            thumbnailFile: null,
-            targetRoles: resource.target_roles.includes('all') ? 'all' : resource.target_roles[0] || 'all'
+            thumbnailUrl: resource.thumbnail_url || "",
+            targetRoles: resource.target_roles.includes('all') ? 'all' : resource.target_roles[0] || 'all',
+            isLibraryItem: resource.is_library_item || false,
+            stockTotal: resource.stock_total || 0,
         });
         setEditingId(resource.id);
-        setModalMode(resource.type === 'mom' ? 'mom' : 'general');
         setShowAddModal(true);
     };
+
+    const handleBorrow = async (resource: KnowledgeResource) => {
+        if (!profile) return;
+        const currentBorrowers = resource.current_borrowers || [];
+
+        const newBorrower = {
+            user_id: profile.id,
+            user_name: profile.full_name || profile.email,
+            borrowed_at: new Date().toISOString()
+        };
+
+        const updatedBorrowers = [...currentBorrowers, newBorrower];
+
+        try {
+            const { error } = await supabase
+                .from('knowledge_resources')
+                .update({ current_borrowers: updatedBorrowers })
+                .eq('id', resource.id);
+
+            if (error) throw error;
+            toast.success("Berhasil meminjam buku!");
+            fetchResources();
+            // Update selected resource for modal
+            if (selectedResource && selectedResource.id === resource.id) {
+                setSelectedResource({ ...selectedResource, current_borrowers: updatedBorrowers });
+            }
+        } catch (err: any) {
+            console.error("Error borrowing:", err);
+            toast.error("Gagal meminjam buku");
+        }
+    };
+
+    const handleReturn = async (resource: KnowledgeResource) => {
+        if (!profile) return;
+        const currentBorrowers = resource.current_borrowers || [];
+        const updatedBorrowers = currentBorrowers.filter(b => b.user_id !== profile.id);
+
+        try {
+            const { error } = await supabase
+                .from('knowledge_resources')
+                .update({ current_borrowers: updatedBorrowers })
+                .eq('id', resource.id);
+
+            if (error) throw error;
+            toast.success("Buku berhasil dikembalikan!");
+            fetchResources();
+            // Update selected resource for modal
+            if (selectedResource && selectedResource.id === resource.id) {
+                setSelectedResource({ ...selectedResource, current_borrowers: updatedBorrowers });
+            }
+        } catch (err: any) {
+            console.error("Error returning:", err);
+            toast.error("Gagal mengembalikan buku");
+        }
+    }
 
     const handleDelete = async (id: string) => {
         if (!confirm("Apakah Anda yakin ingin menghapus resource ini?")) return;
@@ -366,6 +663,11 @@ export default function KnowledgeHubPage() {
         }
     };
 
+    const handleOpenDetail = (resource: KnowledgeResource) => {
+        setSelectedResource(resource);
+        setShowDetailModal(true);
+    };
+
     // Handle form submission
     const handleAddResource = async () => {
         if (!newResource.title || !newResource.resourceUrl) {
@@ -373,35 +675,15 @@ export default function KnowledgeHubPage() {
             return;
         }
 
+        if (newResource.thumbnailUrl && !isValidUrl(newResource.thumbnailUrl)) {
+            // Non-blocking warning
+            toast.warning("Thumbnail URL mungkin tidak valid, namun tetap disimpan.");
+        }
+
         setIsSubmitting(true);
         try {
-            let thumbnailUrl = null;
-
-            // Upload thumbnail if present and type is video
-            if (newResource.type === 'video' && newResource.thumbnailFile) {
-                const file = newResource.thumbnailFile;
-                const fileExt = file.name.split('.').pop();
-                const fileName = `${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`;
-                const filePath = `thumbnails/${fileName}`;
-
-                const { error: uploadError } = await supabase.storage
-                    .from('knowledge_thumbnails')
-                    .upload(filePath, file);
-
-                if (uploadError) {
-                    console.error("Thumbnail Upload Error", uploadError);
-                    // If bucket doesn't exist or policy fail, we might fail here.
-                    // But we proceed without thumbnail for now or throw?
-                    // Let's just log and continue, validation plan said assume manual migration run
-                } else {
-                    const { data: { publicUrl } } = supabase.storage
-                        .from('knowledge_thumbnails')
-                        .getPublicUrl(filePath);
-                    thumbnailUrl = publicUrl;
-                }
-            }
-
-
+            // Use user input URL or null. Default thumbnail logic is handled at render time, not DB.
+            let thumbnailUrl = newResource.thumbnailUrl || null;
 
             if (editingId) {
                 // Update existing
@@ -412,8 +694,11 @@ export default function KnowledgeHubPage() {
                     resource_url: newResource.resourceUrl,
                     min_access_level: newResource.accessLevel,
                     target_roles: newResource.targetRoles === 'all' ? ['all'] : [newResource.targetRoles],
+                    is_library_item: newResource.isLibraryItem,
+                    stock_total: newResource.stockTotal,
                 };
-                if (thumbnailUrl) updateData.thumbnail_url = thumbnailUrl;
+                // Explicitly update thumbnail (even if empty to clear it)
+                updateData.thumbnail_url = thumbnailUrl;
 
                 const { error: updateError } = await supabase
                     .from('knowledge_resources')
@@ -434,6 +719,8 @@ export default function KnowledgeHubPage() {
                         thumbnail_url: thumbnailUrl,
                         min_access_level: newResource.accessLevel,
                         target_roles: newResource.targetRoles === 'all' ? ['all'] : [newResource.targetRoles],
+                        is_library_item: newResource.isLibraryItem,
+                        stock_total: newResource.stockTotal,
                         created_by: profile?.id,
                     });
 
@@ -441,11 +728,7 @@ export default function KnowledgeHubPage() {
                 toast.success("Resource berhasil ditambahkan!");
             }
             setShowAddModal(false);
-
-            // Reset form
             resetForm();
-
-            // Reload list
             fetchResources();
 
         } catch (err: any) {
@@ -456,390 +739,485 @@ export default function KnowledgeHubPage() {
         }
     };
 
+    // Determine the user's effective access level from their profile
+    const isIntern = profile?.is_intern || profile?.job_type === 'intern';
+
+    const getUserAccessLevel = (): string => {
+        if (!profile) return 'intern';
+        // Owner-tier: ceo, super_admin, owner roles
+        if (['ceo', 'super_admin', 'owner'].includes(profile.role)) return 'owner';
+        // Senior-tier: hr role or senior job levels
+        if (profile.role === 'hr') return 'senior';
+        // Intern-tier
+        if (isIntern) return 'intern';
+        // Default employee = staff-tier
+        return 'staff';
+    };
+
+    const userAccessLevel = getUserAccessLevel();
+
+    // Access level hierarchy for comparison
+    const ACCESS_HIERARCHY: Record<string, number> = {
+        'intern': 0,
+        'staff': 1,
+        'senior': 2,
+        'owner': 3,
+    };
+
+    const userAccessRank = ACCESS_HIERARCHY[userAccessLevel] ?? 0;
+
     // Filter resources
     const filteredResources = resources.filter((resource) => {
         const matchesSearch = resource.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
             resource.description?.toLowerCase().includes(searchQuery.toLowerCase());
 
-
-
-        // Tab filter removed
-
         const matchesType = selectedType === "all" || resource.type === selectedType;
-
         const matchesAccessLevel = selectedAccessLevel === "all" || resource.min_access_level === selectedAccessLevel;
-
-        // Role matching: resource target_roles includes 'all' OR includes user's role/job_type?
-        // Actually this filter is for "Show me resources for XXX role". 
-        // If I am filter 'bisdev', show resources that target 'bisdev'.
-        // If resource targets 'all', should it show when filtering 'bisdev'? Maybe not, specific filter means specific target.
         const matchesRoleFilter = selectedRole === "all" ||
             (resource.target_roles && resource.target_roles.includes(selectedRole));
 
-        return matchesSearch && matchesType && matchesRoleFilter && matchesAccessLevel;
+        // Access level enforcement: user can only see resources at or below their level
+        const resourceAccessRank = ACCESS_HIERARCHY[resource.min_access_level] ?? 0;
+        const canAccess = userAccessRank >= resourceAccessRank;
+
+        return matchesSearch && matchesType && matchesRoleFilter && matchesAccessLevel && canAccess;
     });
 
     const videoResources = filteredResources.filter(r => r.type === "video");
     const sopResources = filteredResources.filter(r => r.type === "sop");
-    const documentResources = filteredResources.filter(r => ["document", "template", "link", "mom"].includes(r.type));
+    const libraryResources = filteredResources.filter(r => r.is_library_item);
+    // Templates and Links
+    const templateResources = filteredResources.filter(r => r.type === "template");
+    const linkResources = filteredResources.filter(r => r.type === "link");
+    const momResources = filteredResources.filter(r => r.type === "mom");
+    // Ensure 'document' type excludes library items AND MoM items
+    const documentResources = filteredResources.filter(r => r.type === "document" && !r.is_library_item);
 
-    // Subsets for display
-    const templateResources = documentResources.filter(r => r.type === "template");
-    const linkResources = documentResources.filter(r => r.type === "link");
-    const pureDocsResources = documentResources.filter(r => ["document", "mom"].includes(r.type));
-
-    // Access capabilities
-    const isIntern = profile?.is_intern || profile?.job_type === 'intern';
-    const isStaff = profile && !isIntern;
-    const canManage = profile && (profile.role === 'ceo' || profile.role === 'super_admin' || profile.is_office_manager);
-    // Note: 'mom' upload is for everyone (including interns). 'general' upload is for staff only.
+    const canManageResource = (resource: KnowledgeResource) => {
+        if (!profile) return false;
+        // CEO, Super Admin, Owner, or Creator
+        if (profile.role === 'ceo' || profile.role === 'super_admin' || profile.role === 'owner') return true;
+        return resource.created_by === profile.id;
+    };
 
     return (
-        <div className="flex flex-col h-full">
-            {/* Page Header */}
-            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
-                <div className="flex items-center gap-3">
-                    <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-[#3f545f] to-[#5f788e] dark:from-[#e8c559] dark:to-[#dcb33e] flex items-center justify-center">
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-white dark:text-[#171611]" viewBox="0 0 24 24" fill="currentColor">
-                            <path d="M12 3L1 9l4 2.18v6L12 21l7-3.82v-6l2-1.09V17h2V9L12 3zm6.82 6L12 12.72 5.18 9 12 5.28 18.82 9zM17 15.99l-5 2.73-5-2.73v-3.72L12 15l5-2.73v3.72z" />
-                        </svg>
+        <div className="space-y-8 font-poppins text-[var(--text-primary)]">
+            {/* Header & Controls */}
+            {/* Header & Controls */}
+            <header className="flex flex-col gap-4 md:flex-row md:items-end justify-between">
+                <div className="flex items-center gap-4">
+                    <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-[#e8c559] to-[#b88e22] flex items-center justify-center shadow-lg shadow-[#e8c559]/20">
+                        <BookOpen className="h-6 w-6 text-[#171611]" />
                     </div>
                     <div>
-                        <h2 className="text-2xl font-bold text-[var(--text-primary)]">Knowledge Hub</h2>
-                        <p className="text-sm text-[var(--text-secondary)]">Pusat pengetahuan untuk dokumen, video training, dan SOP</p>
+                        <h1 className="text-2xl font-bold text-[var(--text-primary)]">Knowledge Hub</h1>
+                        <p className="text-sm text-[var(--text-secondary)]">Pusat pembelajaran dan sumber daya perusahaan.</p>
                     </div>
                 </div>
-                <div className="flex gap-3">
-                    {/* Tambah Resource - Access Controlled */}
-                    {isStaff && (
+
+                <div className="flex items-center gap-3">
+                    {/* Upload MoM - ALL authenticated users can upload MoM */}
+                    {profile && (
                         <button
                             onClick={() => {
-                                setModalMode("general");
-                                resetForm();
-                                setNewResource(prev => ({ ...prev, type: 'document' }));
+                                setNewResource(prev => ({ ...prev, type: 'mom' }));
                                 setShowAddModal(true);
                             }}
-                            className="h-10 px-5 rounded-lg bg-[#e8c559] hover:bg-[#dcb33e] text-[#171611] text-sm font-bold transition-colors shadow-[0_0_15px_rgba(232,197,89,0.2)] flex items-center gap-2"
+                            className={`px-5 py-2.5 rounded-xl font-bold transition-all flex items-center gap-2 ${isIntern
+                                    ? 'bg-[#e8c559] hover:bg-[#dcb33e] text-[#171611] shadow-[0_0_20px_rgba(232,197,89,0.3)]'
+                                    : 'border-2 border-[#e8c559] text-[#e8c559] hover:bg-[#e8c559]/10'
+                                }`}
                         >
-                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 24 24" fill="currentColor">
-                                <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z" />
-                            </svg>
-                            Tambah Resource
+                            <span className="text-lg">📝</span>
+                            Upload MoM
                         </button>
                     )}
 
-                    {/* Tambah MOM - Visible for All */}
-                    <button
-                        onClick={() => {
-                            setModalMode("mom");
-                            resetForm();
-                            setNewResource(prev => ({ ...prev, type: 'mom' }));
-                            setShowAddModal(true);
-                        }}
-                        className="h-10 px-5 rounded-lg bg-[#e8c559] hover:bg-[#dcb33e] text-[#171611] text-sm font-bold transition-colors shadow-[0_0_15px_rgba(232,197,89,0.2)] flex items-center gap-2"
-                    >
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 24 24" fill="currentColor">
-                            <path d="M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z" />
-                        </svg>
-                        Tambah MoM
-                    </button>
+                    {/* Tambah Resource - visible to non-interns only */}
+                    {profile && !isIntern && (
+                        <button
+                            onClick={() => setShowAddModal(true)}
+                            className="px-5 py-2.5 rounded-xl bg-[#e8c559] hover:bg-[#dcb33e] text-[#171611] font-bold shadow-[0_0_20px_rgba(232,197,89,0.3)] transition-all flex items-center gap-2"
+                        >
+                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
+                            Tambah Resource
+                        </button>
+                    )}
                 </div>
-            </div>
+            </header>
 
-            {/* Filters Row */}
-            <div className="flex flex-wrap gap-3 mb-6">
+            {/* Filters */}
+            <div className="flex gap-4 overflow-x-auto pb-4 no-scrollbar">
                 {/* Search */}
-                <div className="relative flex-1 min-w-[200px]">
-                    <svg xmlns="http://www.w3.org/2000/svg" className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-[var(--text-muted)]" viewBox="0 0 24 24" fill="currentColor">
-                        <path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z" />
-                    </svg>
+                <div className="relative min-w-[200px]">
+                    <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--text-muted)]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
                     <input
                         type="text"
                         placeholder="Cari resource..."
+                        className="w-full pl-9 pr-4 py-2 rounded-lg bg-[var(--card-bg)] border border-[var(--glass-border)] text-sm focus:border-[#e8c559] outline-none placeholder-[var(--text-muted)]"
                         value={searchQuery}
                         onChange={(e) => setSearchQuery(e.target.value)}
-                        className="w-full h-10 rounded-lg border border-[var(--glass-border)] bg-[var(--card-bg)] pl-10 pr-4 text-sm text-[var(--text-primary)] placeholder-[var(--text-muted)] focus:ring-2 focus:ring-[#e8c559]/50 focus:border-[#e8c559] transition-all"
                     />
                 </div>
-
                 {/* Type Filter */}
                 <select
+                    className="px-3 py-2 rounded-lg bg-[var(--card-bg)] border border-[var(--glass-border)] text-sm outline-none focus:border-[#e8c559]"
                     value={selectedType}
                     onChange={(e) => setSelectedType(e.target.value)}
-                    className="h-10 px-3 rounded-lg border border-[var(--glass-border)] bg-white dark:bg-[#1c2120] text-sm text-gray-900 dark:text-white focus:border-[#e8c559] outline-none cursor-pointer"
                 >
-                    {RESOURCE_TYPES.map((type) => (
-                        <option key={type.id} value={type.id} className="bg-white dark:bg-[#1c2120] text-gray-900 dark:text-white">{type.label}</option>
-                    ))}
-                </select>
-
-                {/* Role Filter */}
-                <select
-                    value={selectedRole}
-                    onChange={(e) => setSelectedRole(e.target.value)}
-                    className="h-10 px-3 rounded-lg border border-[var(--glass-border)] bg-white dark:bg-[#1c2120] text-sm text-gray-900 dark:text-white focus:border-[#e8c559] outline-none cursor-pointer"
-                >
-                    {ROLE_FILTERS.map((role) => (
-                        <option key={role.id} value={role.id} className="bg-white dark:bg-[#1c2120] text-gray-900 dark:text-white">{role.icon} {role.label}</option>
-                    ))}
-                </select>
-
-                {/* Access Level Filter */}
-                <select
-                    value={selectedAccessLevel}
-                    onChange={(e) => setSelectedAccessLevel(e.target.value)}
-                    className="h-10 px-3 rounded-lg border border-[var(--glass-border)] bg-white dark:bg-[#1c2120] text-sm text-gray-900 dark:text-white focus:border-[#e8c559] outline-none cursor-pointer"
-                >
-                    {ACCESS_LEVELS.map((level) => (
-                        <option key={level.id} value={level.id} className="bg-white dark:bg-[#1c2120] text-gray-900 dark:text-white">{level.icon} {level.label}</option>
+                    {RESOURCE_TYPES.map(t => (
+                        <option key={t.id} value={t.id}>{t.label}</option>
                     ))}
                 </select>
             </div>
 
-            {/* Stats */}
-            <div className="flex items-center gap-4 mb-6">
-                <div className="glass-panel px-4 py-2 rounded-lg flex items-center gap-2">
-                    <span className="text-[#e8c559] font-bold text-lg">{isLoading ? "..." : filteredResources.length}</span>
-                    <span className="text-[var(--text-secondary)] text-sm">resources</span>
-                </div>
-                {!isLoading && (
-                    <div className="flex gap-3 text-xs text-[var(--text-muted)]">
-                        <span>📄 {pureDocsResources.length} docs</span>
-                        <span>📋 {templateResources.length} templates</span>
-                        <span>🔗 {linkResources.length} links</span>
-                        <span>🎬 {videoResources.length} videos</span>
-                        <span>📋 {sopResources.length} SOPs</span>
-                    </div>
-                )}
-            </div>
+            {/* 1. Video Section */}
+            {
+                videoResources.length > 0 && (
+                    <section className="space-y-4">
+                        <div className="flex items-center gap-2 mb-4">
+                            <span className="text-2xl">🎬</span>
+                            <h2 className="text-xl font-bold">Video Pembelajaran</h2>
+                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+                            {videoResources.map(resource => (
+                                <VideoCard
+                                    key={resource.id}
+                                    resource={resource}
+                                    onViewDetail={handleOpenDetail}
+                                />
+                            ))}
+                        </div>
+                    </section>
+                )
+            }
 
-            {/* Content Area */}
-            <div className="flex-1 overflow-auto">
-                {isLoading ? (
-                    <div className="flex items-center justify-center h-64">
-                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#e8c559]"></div>
-                    </div>
-                ) : (
-
-                    <div className="space-y-8">
-                        {/* Videos Section */}
-                        {videoResources.length > 0 && (
-                            <div>
-                                <h3 className="text-lg font-semibold text-[var(--text-primary)] mb-4 flex items-center gap-2">
-                                    🎬 Video Training
-                                </h3>
-                                <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-                                    {videoResources.map((resource) => (
-                                        <VideoCard key={resource.id} resource={resource} canManage={!!canManage} onEdit={handleEdit} onDelete={handleDelete} />
+            {/* 2. Perpustakaan (Fisik) */}
+            {
+                libraryResources.length > 0 && (
+                    <section className="space-y-4">
+                        <div className="flex items-center gap-2 mb-4">
+                            <span className="text-2xl">📚</span>
+                            <h2 className="text-xl font-bold">Perpustakaan (Fisik)</h2>
+                        </div>
+                        <div className="relative -mx-4 px-4">
+                            <div className="overflow-x-auto pb-6 pt-2 hide-scrollbar">
+                                <div className="flex gap-6 w-max">
+                                    {libraryResources.map(resource => (
+                                        <LibraryCard
+                                            key={resource.id}
+                                            resource={resource}
+                                            onReturn={handleReturn}
+                                            onViewDetail={handleOpenDetail}
+                                            currentUserId={profile?.id}
+                                        />
                                     ))}
                                 </div>
                             </div>
-                        )}
+                            <div className="absolute right-0 top-0 bottom-6 w-24 bg-gradient-to-l from-[var(--background)] to-transparent pointer-events-none" />
+                        </div>
+                    </section>
+                )
+            }
 
-                        {/* Documents Section */}
-                        {/* Templates Section */}
-                        {templateResources.length > 0 && (
-                            <div>
-                                <h3 className="text-lg font-semibold text-[var(--text-primary)] mb-4 flex items-center gap-2">
-                                    📋 Templates
-                                </h3>
-                                <div className="space-y-3">
-                                    {templateResources.map((resource) => (
-                                        <DocumentCard key={resource.id} resource={resource} canManage={!!canManage} onEdit={handleEdit} onDelete={handleDelete} />
+            {/* 3. Dokumen Digital (Thumbnail-only, horizontal scroll) */}
+            {
+                documentResources.length > 0 && (
+                    <section className="space-y-4">
+                        <div className="flex items-center gap-2 mb-4">
+                            <span className="text-2xl">📄</span>
+                            <h2 className="text-xl font-bold">Dokumen Digital</h2>
+                        </div>
+                        <div className="relative -mx-4 px-4">
+                            <div className="overflow-x-auto pb-6 pt-2 hide-scrollbar">
+                                <div className="flex gap-6 w-max">
+                                    {documentResources.map(resource => (
+                                        <DigitalDocCard
+                                            key={resource.id}
+                                            resource={resource}
+                                            onViewDetail={handleOpenDetail}
+                                        />
                                     ))}
                                 </div>
                             </div>
-                        )}
+                            <div className="absolute right-0 top-0 bottom-6 w-24 bg-gradient-to-l from-[var(--background)] to-transparent pointer-events-none" />
+                        </div>
+                    </section>
+                )
+            }
 
-                        {/* Links Section */}
-                        {linkResources.length > 0 && (
-                            <div>
-                                <h3 className="text-lg font-semibold text-[var(--text-primary)] mb-4 flex items-center gap-2">
-                                    🔗 Useful Links
-                                </h3>
-                                <div className="space-y-3">
-                                    {linkResources.map((resource) => (
-                                        <DocumentCard key={resource.id} resource={resource} canManage={!!canManage} onEdit={handleEdit} onDelete={handleDelete} />
+
+            {/* 4. SOP Section (Thumbnail horizontal scroll, like docs) */}
+            {
+                sopResources.length > 0 && (
+                    <section className="space-y-4">
+                        <div className="flex items-center gap-2 mb-4">
+                            <span className="text-2xl">📋</span>
+                            <h2 className="text-xl font-bold">Standard Operating Procedures</h2>
+                        </div>
+                        <div className="relative -mx-4 px-4">
+                            <div className="overflow-x-auto pb-6 pt-2 hide-scrollbar">
+                                <div className="flex gap-6 w-max">
+                                    {sopResources.map(resource => (
+                                        <DigitalDocCard
+                                            key={resource.id}
+                                            resource={resource}
+                                            onViewDetail={handleOpenDetail}
+                                        />
                                     ))}
                                 </div>
                             </div>
-                        )}
+                            <div className="absolute right-0 top-0 bottom-6 w-24 bg-gradient-to-l from-[var(--background)] to-transparent pointer-events-none" />
+                        </div>
+                    </section>
+                )
+            }
 
-                        {/* Documents Section */}
-                        {pureDocsResources.length > 0 && (
-                            <div>
-                                <h3 className="text-lg font-semibold text-[var(--text-primary)] mb-4 flex items-center gap-2">
-                                    📄 Documents
-                                </h3>
-                                <div className="space-y-3">
-                                    {pureDocsResources.map((resource) => (
-                                        <DocumentCard key={resource.id} resource={resource} canManage={!!canManage} onEdit={handleEdit} onDelete={handleDelete} />
+            {/* 5. Templates Section (Thumbnail horizontal scroll, like docs) */}
+            {
+                templateResources.length > 0 && (
+                    <section className="space-y-4">
+                        <div className="flex items-center gap-2 mb-4">
+                            <span className="text-2xl">📑</span>
+                            <h2 className="text-xl font-bold">Templates</h2>
+                        </div>
+                        <div className="relative -mx-4 px-4">
+                            <div className="overflow-x-auto pb-6 pt-2 hide-scrollbar">
+                                <div className="flex gap-6 w-max">
+                                    {templateResources.map(resource => (
+                                        <DigitalDocCard
+                                            key={resource.id}
+                                            resource={resource}
+                                            onViewDetail={handleOpenDetail}
+                                        />
                                     ))}
                                 </div>
                             </div>
-                        )}
+                            <div className="absolute right-0 top-0 bottom-6 w-24 bg-gradient-to-l from-[var(--background)] to-transparent pointer-events-none" />
+                        </div>
+                    </section>
+                )
+            }
 
-                        {/* SOPs Section */}
-                        {sopResources.length > 0 && (
-                            <div>
-                                <h3 className="text-lg font-semibold text-[var(--text-primary)] mb-4 flex items-center gap-2">
-                                    📋 Standard Operating Procedures
-                                </h3>
-                                <div className="space-y-3">
-                                    {sopResources.map((resource) => (
-                                        <SOPCard key={resource.id} resource={resource} canManage={!!canManage} onEdit={handleEdit} onDelete={handleDelete} />
-                                    ))}
-                                </div>
-                            </div>
-                        )}
+            {/* 6. MoM Section (List format, no thumbnail) */}
+            {
+                momResources.length > 0 && (
+                    <section className="space-y-4">
+                        <div className="flex items-center gap-2 mb-4">
+                            <span className="text-2xl">📝</span>
+                            <h2 className="text-xl font-bold">Minutes of Meeting (MoM)</h2>
+                        </div>
+                        <div className="space-y-3">
+                            {momResources.map(resource => (
+                                <SimpleListCard
+                                    key={resource.id}
+                                    resource={resource}
+                                    onViewDetail={handleOpenDetail}
+                                />
+                            ))}
+                        </div>
+                    </section>
+                )
+            }
 
-                        {filteredResources.length === 0 && (
-                            <div className="text-center py-12 text-[var(--text-muted)]">
-                                No resources found matching your filters.
-                            </div>
-                        )}
-                    </div>
-                )}
-            </div>
+            {/* 7. Useful Links (List format, no thumbnail) */}
+            {
+                linkResources.length > 0 && (
+                    <section className="space-y-4">
+                        <div className="flex items-center gap-2 mb-4">
+                            <span className="text-2xl">🔗</span>
+                            <h2 className="text-xl font-bold">Useful Links</h2>
+                        </div>
+                        <div className="space-y-3">
+                            {linkResources.map(resource => (
+                                <SimpleListCard
+                                    key={resource.id}
+                                    resource={resource}
+                                    onViewDetail={handleOpenDetail}
+                                />
+                            ))}
+                        </div>
+                    </section>
+                )
+            }
 
-            {/* ADD RESOURCE MODAL */}
+
+            {/* Detail Popup */}
+            <ResourceDetailModal
+                resource={selectedResource}
+                isOpen={showDetailModal}
+                onClose={() => setShowDetailModal(false)}
+                canManage={selectedResource ? canManageResource(selectedResource) : false}
+                onEdit={handleEdit}
+                onDelete={handleDelete}
+                onBorrow={handleBorrow}
+                onReturn={handleReturn}
+                currentUserId={profile?.id}
+            />
+
+
+            {/* Add/Edit Modal */}
+            {/* Add/Edit Modal */}
             {showAddModal && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
-                    <div className="glass-panel w-full max-w-lg rounded-xl overflow-hidden shadow-2xl animate-in fade-in zoom-in duration-200">
-                        <div className="p-6 border-b border-white/5 flex justify-between items-center">
-                            <h3 className="text-xl font-bold text-[var(--text-primary)]">
-                                {editingId ? 'Edit Resource' : (modalMode === 'mom' ? 'Tambah Minutes of Meeting' : 'Tambah Resource Baru')}
-                            </h3>
-                            <button
-                                onClick={() => setShowAddModal(false)}
-                                className="text-[var(--text-muted)] hover:text-[var(--text-primary)]"
-                            >
-                                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                                </svg>
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
+                    <div className="bg-white dark:bg-[#171611] border border-gray-200 dark:border-[var(--glass-border)] rounded-2xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[90vh] shadow-[0_0_50px_rgba(0,0,0,0.5)]">
+                        <div className="p-6 border-b border-gray-200 dark:border-[var(--glass-border)] flex justify-between items-center bg-gray-50 dark:bg-[#171611]">
+                            <h2 className="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-[#e8c559] to-[#dcb33e]">
+                                {editingId ? "Edit Resource" : (isIntern ? "Upload MoM" : "Tambah Resource Baru")}
+                            </h2>
+                            <button onClick={() => setShowAddModal(false)} className="text-[var(--text-muted)] hover:text-gray-900 dark:hover:text-white transition-colors">
+                                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
                             </button>
                         </div>
 
-                        <div className="p-6 space-y-4 max-h-[70vh] overflow-y-auto">
-                            {/* Type (Disabled if MoM mode) */}
-                            <div>
-                                <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1">Type</label>
-                                {modalMode === 'mom' ? (
+                        <div className="p-6 overflow-y-auto space-y-6 custom-scrollbar">
+                            {/* Form Fields */}
+                            <div className="space-y-4">
+                                <div>
+                                    <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1">Judul Resource</label>
                                     <input
                                         type="text"
-                                        value="MoM (Minutes of Meeting)"
-                                        disabled
-                                        className="w-full h-10 px-3 rounded-lg border border-[var(--glass-border)] bg-[var(--card-bg)] text-[var(--text-muted)] opacity-70"
+                                        className="w-full h-10 px-3 rounded-lg border border-gray-200 dark:border-[var(--glass-border)] bg-gray-50 dark:bg-[var(--card-bg)] text-gray-900 dark:text-[var(--text-primary)] focus:border-[#e8c559] outline-none"
+                                        value={newResource.title}
+                                        onChange={(e) => setNewResource(prev => ({ ...prev, title: e.target.value }))}
                                     />
-                                ) : (
-                                    <div className="grid grid-cols-3 gap-2">
-                                        {['document', 'video', 'sop', 'template', 'link'].map(t => (
-                                            <button
-                                                key={t}
-                                                onClick={() => setNewResource(prev => ({ ...prev, type: t as any }))}
-                                                className={`px-2 py-2 rounded-lg text-xs font-medium border capitalize ${newResource.type === t
-                                                    ? 'bg-[#e8c559]/20 border-[#e8c559] text-[#e8c559]'
-                                                    : 'border-[var(--glass-border)] text-[var(--text-muted)] hover:bg-white/5'
-                                                    }`}
-                                            >
-                                                {t}
-                                            </button>
-                                        ))}
+                                </div>
+
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div>
+                                        <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1">Tipe</label>
+                                        <select
+                                            className="w-full h-10 px-3 rounded-lg border border-gray-200 dark:border-[var(--glass-border)] bg-gray-50 dark:bg-[var(--card-bg)] text-gray-900 dark:text-[var(--text-primary)] focus:border-[#e8c559] outline-none disabled:opacity-60 disabled:cursor-not-allowed"
+                                            value={newResource.type}
+                                            onChange={(e) => setNewResource(prev => ({ ...prev, type: e.target.value as any }))}
+                                            disabled={!!isIntern}
+                                        >
+                                            {(isIntern
+                                                ? RESOURCE_TYPES.filter(t => t.id === 'mom')
+                                                : RESOURCE_TYPES.filter(t => t.id !== 'all')
+                                            ).map(t => (
+                                                <option key={t.id} value={t.id}>{t.label}</option>
+                                            ))}
+                                        </select>
                                     </div>
-                                )}
-                            </div>
+                                    <div>
+                                        <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1">URL / Link</label>
+                                        <input
+                                            type="text"
+                                            placeholder="https://..."
+                                            className="w-full h-10 px-3 rounded-lg border border-gray-200 dark:border-[var(--glass-border)] bg-gray-50 dark:bg-[var(--card-bg)] text-gray-900 dark:text-[var(--text-primary)] focus:border-[#e8c559] outline-none"
+                                            value={newResource.resourceUrl}
+                                            onChange={(e) => setNewResource(prev => ({ ...prev, resourceUrl: e.target.value }))}
+                                        />
+                                    </div>
+                                </div>
 
-                            {/* Title */}
-                            <div>
-                                <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1">Judul Resource <span className="text-red-500">*</span></label>
-                                <input
-                                    type="text"
-                                    className="w-full h-10 px-3 rounded-lg border border-[var(--glass-border)] bg-[var(--card-bg)] text-[var(--text-primary)] focus:border-[#e8c559] outline-none"
-                                    placeholder="Contoh: Panduan Menggunakan IMS"
-                                    value={newResource.title}
-                                    onChange={(e) => setNewResource(prev => ({ ...prev, title: e.target.value }))}
-                                />
-                            </div>
-
-                            {/* Description */}
-                            <div>
-                                <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1">Deskripsi</label>
-                                <textarea
-                                    className="w-full py-2 px-3 rounded-lg border border-[var(--glass-border)] bg-[var(--card-bg)] text-[var(--text-primary)] focus:border-[#e8c559] outline-none resize-none h-20"
-                                    placeholder="Jelaskan isi resource ini secara singkat..."
-                                    value={newResource.description}
-                                    onChange={(e) => setNewResource(prev => ({ ...prev, description: e.target.value }))}
-                                />
-                            </div>
-
-                            {/* Resource URL (File Upload could be here but prompt implies just link or file) */}
-                            {/* For simplicity we stick to URL input for now as per prompt analysis, but user mentioned upload. 
-                                Since we do not have full file upload UI spec, I will use URL. 
-                                BUT if user says "upload", usually means file. 
-                                However, "locker link semacam gdrive" suggests Links are primary.
-                                I'll keep URL input but label it clearly.
-                             */}
-                            <div>
-                                <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1">Link URL / Google Drive <span className="text-red-500">*</span></label>
-                                <input
-                                    type="text"
-                                    className="w-full h-10 px-3 rounded-lg border border-[var(--glass-border)] bg-[var(--card-bg)] text-[var(--text-primary)] focus:border-[#e8c559] outline-none"
-                                    placeholder="https://docs.google.com/..."
-                                    value={newResource.resourceUrl}
-                                    onChange={(e) => setNewResource(prev => ({ ...prev, resourceUrl: e.target.value }))}
-                                />
-                            </div>
-
-                            {/* Thumbnail - Only for Video */}
-                            {newResource.type === 'video' && (
                                 <div>
-                                    <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1">Thumbnail (Optional)</label>
+                                    <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1">Deskripsi</label>
+                                    <textarea
+                                        rows={3}
+                                        className="w-full p-3 rounded-lg border border-gray-200 dark:border-[var(--glass-border)] bg-gray-50 dark:bg-[var(--card-bg)] text-gray-900 dark:text-[var(--text-primary)] focus:border-[#e8c559] outline-none resize-none"
+                                        value={newResource.description}
+                                        onChange={(e) => setNewResource(prev => ({ ...prev, description: e.target.value }))}
+                                    />
+                                </div>
+
+                                {/* Thumbnail URL Input with Validation & Preview */}
+                                <div className="space-y-2">
+                                    <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1">Thumbnail URL (Opsional)</label>
                                     <input
-                                        type="file"
-                                        accept="image/*"
-                                        className="w-full text-xs text-[var(--text-muted)]
-                                          file:mr-4 file:py-2 file:px-4
-                                          file:rounded-full file:border-0
-                                          file:text-xs file:font-semibold
-                                          file:bg-[#e8c559]/10 file:text-[#e8c559]
-                                          hover:file:bg-[#e8c559]/20"
+                                        type="text"
+                                        placeholder="https://images.unsplash.com/..."
+                                        className={`w-full h-10 px-3 rounded-lg border bg-gray-50 dark:bg-[var(--card-bg)] text-gray-900 dark:text-[var(--text-primary)] outline-none ${thumbnailError ? 'border-amber-500 focus:border-amber-500' : 'border-gray-200 dark:border-[var(--glass-border)] focus:border-[#e8c559]'}`}
+                                        value={newResource.thumbnailUrl}
                                         onChange={(e) => {
-                                            if (e.target.files && e.target.files[0]) {
-                                                setNewResource(prev => ({ ...prev, thumbnailFile: e.target.files![0] }));
+                                            setNewResource(prev => ({ ...prev, thumbnailUrl: e.target.value }));
+                                            if (e.target.value && !isValidUrl(e.target.value)) {
+                                                setThumbnailError("Format URL mungkin tidak valid (tetap bisa disimpan)");
+                                            } else {
+                                                setThumbnailError("");
                                             }
                                         }}
                                     />
-                                    <p className="text-[10px] text-[var(--text-muted)] mt-1">
-                                        Jika tidak diisi, akan menggunakan gambar default.
-                                    </p>
-                                </div>
-                            )}
+                                    {thumbnailError && <p className="text-xs text-amber-500">⚠️ {thumbnailError}</p>}
 
-                            {/* Access Level & Roles */}
-                            <div className="grid grid-cols-2 gap-4">
-                                <div>
-                                    <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1">Akses Minimal</label>
-                                    <select
-                                        className="w-full h-10 px-3 rounded-lg border border-[var(--glass-border)] bg-[var(--card-bg)] text-[var(--text-primary)] focus:border-[#e8c559] outline-none"
-                                        value={newResource.accessLevel}
-                                        onChange={(e) => setNewResource(prev => ({ ...prev, accessLevel: e.target.value as any }))}
-                                    >
-                                        {ACCESS_LEVELS.slice(1).map(l => (
-                                            <option key={l.id} value={l.id}>{l.label}</option>
-                                        ))}
-                                    </select>
+                                    {/* Thumbnail Preview */}
+                                    {(newResource.thumbnailUrl && !thumbnailError) && (
+                                        <div className="mt-2 relative rounded-lg overflow-hidden border border-gray-200 dark:border-[var(--glass-border)] bg-gray-100 dark:bg-black/20">
+                                            <div className={`relative w-full ${newResource.type === 'video' ? 'aspect-video' : 'aspect-[3/4]'} mx-auto max-w-[200px]`}>
+                                                {/* Use standard img for preview to handle arbitrary URLs better during input */}
+                                                <img
+                                                    src={newResource.thumbnailUrl}
+                                                    alt="Thumbnail Preview"
+                                                    className="w-full h-full object-cover"
+                                                    onError={() => setThumbnailError("Gagal memuat gambar dari URL ini")}
+                                                />
+                                            </div>
+                                            <p className="text-center text-[10px] text-[var(--text-muted)] py-1">Preview ({newResource.type === 'video' ? 'Landscape' : 'Portrait'})</p>
+                                        </div>
+                                    )}
                                 </div>
-                                <div>
-                                    <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1">Target Department</label>
-                                    <select
-                                        className="w-full h-10 px-3 rounded-lg border border-[var(--glass-border)] bg-[var(--card-bg)] text-[var(--text-primary)] focus:border-[#e8c559] outline-none"
-                                        value={newResource.targetRoles}
-                                        onChange={(e) => setNewResource(prev => ({ ...prev, targetRoles: e.target.value }))}
-                                    >
-                                        {ROLE_FILTERS.map(r => (
-                                            <option key={r.id} value={r.id}>{r.label}</option>
-                                        ))}
-                                    </select>
+
+                                {/* Library Options (Only for Docs/MOM) */}
+                                {['document', 'mom'].includes(newResource.type) && (
+                                    <div className="p-4 rounded-xl bg-[var(--card-bg)] border border-[var(--glass-border)] space-y-4">
+                                        <label className="flex items-center gap-2 cursor-pointer">
+                                            <input
+                                                type="checkbox"
+                                                checked={newResource.isLibraryItem}
+                                                onChange={(e) => setNewResource(prev => ({ ...prev, isLibraryItem: e.target.checked }))}
+                                                className="w-4 h-4 rounded border-[#e8c559] text-[#e8c559] focus:ring-[#e8c559] bg-[var(--card-bg)]"
+                                            />
+                                            <span className="text-sm font-medium text-[var(--text-primary)]">Tersedia Offline (Buku Fisik)</span>
+                                        </label>
+
+                                        {newResource.isLibraryItem && (
+                                            <div className="animate-in fade-in slide-in-from-top-2 duration-200">
+                                                <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1">Total Stock</label>
+                                                <input
+                                                    type="number"
+                                                    min="0"
+                                                    className="w-full h-10 px-3 rounded-lg border border-gray-200 dark:border-[var(--glass-border)] bg-gray-50 dark:bg-[var(--card-bg)] text-[var(--text-primary)] focus:border-[#e8c559] outline-none"
+                                                    value={newResource.stockTotal}
+                                                    onChange={(e) => setNewResource(prev => ({ ...prev, stockTotal: parseInt(e.target.value) || 0 }))}
+                                                />
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
+
+                                {/* Access Level & Roles */}
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div>
+                                        <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1">Akses Minimal</label>
+                                        {isIntern ? (
+                                            <div className="w-full h-10 px-3 rounded-lg border border-gray-200 dark:border-[var(--glass-border)] bg-gray-100 dark:bg-white/5 text-[var(--text-muted)] flex items-center text-sm cursor-not-allowed">
+                                                Intern (Locked)
+                                            </div>
+                                        ) : (
+                                            <select
+                                                className="w-full h-10 px-3 rounded-lg border border-gray-200 dark:border-[var(--glass-border)] bg-gray-50 dark:bg-[var(--card-bg)] text-gray-900 dark:text-[var(--text-primary)] focus:border-[#e8c559] outline-none"
+                                                value={newResource.accessLevel}
+                                                onChange={(e) => setNewResource(prev => ({ ...prev, accessLevel: e.target.value as any }))}
+                                            >
+                                                {ACCESS_LEVELS.slice(1).map(l => (
+                                                    <option key={l.id} value={l.id}>{l.label}</option>
+                                                ))}
+                                            </select>
+                                        )}
+                                    </div>
+                                    <div>
+                                        <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1">Target Department</label>
+                                        <select
+                                            className="w-full h-10 px-3 rounded-lg border border-gray-200 dark:border-[var(--glass-border)] bg-gray-50 dark:bg-[var(--card-bg)] text-gray-900 dark:text-[var(--text-primary)] focus:border-[#e8c559] outline-none"
+                                            value={newResource.targetRoles}
+                                            onChange={(e) => setNewResource(prev => ({ ...prev, targetRoles: e.target.value }))}
+                                        >
+                                            {ROLE_FILTERS.map(r => (
+                                                <option key={r.id} value={r.id}>{r.label}</option>
+                                            ))}
+                                        </select>
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -862,6 +1240,6 @@ export default function KnowledgeHubPage() {
                     </div>
                 </div>
             )}
-        </div>
+        </div >
     );
 }
