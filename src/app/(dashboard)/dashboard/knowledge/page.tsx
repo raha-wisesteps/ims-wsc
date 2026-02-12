@@ -816,31 +816,18 @@ export default function KnowledgeHubPage() {
                 </div>
 
                 <div className="flex items-center gap-3">
-                    {/* Upload MoM - ALL authenticated users can upload MoM */}
+                    {/* Add Resource - Visible to ALL authenticated users */}
                     {profile && (
                         <button
                             onClick={() => {
-                                setNewResource(prev => ({ ...prev, type: 'mom' }));
+                                // optional: reset to default type if needed, or keep previous state
+                                // setNewResource(prev => ({ ...prev, type: 'document' })); 
                                 setShowAddModal(true);
                             }}
-                            className={`px-5 py-2.5 rounded-xl font-bold transition-all flex items-center gap-2 ${isIntern
-                                    ? 'bg-[#e8c559] hover:bg-[#dcb33e] text-[#171611] shadow-[0_0_20px_rgba(232,197,89,0.3)]'
-                                    : 'border-2 border-[#e8c559] text-[#e8c559] hover:bg-[#e8c559]/10'
-                                }`}
-                        >
-                            <span className="text-lg">📝</span>
-                            Upload MoM
-                        </button>
-                    )}
-
-                    {/* Tambah Resource - visible to non-interns only */}
-                    {profile && !isIntern && (
-                        <button
-                            onClick={() => setShowAddModal(true)}
                             className="px-5 py-2.5 rounded-xl bg-[#e8c559] hover:bg-[#dcb33e] text-[#171611] font-bold shadow-[0_0_20px_rgba(232,197,89,0.3)] transition-all flex items-center gap-2"
                         >
                             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
-                            Tambah Resource
+                            Add Resource
                         </button>
                     )}
                 </div>
@@ -1063,7 +1050,7 @@ export default function KnowledgeHubPage() {
                     <div className="bg-white dark:bg-[#171611] border border-gray-200 dark:border-[var(--glass-border)] rounded-2xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[90vh] shadow-[0_0_50px_rgba(0,0,0,0.5)]">
                         <div className="p-6 border-b border-gray-200 dark:border-[var(--glass-border)] flex justify-between items-center bg-gray-50 dark:bg-[#171611]">
                             <h2 className="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-[#e8c559] to-[#dcb33e]">
-                                {editingId ? "Edit Resource" : (isIntern ? "Upload MoM" : "Tambah Resource Baru")}
+                                {editingId ? "Edit Resource" : "Add Resource"}
                             </h2>
                             <button onClick={() => setShowAddModal(false)} className="text-[var(--text-muted)] hover:text-gray-900 dark:hover:text-white transition-colors">
                                 <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
@@ -1090,12 +1077,8 @@ export default function KnowledgeHubPage() {
                                             className="w-full h-10 px-3 rounded-lg border border-gray-200 dark:border-[var(--glass-border)] bg-gray-50 dark:bg-[var(--card-bg)] text-gray-900 dark:text-[var(--text-primary)] focus:border-[#e8c559] outline-none disabled:opacity-60 disabled:cursor-not-allowed"
                                             value={newResource.type}
                                             onChange={(e) => setNewResource(prev => ({ ...prev, type: e.target.value as any }))}
-                                            disabled={!!isIntern}
                                         >
-                                            {(isIntern
-                                                ? RESOURCE_TYPES.filter(t => t.id === 'mom')
-                                                : RESOURCE_TYPES.filter(t => t.id !== 'all')
-                                            ).map(t => (
+                                            {RESOURCE_TYPES.filter(t => t.id !== 'all').map(t => (
                                                 <option key={t.id} value={t.id}>{t.label}</option>
                                             ))}
                                         </select>
