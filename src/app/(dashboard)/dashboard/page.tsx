@@ -765,7 +765,7 @@ export default function DashboardPage() {
         const isLeftSwipe = distance > minSwipeDistance;
         const isRightSwipe = distance < -minSwipeDistance;
 
-        if (isLeftSwipe && activeSlide < (isIntern || profile?.role === 'ceo' ? 1 : 2)) {
+        if (isLeftSwipe && activeSlide < (profile?.role === 'hr' ? 0 : (isIntern || profile?.role === 'ceo' ? 1 : 2))) {
             setActiveSlide(activeSlide + 1);
         }
         if (isRightSwipe && activeSlide > 0) {
@@ -791,7 +791,7 @@ export default function DashboardPage() {
         if (!isDragging) return;
         setIsDragging(false);
         const distance = dragStart - e.clientX;
-        if (distance > minSwipeDistance && activeSlide < (isIntern || profile?.role === 'ceo' ? 1 : 2)) {
+        if (distance > minSwipeDistance && activeSlide < (profile?.role === 'hr' ? 0 : (isIntern || profile?.role === 'ceo' ? 1 : 2))) {
             setActiveSlide(activeSlide + 1);
         }
         if (distance < -minSwipeDistance && activeSlide > 0) {
@@ -1316,7 +1316,10 @@ export default function DashboardPage() {
     };
 
     const handlePrevSlide = () => setActiveSlide(prev => Math.max(0, prev - 1));
-    const handleNextSlide = () => setActiveSlide(prev => Math.min(2, prev + 1)); // Assuming 3 slides 0,1,2
+    const handleNextSlide = () => {
+        const maxSlide = (profile?.role === 'hr') ? 0 : (isIntern || profile?.role === 'ceo') ? 1 : 2;
+        setActiveSlide(prev => Math.min(maxSlide, prev + 1));
+    };
 
     const addTask = async (text: string, priority: "high" | "medium" | "low") => {
         if (!profile) {
@@ -1731,8 +1734,8 @@ export default function DashboardPage() {
                                 {/* Dark: amber/gold bg | Light: glassmorphism */}
                                 {/* Leave Quota Grid - Using Shadcn/Tailwind Variables via glass-panel or generic classes */}
                                 <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-                                    {/* WFH Weekly - Hidden for CEO */}
-                                    {profile?.role !== 'ceo' && (
+                                    {/* WFH Weekly - Hidden for CEO and HR */}
+                                    {profile?.role !== 'ceo' && profile?.role !== 'hr' && (
                                         <Card className="backdrop-blur-md transition-colors border bg-amber-500/10 border-amber-500/20 dark:bg-white/5 dark:border-white/10 shadow-none">
                                             <CardContent className="p-3">
                                                 <div className="flex items-center gap-2 mb-1">
@@ -1746,8 +1749,8 @@ export default function DashboardPage() {
                                         </Card>
                                     )}
 
-                                    {/* Annual Leave - Hidden for Interns and CEO */}
-                                    {!isIntern && profile?.role !== 'ceo' && (
+                                    {/* Annual Leave - Hidden for Interns, CEO and HR */}
+                                    {!isIntern && profile?.role !== 'ceo' && profile?.role !== 'hr' && (
                                         <Card className="backdrop-blur-md transition-colors border bg-amber-500/10 border-amber-500/20 dark:bg-white/5 dark:border-white/10 shadow-none">
                                             <CardContent className="p-3">
                                                 <div className="flex items-center gap-2 mb-1">
@@ -1761,8 +1764,8 @@ export default function DashboardPage() {
                                         </Card>
                                     )}
 
-                                    {/* WFA with Expiry - Hidden for Interns and CEO */}
-                                    {!isIntern && profile?.role !== 'ceo' && (
+                                    {/* WFA with Expiry - Hidden for Interns, CEO and HR */}
+                                    {!isIntern && profile?.role !== 'ceo' && profile?.role !== 'hr' && (
                                         <Card className="backdrop-blur-md transition-colors border bg-amber-500/10 border-amber-500/20 dark:bg-white/5 dark:border-white/10 shadow-none">
                                             <CardContent className="p-3">
                                                 <div className="flex items-center gap-2 mb-1">
@@ -1776,8 +1779,8 @@ export default function DashboardPage() {
                                         </Card>
                                     )}
 
-                                    {/* Libur Ekstra - Hidden for Interns and CEO */}
-                                    {!isIntern && profile?.role !== 'ceo' && (
+                                    {/* Libur Ekstra - Hidden for Interns, CEO and HR */}
+                                    {!isIntern && profile?.role !== 'ceo' && profile?.role !== 'hr' && (
                                         <Link href="/dashboard/extra-leave">
                                             <Card className="backdrop-blur-md transition-all border bg-amber-500/10 border-amber-500/20 dark:bg-white/5 dark:border-white/10 shadow-none hover:bg-amber-500/20 cursor-pointer group">
                                                 <CardContent className="p-3">
@@ -1846,8 +1849,8 @@ export default function DashboardPage() {
                                     {/* Right: Quick Access Grid */}
                                     <div className="flex flex-col gap-3 h-full">
                                         <div className="grid grid-cols-3 gap-3 flex-1">
-                                            {/* My Request - Hidden for CEO */}
-                                            {profile?.role !== 'ceo' && (
+                                            {/* My Request - Hidden for CEO and HR */}
+                                            {profile?.role !== 'ceo' && profile?.role !== 'hr' && (
                                                 <Link href="/dashboard/my-request" className="group flex flex-col items-center justify-center gap-2 p-2 rounded-xl backdrop-blur-md transition-all hover:scale-105 active:scale-95 border bg-amber-500/10 border-amber-500/20 hover:bg-amber-500/20 dark:bg-white/5 dark:border-white/10 dark:hover:bg-white/10">
                                                     <div className="w-8 h-8 rounded-lg bg-indigo-500/20 flex items-center justify-center group-hover:bg-indigo-500/30 transition-colors">
                                                         <FileText className="h-4 w-4 text-indigo-300" />
@@ -2476,7 +2479,7 @@ export default function DashboardPage() {
                     </button>
                     <button
                         onClick={handleNextSlide}
-                        className={`p-2 rounded-full bg-black/30 text-white backdrop-blur-md border border-white/10 hover:bg-black/50 transition-all pointer-events-auto ${activeSlide === 2 || (!isIntern && profile?.role !== 'ceo' && activeSlide === 2) || (isIntern && activeSlide === 1) ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}
+                        className={`p-2 rounded-full bg-black/30 text-white backdrop-blur-md border border-white/10 hover:bg-black/50 transition-all pointer-events-auto ${activeSlide === 2 || ((isIntern || profile?.role === 'ceo') && activeSlide === 1) || (profile?.role === 'hr' && activeSlide === 0) ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}
                         aria-label="Next slide"
                     >
                         <ChevronRight className="w-6 h-6" />
@@ -2493,15 +2496,17 @@ export default function DashboardPage() {
                             }`}
                         aria-label="Go to slide 1"
                     />
-                    <button
-                        onClick={() => setActiveSlide(1)}
-                        className={`w-2.5 h-2.5 rounded-full transition-all duration-300 ${activeSlide === 1
-                            ? 'bg-[#e8c559] w-6'
-                            : 'bg-white/30 hover:bg-white/50'
-                            }`}
-                        aria-label="Go to slide 2"
-                    />
-                    {!isIntern && profile?.role !== 'ceo' && (
+                    {profile?.role !== 'hr' && (
+                        <button
+                            onClick={() => setActiveSlide(1)}
+                            className={`w-2.5 h-2.5 rounded-full transition-all duration-300 ${activeSlide === 1
+                                ? 'bg-[#e8c559] w-6'
+                                : 'bg-white/30 hover:bg-white/50'
+                                }`}
+                            aria-label="Go to slide 2"
+                        />
+                    )}
+                    {!isIntern && profile?.role !== 'ceo' && profile?.role !== 'hr' && (
                         <button
                             onClick={() => setActiveSlide(2)}
                             className={`w-2.5 h-2.5 rounded-full transition-all duration-300 ${activeSlide === 2
