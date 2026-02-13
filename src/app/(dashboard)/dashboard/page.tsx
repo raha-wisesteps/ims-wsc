@@ -838,16 +838,36 @@ export default function DashboardPage() {
         }
 
         // 4. STATUS BASED
-        // Determine status pool key
-        let statusKey = 'office'; // Default
-        const status = checkinState.status || 'office';
+        let statusKey = 'office'; // Default fallback
+        const { status, isClockedIn, isClockedOut } = checkinState;
 
-        if (status === 'wfh') statusKey = 'wfh';
-        else if (status === 'wfa') statusKey = 'wfa';
-        else if (status === 'sick' || status === 'sakit') statusKey = 'not_working'; // Use specific sick msg if available or general
+        // Is user Working? (Clocked In & Not Clocked Out)
+        const isWorking = isClockedIn && !isClockedOut;
+
+        // 1. Explicit Statuses (Sick/Leave/Away) - Taking precedence
+        if (status === 'sick' || status === 'sakit') statusKey = 'not_working';
         else if (status === 'leave' || status === 'cuti' || status === 'izin') statusKey = 'not_working';
+        else if (status === 'away') statusKey = 'away';
+
+        // 2. Working Statuses (WFH/WFA/Remote) - Require Clock In
+        else if (status === 'wfh') {
+            if (!isWorking) statusKey = 'away';
+            else statusKey = 'wfh';
+        }
+        else if (status === 'wfa') {
+            if (!isWorking) statusKey = 'away';
+            else statusKey = 'wfa';
+        }
+        else if (status === 'remote') {
+            if (!isWorking) statusKey = 'away';
+            else statusKey = 'wfh'; // Use wfh pool for remote
+        }
+
+        // 3. Office & Default - Does NOT require Clock In
+        else if (status === 'office') statusKey = 'office';
         else if (status === 'lembur') statusKey = 'lembur';
-        else if (!checkinState.isClockedIn || checkinState.isClockedOut || status === 'away') statusKey = 'away';
+
+        // 4. Fallback (e.g. initial load without specific status) -> Default to Office (as per user request: "offline data comes from machine")
         else statusKey = 'office';
 
         // Get pool
@@ -882,7 +902,7 @@ export default function DashboardPage() {
         }, 900000);
 
         return () => clearInterval(interval);
-    }, [profile, checkinState.status, isMessageLocked]);
+    }, [profile, checkinState.status, checkinState.isClockedIn, checkinState.isClockedOut, isMessageLocked]);
 
     // Time check for Lunch Break entry (check every minute)
     useEffect(() => {
