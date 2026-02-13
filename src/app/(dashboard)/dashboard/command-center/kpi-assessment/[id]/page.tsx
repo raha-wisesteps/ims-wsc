@@ -15,7 +15,10 @@ import {
     CheckCircle2,
     Info,
     FileEdit,
-    Send
+    Send,
+    ChevronDown,
+    ChevronUp,
+    MessageSquare
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -58,6 +61,11 @@ export default function AssessmentPage() {
         confirmText?: string;
         cancelText?: string;
     }>({ type: 'warning', title: '', message: '' });
+
+    const [expandedCriteria, setExpandedCriteria] = useState<Record<string, boolean>>({});
+    const toggleCriteria = (id: string) => {
+        setExpandedCriteria(prev => ({ ...prev, [id]: !prev[id] }));
+    };
 
     // Initial Data Fetch
     useEffect(() => {
@@ -111,11 +119,11 @@ export default function AssessmentPage() {
                 const getMetricData = (metricId: string) => {
                     if (existingKPI?.kpi_sub_aspect_scores) {
                         const saved = existingKPI.kpi_sub_aspect_scores.find((s: any) => s.sub_aspect_id === metricId);
-                        if (saved) return { actual: saved.actual, score: saved.score, note: saved.ceo_note || saved.note };
+                        if (saved) return { actual: saved.actual, score: saved.score, note: saved.ceo_note || saved.note, employee_note: saved.employee_note };
                     }
                     // Defaults
-                    if (metricId === 'B4') return { actual: `${latePct.toFixed(1)}%`, score: undefined, note: 'System Calculated' };
-                    return { actual: '', score: undefined, note: '' };
+                    if (metricId === 'B4') return { actual: `${latePct.toFixed(1)}%`, score: undefined, note: 'System Calculated', employee_note: '' };
+                    return { actual: '', score: undefined, note: '', employee_note: '' };
                 };
 
                 const pillars: Record<string, KPIPillar> = {
@@ -470,6 +478,32 @@ export default function AssessmentPage() {
                                             </div>
                                             <p className="text-xs text-gray-500 mb-2">{metric.criteria}</p>
 
+                                            {/* Scoring Guidelines Toggle */}
+                                            {metric.scoring_criteria && (
+                                                <div className="mb-4">
+                                                    <button
+                                                        onClick={() => toggleCriteria(metric.id)}
+                                                        className="flex items-center gap-1 text-[10px] text-blue-400 hover:text-blue-300 transition-colors bg-blue-500/5 px-2 py-1 rounded border border-blue-500/10 hover:bg-blue-500/10"
+                                                    >
+                                                        {expandedCriteria[metric.id] ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                                                        {expandedCriteria[metric.id] ? "Hide Scoring Guidelines" : "Show Scoring Guidelines"}
+                                                    </button>
+
+                                                    {expandedCriteria[metric.id] && (
+                                                        <div className="mt-2 p-3 rounded-lg bg-black/40 border border-white/5 text-[11px] space-y-1.5 animate-in fade-in slide-in-from-top-2 duration-200">
+                                                            {Object.entries(metric.scoring_criteria).map(([score, desc]: any) => (
+                                                                <div key={score} className="flex gap-2 items-start">
+                                                                    <span className={`font-bold w-4 shrink-0 text-center rounded ${score >= 4 ? 'bg-emerald-500/20 text-emerald-400' :
+                                                                            score >= 3 ? 'bg-amber-500/20 text-amber-400' : 'bg-rose-500/20 text-rose-400'
+                                                                        }`}>{score}</span>
+                                                                    <span className="text-gray-300 leading-tight">{desc}</span>
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            )}
+
                                             {/* SPECIAL RENDER FOR B4 (ATTENDANCE) */}
                                             {metric.id === 'B4' && (
                                                 <div className="mt-2 p-3 rounded-lg bg-blue-500/10 border border-blue-500/20">
@@ -505,6 +539,17 @@ export default function AssessmentPage() {
 
                                         {/* Inputs */}
                                         <div className="md:col-span-8 grid grid-cols-1 gap-4">
+                                            {/* User Note Display */}
+                                            {(metric as any).employee_note && (
+                                                <div className="p-3 rounded-lg bg-[#e8c559]/5 border border-[#e8c559]/20 relative group">
+                                                    <div className="absolute -top-2 left-3 px-2 py-0.5 bg-[#1a1a1a] text-[9px] text-[#e8c559] border border-[#e8c559]/30 rounded uppercase font-bold flex items-center gap-1">
+                                                        <MessageSquare className="w-2.5 h-2.5" />
+                                                        User Note
+                                                    </div>
+                                                    <p className="text-xs text-gray-300 italic pt-1">"{(metric as any).employee_note}"</p>
+                                                </div>
+                                            )}
+
                                             {/* Score Input */}
                                             {/* Score Input with Bullet Indicators */}
                                             <div>

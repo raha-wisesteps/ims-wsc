@@ -12,7 +12,11 @@ import {
     Target,
     Info,
     AlertCircle,
-    ArrowLeft
+    ArrowLeft,
+    Save,
+    HelpCircle,
+    ChevronDown,
+    ChevronUp
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { createClient } from "@/lib/supabase/client";
@@ -21,7 +25,8 @@ import {
     getGroupedMetrics,
     KPI_CATEGORIES,
     KPIMetric,
-    SCORE_LEVELS
+    SCORE_LEVELS,
+    mapProfileToStaffRole
 } from "../command-center/kpi-data";
 
 export default function MyKPIPage() {
@@ -30,6 +35,63 @@ export default function MyKPIPage() {
 
     const [kpiData, setKpiData] = useState<any>(null); // Store raw DB data
     const [loading, setLoading] = useState(true);
+    const [unsavedChanges, setUnsavedChanges] = useState(false);
+    const [expandedCriteria, setExpandedCriteria] = useState<Record<string, boolean>>({});
+
+    const toggleCriteria = (id: string) => {
+        setExpandedCriteria(prev => ({ ...prev, [id]: !prev[id] }));
+    };
+
+    const handleNoteChange = (subAspectId: string, note: string) => {
+        setKpiData((prev: any) => {
+            const newScores = [...(prev.kpi_sub_aspect_scores || [])];
+            const idx = newScores.findIndex((s: any) => s.sub_aspect_id === subAspectId);
+
+            if (idx >= 0) {
+                newScores[idx] = { ...newScores[idx], employee_note: note };
+            } else {
+                // If no score record exists yet (unlikely if pre-filled, but possible), create a temp one
+                // Actually for my-kpi usually we read existing. If it doesn't exist, we might need to handle insert.
+                // But typically scores are initialized. If not, we push a new obj.
+                newScores.push({ sub_aspect_id: subAspectId, employee_note: note, kpi_score_id: prev.id });
+            }
+
+            return { ...prev, kpi_sub_aspect_scores: newScores };
+        });
+        setUnsavedChanges(true);
+    };
+
+    const saveNotes = async () => {
+        if (!kpiData || !profile) return;
+
+        try {
+            // Filter out only changed notes to upsert? 
+            // Or just upsert all that have notes.
+            // We need kpi_score_id.
+
+            const updates = kpiData.kpi_sub_aspect_scores
+                .filter((s: any) => s.employee_note !== undefined && s.employee_note !== null)
+                .map((s: any) => ({
+                    kpi_score_id: kpiData.id,
+                    sub_aspect_id: s.sub_aspect_id,
+                    employee_note: s.employee_note
+                }));
+
+            if (updates.length === 0) return;
+
+            const { error } = await supabase
+                .from('kpi_sub_aspect_scores')
+                .upsert(updates, { onConflict: 'kpi_score_id,sub_aspect_id' });
+
+            if (error) throw error;
+
+            setUnsavedChanges(false);
+            alert("Notes saved successfully!");
+        } catch (err: any) {
+            console.error("Error saving notes:", err);
+            alert("Failed to save notes: " + err.message);
+        }
+    };
 
     // Fetch KPI Data
     useEffect(() => {
@@ -103,25 +165,14 @@ export default function MyKPIPage() {
     // Transform Data for Display
     // 1. Determine Role (Simplification: Map profile role/level to one of the StaffRoles)
     // Needs better logic in production, for now default to 'analyst_staff' if undefined
-    const mapProfileToStaffRole = (p: any): StaffRole => {
-        // Simple heuristic map
-        const title = (p.job_title || '').toLowerCase();
-        const level = (p.job_level || '').toLowerCase();
-
-        if (title.includes('sales')) return 'sales_staff';
-        if (title.includes('business') || title.includes('bisdev')) return 'bisdev';
-        if (level.includes('supervisor') || level.includes('senior')) return 'analyst_supervisor';
-        return 'analyst_staff';
-    };
-
-    const staffRole = mapProfileToStaffRole(profile);
+    const staffRole = mapProfileToStaffRole(profile?.job_level || null, profile?.job_type || null) || 'analyst_staff';
     const groupedDefinitions = getGroupedMetrics(staffRole);
 
     // 2. Merge Definitions with Scores
     // kpiData.kpi_sub_aspect_scores is an array of { sub_aspect_id, score, note }
     const getScoreForMetric = (metricId: string) => {
         const scoreRec = kpiData.kpi_sub_aspect_scores?.find((s: any) => s.sub_aspect_id === metricId);
-        return scoreRec || { score: 0, note: '-' };
+        return scoreRec || { score: 0, note: '-', employee_note: '' };
     };
 
     const pillars = [
@@ -134,8 +185,8 @@ export default function MyKPIPage() {
         // Filter metrics that have weight > 0 (already done in getGroupedMetrics, but safe to verify)
         // And merge scores
         const metricsWithScores = p.metrics.map(m => {
-            const { score, note } = getScoreForMetric(m.id);
-            return { ...m, score, note };
+            const { score, note, employee_note } = getScoreForMetric(m.id);
+            return { ...m, score, note, employee_note };
         });
 
         // Calculate Pillar Average Score (if needed for display)
@@ -191,13 +242,24 @@ export default function MyKPIPage() {
                         </div>
                     </div>
                 </div>
-                <Link
-                    href="/dashboard"
-                    className="px-4 py-2 rounded-lg bg-[var(--glass-bg)] hover:bg-[var(--glass-border)] text-[var(--text-secondary)] font-medium transition-colors flex items-center gap-2"
-                >
-                    <ArrowLeft className="w-4 h-4" />
-                    Kembali
-                </Link>
+                <div className="flex items-center gap-2">
+                    {unsavedChanges && (
+                        <button
+                            onClick={saveNotes}
+                            className="px-4 py-2 rounded-lg bg-emerald-500 hover:bg-emerald-600 text-white font-bold transition-colors flex items-center gap-2 shadow-lg animate-pulse"
+                        >
+                            <Save className="w-4 h-4" />
+                            Save Notes
+                        </button>
+                    )}
+                    <Link
+                        href="/dashboard"
+                        className="px-4 py-2 rounded-lg bg-[var(--glass-bg)] hover:bg-[var(--glass-border)] text-[var(--text-secondary)] font-medium transition-colors flex items-center gap-2"
+                    >
+                        <ArrowLeft className="w-4 h-4" />
+                        Kembali
+                    </Link>
+                </div>
             </div>
 
             {/* Summary Stats Card */}
@@ -267,15 +329,43 @@ export default function MyKPIPage() {
                                         <th className="px-6 py-3 font-medium">Metric / Indikator</th>
                                         <th className="px-6 py-3 font-medium text-center">Weight</th>
                                         <th className="px-6 py-3 font-medium text-center">Skor (1-5)</th>
+                                        <th className="px-6 py-3 font-medium">Your Note / Justification</th>
                                         <th className="px-6 py-3 font-medium">CEO Note / Feedback</th>
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-[var(--glass-border)]">
                                     {pillar.metrics.map((metric: any, idx: number) => (
                                         <tr key={idx} className="hover:bg-[var(--glass-bg-hover)] transition-colors">
-                                            <td className="px-6 py-4 font-medium text-[var(--text-primary)] max-w-xs">
+                                            <td className="px-6 py-4 font-medium text-[var(--text-primary)] max-w-xs align-top">
                                                 <div>{metric.name}</div>
                                                 <div className="text-[10px] text-[var(--text-muted)] font-normal mt-1">{metric.criteria}</div>
+
+                                                {/* Scoring Criteria Toggle */}
+                                                {metric.scoring_criteria && (
+                                                    <div className="mt-2">
+                                                        <button
+                                                            onClick={() => toggleCriteria(metric.id)}
+                                                            className="flex items-center gap-1 text-[10px] text-blue-400 hover:text-blue-300 transition-colors"
+                                                        >
+                                                            {expandedCriteria[metric.id] ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                                                            {expandedCriteria[metric.id] ? "Hide Guidelines" : "Show Scoring Guidelines"}
+                                                        </button>
+
+                                                        {expandedCriteria[metric.id] && (
+                                                            <div className="mt-2 p-2 rounded bg-black/20 border border-white/5 text-[10px] space-y-1">
+                                                                {Object.entries(metric.scoring_criteria).map(([score, desc]: any) => (
+                                                                    <div key={score} className="flex gap-2">
+                                                                        <span className={`font-bold w-3 shrink-0 ${score >= 4 ? 'text-emerald-400' :
+                                                                                score >= 3 ? 'text-amber-400' : 'text-rose-400'
+                                                                            }`}>{score}:</span>
+                                                                        <span className="text-gray-400">{desc}</span>
+                                                                    </div>
+                                                                ))}
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                )}
+
                                                 {metric.id === 'B4' && (
                                                     <span className="inline-flex items-center gap-1 text-[10px] text-blue-500 dark:text-blue-400 mt-1">
                                                         <Info className="w-3 h-3" /> System Calculated
@@ -305,7 +395,16 @@ export default function MyKPIPage() {
                                                     </span>
                                                 </div>
                                             </td>
-                                            <td className="px-6 py-4 text-[var(--text-muted)] text-xs italic">
+                                            <td className="px-6 py-4 align-top">
+                                                <textarea
+                                                    value={metric.employee_note || ''}
+                                                    onChange={(e) => handleNoteChange(metric.id, e.target.value)}
+                                                    placeholder="Add your note/justification here..."
+                                                    className="w-full bg-black/20 border border-white/10 rounded-lg p-2 text-xs text-gray-300 focus:border-blue-500 outline-none transition-all resize-none h-[80px]"
+                                                    disabled={kpiData.status === 'final'}
+                                                />
+                                            </td>
+                                            <td className="px-6 py-4 text-[var(--text-muted)] text-xs italic align-top">
                                                 {metric.ceo_note || metric.note || '-'}
                                             </td>
                                         </tr>
