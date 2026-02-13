@@ -21,10 +21,17 @@ const RESOURCE_TYPES = [
     { id: "all", label: "All Types", icon: "📚" },
     { id: "video", label: "Video", icon: "🎬" },
     { id: "document", label: "Document", icon: "📄" },
-    { id: "sop", label: "SOP", icon: "📋" },
-    { id: "template", label: "Template", icon: "📋" },
     { id: "link", label: "Link", icon: "🔗" },
     { id: "mom", label: "MoM", icon: "📝" },
+];
+
+// Document Subtypes (shown when type === 'document')
+const DOCUMENT_SUBTYPES = [
+    { id: "sop", label: "SOP", icon: "📋" },
+    { id: "ebook", label: "E-Book", icon: "📖" },
+    { id: "template", label: "Template & Guide", icon: "📑" },
+    { id: "whitepaper", label: "Whitepaper & Research Paper", icon: "📄" },
+    { id: "other", label: "Lainnya", icon: "📁" },
 ];
 
 // Role-based filters
@@ -40,11 +47,13 @@ export interface KnowledgeResource {
     id: string;
     title: string;
     description: string;
-    type: "document" | "video" | "template" | "link" | "sop" | "mom";
+    type: "document" | "video" | "link" | "mom";
+    document_subtype?: "sop" | "ebook" | "template" | "whitepaper" | "other" | null;
     resource_url: string;
     thumbnail_url?: string | null;
     min_access_level: "intern" | "staff" | "senior" | "owner";
     target_roles: string[];
+    tags?: string[];
     created_by?: string;
     created_at?: string;
     // Library Fields
@@ -55,7 +64,6 @@ export interface KnowledgeResource {
     addedBy?: string;
     addedDate?: string;
     fileSize?: string;
-    tags?: string[];
     duration?: string;
     progress?: number;
 }
@@ -80,10 +88,18 @@ const getTypeBadgeClass = (type: string) => {
     switch (type) {
         case 'video': return "bg-red-100 text-red-700 border-red-200 dark:bg-red-500/20 dark:text-red-300 dark:border-red-500/30";
         case 'document': return "bg-blue-100 text-blue-700 border-blue-200 dark:bg-blue-500/20 dark:text-blue-300 dark:border-blue-500/30";
-        case 'sop': return "bg-orange-100 text-orange-700 border-orange-200 dark:bg-orange-500/20 dark:text-orange-300 dark:border-orange-500/30";
         case 'link': return "bg-green-100 text-green-700 border-green-200 dark:bg-green-500/20 dark:text-green-300 dark:border-green-500/30";
-        case 'template': return "bg-emerald-100 text-emerald-700 border-emerald-200 dark:bg-emerald-500/20 dark:text-emerald-300 dark:border-emerald-500/30";
         case 'mom': return "bg-purple-100 text-purple-700 border-purple-200 dark:bg-purple-500/20 dark:text-purple-300 dark:border-purple-500/30";
+        default: return "bg-gray-100 text-gray-700 border-gray-200 dark:bg-gray-500/20 dark:text-gray-300 dark:border-gray-500/30";
+    }
+};
+
+const getSubtypeBadgeClass = (subtype: string) => {
+    switch (subtype) {
+        case 'sop': return "bg-orange-100 text-orange-700 border-orange-200 dark:bg-orange-500/20 dark:text-orange-300 dark:border-orange-500/30";
+        case 'ebook': return "bg-indigo-100 text-indigo-700 border-indigo-200 dark:bg-indigo-500/20 dark:text-indigo-300 dark:border-indigo-500/30";
+        case 'template': return "bg-emerald-100 text-emerald-700 border-emerald-200 dark:bg-emerald-500/20 dark:text-emerald-300 dark:border-emerald-500/30";
+        case 'whitepaper': return "bg-cyan-100 text-cyan-700 border-cyan-200 dark:bg-cyan-500/20 dark:text-cyan-300 dark:border-cyan-500/30";
         default: return "bg-gray-100 text-gray-700 border-gray-200 dark:bg-gray-500/20 dark:text-gray-300 dark:border-gray-500/30";
     }
 };
@@ -95,6 +111,15 @@ const isValidUrl = (string: string) => {
     } catch (_) {
         return false;
     }
+};
+
+// Parse comma/space separated tags string into clean array
+const parseTags = (input: string): string[] => {
+    if (!input.trim()) return [];
+    return input
+        .split(/[,\s]+/)
+        .map(t => t.replace(/^#/, '').trim())
+        .filter(t => t.length > 0);
 };
 
 // --- Components ---
@@ -156,10 +181,15 @@ function ResourceDetailModal({
                     </button>
 
                     {/* Type & Access Badge */}
-                    <div className="absolute top-4 left-4 flex gap-2">
+                    <div className="absolute top-4 left-4 flex gap-2 flex-wrap">
                         <span className={`px-3 py-1 rounded-full text-xs font-medium backdrop-blur-md flex items-center gap-1 border uppercase tracking-wider ${getTypeBadgeClass(resource.type)}`}>
                             {resource.type}
                         </span>
+                        {resource.type === 'document' && resource.document_subtype && (
+                            <span className={`px-3 py-1 rounded-full text-xs font-medium backdrop-blur-md flex items-center gap-1 border uppercase tracking-wider ${getSubtypeBadgeClass(resource.document_subtype)}`}>
+                                {DOCUMENT_SUBTYPES.find(s => s.id === resource.document_subtype)?.label || resource.document_subtype}
+                            </span>
+                        )}
                         <span className={`px-3 py-1 rounded-full text-xs font-medium backdrop-blur-md flex items-center gap-1 border ${accessLevel?.badgeClass || 'bg-gray-500 text-white'}`}>
                             {accessLevel?.icon} <span className="hidden sm:inline">{accessLevel?.label}</span>
                         </span>
@@ -185,6 +215,17 @@ function ResourceDetailModal({
                     <div className="prose prose-invert prose-sm max-w-none text-[var(--text-secondary)]">
                         <p className="whitespace-pre-line">{resource.description}</p>
                     </div>
+
+                    {/* Tags */}
+                    {resource.tags && resource.tags.length > 0 && (
+                        <div className="flex flex-wrap gap-2">
+                            {resource.tags.map((tag, i) => (
+                                <span key={i} className="px-2.5 py-1 rounded-full text-xs font-medium bg-[#e8c559]/10 text-[#e8c559] border border-[#e8c559]/20">
+                                    #{tag.replace(/^#/, '')}
+                                </span>
+                            ))}
+                        </div>
+                    )}
 
                     {/* Borrower Info */}
                     {resource.is_library_item && currentBorrowers.length > 0 && (
@@ -265,7 +306,7 @@ function ResourceDetailModal({
                     </div>
                 </div>
             </div>
-        </div>
+        </div >
     );
 }
 
@@ -322,10 +363,11 @@ function VideoCard({ resource, onViewDetail }: { resource: KnowledgeResource; on
 }
 
 // Digital Document Card (Thumbnail-only, like LibraryCard but without stock)
-// Used for: Dokumen Digital, SOP, Template
+// Used for: All Documents (with subtypes)
 function DigitalDocCard({ resource, onViewDetail }: { resource: KnowledgeResource; onViewDetail: (r: KnowledgeResource) => void; }) {
     const accessLevel = ACCESS_LEVELS.find(l => l.id === resource.min_access_level);
-    const typeIcon = resource.type === 'sop' ? '📋' : resource.type === 'template' ? '📑' : '📄';
+    const subtypeInfo = DOCUMENT_SUBTYPES.find(s => s.id === resource.document_subtype);
+    const typeIcon = subtypeInfo?.icon || '📄';
 
     return (
         <div className="flex-shrink-0 w-[160px] flex flex-col group h-full relative">
@@ -551,48 +593,68 @@ export default function KnowledgeHubPage() {
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [thumbnailError, setThumbnailError] = useState("");
     const [newResource, setNewResource] = useState({
-        type: "document" as "document" | "video" | "template" | "link" | "sop" | "mom",
+        type: "document" as "document" | "video" | "link" | "mom",
+        documentSubtype: "" as string,
         accessLevel: "intern" as "intern" | "staff" | "senior" | "owner",
         title: "",
         description: "",
         resourceUrl: "",
         thumbnailUrl: "",
         targetRoles: "all",
+        tags: [] as string[],
         // Library Features
         isLibraryItem: false,
         stockTotal: 0,
     });
+    const [tagInput, setTagInput] = useState("");
 
     const resetForm = () => {
         setNewResource({
             type: "document",
+            documentSubtype: "",
             accessLevel: "intern",
             title: "",
             description: "",
             resourceUrl: "",
             thumbnailUrl: "",
             targetRoles: "all",
+            tags: [],
             isLibraryItem: false,
             stockTotal: 0
         });
         setEditingId(null);
         setThumbnailError("");
+        setTagInput("");
     };
 
     const handleEdit = (resource: KnowledgeResource) => {
         setNewResource({
             type: resource.type,
+            documentSubtype: resource.document_subtype || "",
             accessLevel: resource.min_access_level,
             title: resource.title,
             description: resource.description,
             resourceUrl: resource.resource_url,
             thumbnailUrl: resource.thumbnail_url || "",
             targetRoles: resource.target_roles.includes('all') ? 'all' : resource.target_roles[0] || 'all',
+            tags: resource.tags || [],
             isLibraryItem: resource.is_library_item || false,
             stockTotal: resource.stock_total || 0,
         });
         setEditingId(resource.id);
         setShowAddModal(true);
+    };
+
+    const handleAddTag = () => {
+        const cleaned = tagInput.replace(/^#/, '').trim();
+        if (cleaned && !newResource.tags.includes(cleaned)) {
+            setNewResource(prev => ({ ...prev, tags: [...prev.tags, cleaned] }));
+        }
+        setTagInput("");
+    };
+
+    const handleRemoveTag = (tagToRemove: string) => {
+        setNewResource(prev => ({ ...prev, tags: prev.tags.filter(t => t !== tagToRemove) }));
     };
 
     const handleBorrow = async (resource: KnowledgeResource) => {
@@ -697,6 +759,13 @@ export default function KnowledgeHubPage() {
                     is_library_item: newResource.isLibraryItem,
                     stock_total: newResource.stockTotal,
                 };
+                // Only include new columns if they have values (graceful if migration not yet applied)
+                if (newResource.type === 'document' && newResource.documentSubtype) {
+                    updateData.document_subtype = newResource.documentSubtype;
+                }
+                if (newResource.tags.length > 0) {
+                    updateData.tags = newResource.tags;
+                }
                 // Explicitly update thumbnail (even if empty to clear it)
                 updateData.thumbnail_url = thumbnailUrl;
 
@@ -709,20 +778,29 @@ export default function KnowledgeHubPage() {
                 toast.success("Resource berhasil diperbarui!");
             } else {
                 // Insert Resource
+                const insertData: any = {
+                    title: newResource.title,
+                    type: newResource.type,
+                    description: newResource.description,
+                    resource_url: newResource.resourceUrl,
+                    thumbnail_url: thumbnailUrl,
+                    min_access_level: newResource.accessLevel,
+                    target_roles: newResource.targetRoles === 'all' ? ['all'] : [newResource.targetRoles],
+                    is_library_item: newResource.isLibraryItem,
+                    stock_total: newResource.stockTotal,
+                    created_by: profile?.id,
+                };
+                // Only include new columns if they have values
+                if (newResource.type === 'document' && newResource.documentSubtype) {
+                    insertData.document_subtype = newResource.documentSubtype;
+                }
+                if (newResource.tags.length > 0) {
+                    insertData.tags = newResource.tags;
+                }
+
                 const { error: insertError } = await supabase
                     .from('knowledge_resources')
-                    .insert({
-                        title: newResource.title,
-                        type: newResource.type,
-                        description: newResource.description,
-                        resource_url: newResource.resourceUrl,
-                        thumbnail_url: thumbnailUrl,
-                        min_access_level: newResource.accessLevel,
-                        target_roles: newResource.targetRoles === 'all' ? ['all'] : [newResource.targetRoles],
-                        is_library_item: newResource.isLibraryItem,
-                        stock_total: newResource.stockTotal,
-                        created_by: profile?.id,
-                    });
+                    .insert(insertData);
 
                 if (insertError) throw insertError;
                 toast.success("Resource berhasil ditambahkan!");
@@ -732,8 +810,8 @@ export default function KnowledgeHubPage() {
             fetchResources();
 
         } catch (err: any) {
-            console.error("Error adding resource:", err);
-            toast.error("Gagal menambahkan resource");
+            console.error("Error adding resource:", err?.message || err?.details || JSON.stringify(err));
+            toast.error(err?.message || "Gagal menambahkan resource");
         } finally {
             setIsSubmitting(false);
         }
@@ -768,8 +846,10 @@ export default function KnowledgeHubPage() {
 
     // Filter resources
     const filteredResources = resources.filter((resource) => {
-        const matchesSearch = resource.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-            resource.description?.toLowerCase().includes(searchQuery.toLowerCase());
+        const lowerSearch = searchQuery.toLowerCase();
+        const matchesSearch = resource.title.toLowerCase().includes(lowerSearch) ||
+            resource.description?.toLowerCase().includes(lowerSearch) ||
+            (resource.tags || []).some(tag => tag.toLowerCase().includes(lowerSearch));
 
         const matchesType = selectedType === "all" || resource.type === selectedType;
         const matchesAccessLevel = selectedAccessLevel === "all" || resource.min_access_level === selectedAccessLevel;
@@ -784,13 +864,10 @@ export default function KnowledgeHubPage() {
     });
 
     const videoResources = filteredResources.filter(r => r.type === "video");
-    const sopResources = filteredResources.filter(r => r.type === "sop");
     const libraryResources = filteredResources.filter(r => r.is_library_item);
-    // Templates and Links
-    const templateResources = filteredResources.filter(r => r.type === "template");
     const linkResources = filteredResources.filter(r => r.type === "link");
     const momResources = filteredResources.filter(r => r.type === "mom");
-    // Ensure 'document' type excludes library items AND MoM items
+    // All documents (including former SOP/Template), excluding library items
     const documentResources = filteredResources.filter(r => r.type === "document" && !r.is_library_item);
 
     const canManageResource = (resource: KnowledgeResource) => {
@@ -833,14 +910,33 @@ export default function KnowledgeHubPage() {
                 </div>
             </header>
 
+            {/* Stats Bar */}
+            <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+                {[
+                    { label: 'Total', count: filteredResources.length, icon: '📚', color: 'from-blue-500/20 to-blue-600/10' },
+                    { label: 'Videos', count: videoResources.length, icon: '🎬', color: 'from-red-500/20 to-red-600/10' },
+                    { label: 'Documents', count: documentResources.length, icon: '📄', color: 'from-indigo-500/20 to-indigo-600/10' },
+                    { label: 'Links', count: linkResources.length, icon: '🔗', color: 'from-green-500/20 to-green-600/10' },
+                    { label: 'MoM', count: momResources.length, icon: '📝', color: 'from-purple-500/20 to-purple-600/10' },
+                ].map(stat => (
+                    <div key={stat.label} className={`flex items-center gap-3 p-3 rounded-xl border border-[var(--glass-border)] bg-gradient-to-br ${stat.color} backdrop-blur-sm`}>
+                        <span className="text-xl">{stat.icon}</span>
+                        <div>
+                            <p className="text-lg font-bold text-[var(--text-primary)] leading-none">{stat.count}</p>
+                            <p className="text-[10px] text-[var(--text-muted)] uppercase tracking-wider">{stat.label}</p>
+                        </div>
+                    </div>
+                ))}
+            </div>
+
             {/* Filters */}
-            <div className="flex gap-4 overflow-x-auto pb-4 no-scrollbar">
+            <div className="flex flex-wrap gap-3">
                 {/* Search */}
-                <div className="relative min-w-[200px]">
+                <div className="relative min-w-[200px] flex-1">
                     <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--text-muted)]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
                     <input
                         type="text"
-                        placeholder="Cari resource..."
+                        placeholder="Cari resource atau #tag..."
                         className="w-full pl-9 pr-4 py-2 rounded-lg bg-[var(--card-bg)] border border-[var(--glass-border)] text-sm focus:border-[#e8c559] outline-none placeholder-[var(--text-muted)]"
                         value={searchQuery}
                         onChange={(e) => setSearchQuery(e.target.value)}
@@ -853,7 +949,27 @@ export default function KnowledgeHubPage() {
                     onChange={(e) => setSelectedType(e.target.value)}
                 >
                     {RESOURCE_TYPES.map(t => (
-                        <option key={t.id} value={t.id}>{t.label}</option>
+                        <option key={t.id} value={t.id}>{t.icon} {t.label}</option>
+                    ))}
+                </select>
+                {/* Access Level Filter */}
+                <select
+                    className="px-3 py-2 rounded-lg bg-[var(--card-bg)] border border-[var(--glass-border)] text-sm outline-none focus:border-[#e8c559]"
+                    value={selectedAccessLevel}
+                    onChange={(e) => setSelectedAccessLevel(e.target.value)}
+                >
+                    {ACCESS_LEVELS.map(l => (
+                        <option key={l.id} value={l.id}>{l.icon} {l.label}</option>
+                    ))}
+                </select>
+                {/* Role Filter */}
+                <select
+                    className="px-3 py-2 rounded-lg bg-[var(--card-bg)] border border-[var(--glass-border)] text-sm outline-none focus:border-[#e8c559]"
+                    value={selectedRole}
+                    onChange={(e) => setSelectedRole(e.target.value)}
+                >
+                    {ROLE_FILTERS.map(r => (
+                        <option key={r.id} value={r.id}>{r.icon} {r.label}</option>
                     ))}
                 </select>
             </div>
@@ -907,84 +1023,86 @@ export default function KnowledgeHubPage() {
                 )
             }
 
-            {/* 3. Dokumen Digital (Thumbnail-only, horizontal scroll) */}
+            {/* 3. Dokumen Digital — Grouped by Subtype */}
             {
                 documentResources.length > 0 && (
-                    <section className="space-y-4">
-                        <div className="flex items-center gap-2 mb-4">
+                    <section className="space-y-6">
+                        <div className="flex items-center gap-2">
                             <span className="text-2xl">📄</span>
                             <h2 className="text-xl font-bold">Dokumen Digital</h2>
+                            <span className="ml-2 px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-500/10 text-blue-400 border border-blue-500/20">
+                                {documentResources.length}
+                            </span>
                         </div>
-                        <div className="relative -mx-4 px-4">
-                            <div className="overflow-x-auto pb-6 pt-2 hide-scrollbar">
-                                <div className="flex gap-6 w-max">
-                                    {documentResources.map(resource => (
-                                        <DigitalDocCard
-                                            key={resource.id}
-                                            resource={resource}
-                                            onViewDetail={handleOpenDetail}
-                                        />
-                                    ))}
+
+                        {/* Render each subtype as its own sub-section */}
+                        {DOCUMENT_SUBTYPES.map(subtype => {
+                            const subtypeDocs = documentResources.filter(
+                                r => r.document_subtype === subtype.id
+                            );
+                            if (subtypeDocs.length === 0) return null;
+                            return (
+                                <div key={subtype.id} className="space-y-3">
+                                    <div className="flex items-center gap-2 pl-1">
+                                        <span className="text-lg">{subtype.icon}</span>
+                                        <h3 className="text-base font-semibold text-[var(--text-secondary)]">{subtype.label}</h3>
+                                        <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-white/5 text-[var(--text-muted)] border border-[var(--glass-border)]">
+                                            {subtypeDocs.length}
+                                        </span>
+                                    </div>
+                                    <div className="relative -mx-4 px-4">
+                                        <div className="overflow-x-auto pb-4 pt-1 hide-scrollbar">
+                                            <div className="flex gap-6 w-max">
+                                                {subtypeDocs.map(resource => (
+                                                    <DigitalDocCard
+                                                        key={resource.id}
+                                                        resource={resource}
+                                                        onViewDetail={handleOpenDetail}
+                                                    />
+                                                ))}
+                                            </div>
+                                        </div>
+                                        <div className="absolute right-0 top-0 bottom-4 w-24 bg-gradient-to-l from-[var(--background)] to-transparent pointer-events-none" />
+                                    </div>
                                 </div>
-                            </div>
-                            <div className="absolute right-0 top-0 bottom-6 w-24 bg-gradient-to-l from-[var(--background)] to-transparent pointer-events-none" />
-                        </div>
+                            );
+                        })}
+
+                        {/* Uncategorized documents (no subtype) */}
+                        {(() => {
+                            const uncategorized = documentResources.filter(r => !r.document_subtype);
+                            if (uncategorized.length === 0) return null;
+                            return (
+                                <div className="space-y-3">
+                                    <div className="flex items-center gap-2 pl-1">
+                                        <span className="text-lg">📁</span>
+                                        <h3 className="text-base font-semibold text-[var(--text-secondary)]">Umum</h3>
+                                        <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-white/5 text-[var(--text-muted)] border border-[var(--glass-border)]">
+                                            {uncategorized.length}
+                                        </span>
+                                    </div>
+                                    <div className="relative -mx-4 px-4">
+                                        <div className="overflow-x-auto pb-4 pt-1 hide-scrollbar">
+                                            <div className="flex gap-6 w-max">
+                                                {uncategorized.map(resource => (
+                                                    <DigitalDocCard
+                                                        key={resource.id}
+                                                        resource={resource}
+                                                        onViewDetail={handleOpenDetail}
+                                                    />
+                                                ))}
+                                            </div>
+                                        </div>
+                                        <div className="absolute right-0 top-0 bottom-4 w-24 bg-gradient-to-l from-[var(--background)] to-transparent pointer-events-none" />
+                                    </div>
+                                </div>
+                            );
+                        })()}
                     </section>
                 )
             }
 
-
-            {/* 4. SOP Section (Thumbnail horizontal scroll, like docs) */}
-            {
-                sopResources.length > 0 && (
-                    <section className="space-y-4">
-                        <div className="flex items-center gap-2 mb-4">
-                            <span className="text-2xl">📋</span>
-                            <h2 className="text-xl font-bold">Standard Operating Procedures</h2>
-                        </div>
-                        <div className="relative -mx-4 px-4">
-                            <div className="overflow-x-auto pb-6 pt-2 hide-scrollbar">
-                                <div className="flex gap-6 w-max">
-                                    {sopResources.map(resource => (
-                                        <DigitalDocCard
-                                            key={resource.id}
-                                            resource={resource}
-                                            onViewDetail={handleOpenDetail}
-                                        />
-                                    ))}
-                                </div>
-                            </div>
-                            <div className="absolute right-0 top-0 bottom-6 w-24 bg-gradient-to-l from-[var(--background)] to-transparent pointer-events-none" />
-                        </div>
-                    </section>
-                )
-            }
-
-            {/* 5. Templates Section (Thumbnail horizontal scroll, like docs) */}
-            {
-                templateResources.length > 0 && (
-                    <section className="space-y-4">
-                        <div className="flex items-center gap-2 mb-4">
-                            <span className="text-2xl">📑</span>
-                            <h2 className="text-xl font-bold">Templates</h2>
-                        </div>
-                        <div className="relative -mx-4 px-4">
-                            <div className="overflow-x-auto pb-6 pt-2 hide-scrollbar">
-                                <div className="flex gap-6 w-max">
-                                    {templateResources.map(resource => (
-                                        <DigitalDocCard
-                                            key={resource.id}
-                                            resource={resource}
-                                            onViewDetail={handleOpenDetail}
-                                        />
-                                    ))}
-                                </div>
-                            </div>
-                            <div className="absolute right-0 top-0 bottom-6 w-24 bg-gradient-to-l from-[var(--background)] to-transparent pointer-events-none" />
-                        </div>
-                    </section>
-                )
-            }
+            {/* (SOP & Template sections removed — now consolidated under Documents with subtypes) */}
 
             {/* 6. MoM Section (List format, no thumbnail) */}
             {
@@ -1093,6 +1211,67 @@ export default function KnowledgeHubPage() {
                                             onChange={(e) => setNewResource(prev => ({ ...prev, resourceUrl: e.target.value }))}
                                         />
                                     </div>
+                                </div>
+
+                                {/* Document Subtype (conditional) */}
+                                {newResource.type === 'document' && (
+                                    <div className="animate-in fade-in slide-in-from-top-2 duration-200">
+                                        <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1">Tipe Dokumen</label>
+                                        <select
+                                            className="w-full h-10 px-3 rounded-lg border border-gray-200 dark:border-[var(--glass-border)] bg-gray-50 dark:bg-[var(--card-bg)] text-gray-900 dark:text-[var(--text-primary)] focus:border-[#e8c559] outline-none"
+                                            value={newResource.documentSubtype}
+                                            onChange={(e) => setNewResource(prev => ({ ...prev, documentSubtype: e.target.value }))}
+                                        >
+                                            <option value="">-- Pilih Subtype --</option>
+                                            {DOCUMENT_SUBTYPES.map(s => (
+                                                <option key={s.id} value={s.id}>{s.icon} {s.label}</option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                )}
+
+                                {/* Tags Input — Add Button Style */}
+                                <div>
+                                    <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1">Tags</label>
+                                    <div className="flex gap-2">
+                                        <input
+                                            type="text"
+                                            placeholder="Type a tag..."
+                                            className="flex-1 h-10 px-3 rounded-lg border border-gray-200 dark:border-[var(--glass-border)] bg-gray-50 dark:bg-[var(--card-bg)] text-gray-900 dark:text-[var(--text-primary)] focus:border-[#e8c559] outline-none"
+                                            value={tagInput}
+                                            onChange={(e) => setTagInput(e.target.value)}
+                                            onKeyDown={(e) => {
+                                                if (e.key === 'Enter') {
+                                                    e.preventDefault();
+                                                    handleAddTag();
+                                                }
+                                            }}
+                                        />
+                                        <button
+                                            type="button"
+                                            onClick={handleAddTag}
+                                            className="px-4 h-10 rounded-lg bg-[#e8c559] hover:bg-[#dcb33e] text-[#171611] font-bold text-sm transition-colors flex items-center gap-1 shrink-0"
+                                        >
+                                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
+                                            Add
+                                        </button>
+                                    </div>
+                                    {newResource.tags.length > 0 && (
+                                        <div className="flex flex-wrap gap-1.5 mt-2">
+                                            {newResource.tags.map((tag, i) => (
+                                                <span key={i} className="px-2.5 py-1 rounded-full text-xs font-medium bg-[#e8c559]/10 text-[#e8c559] border border-[#e8c559]/20 flex items-center gap-1.5 group/tag">
+                                                    #{tag}
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => handleRemoveTag(tag)}
+                                                        className="w-3.5 h-3.5 rounded-full bg-[#e8c559]/20 hover:bg-red-500/30 flex items-center justify-center transition-colors"
+                                                    >
+                                                        <svg className="w-2.5 h-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M6 18L18 6M6 6l12 12" /></svg>
+                                                    </button>
+                                                </span>
+                                            ))}
+                                        </div>
+                                    )}
                                 </div>
 
                                 <div>
