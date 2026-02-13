@@ -891,8 +891,10 @@ export default function DashboardPage() {
 
     // Initialize & Timer Rotation
     useEffect(() => {
-        // Initial load
-        setHeroMessage(getDynamicMessage('timer'));
+        // Initial load - ONLY if not locked
+        if (!isMessageLocked) {
+            setHeroMessage(getDynamicMessage('timer'));
+        }
 
         // Interval 15 minutes
         const interval = setInterval(() => {
@@ -935,7 +937,13 @@ export default function DashboardPage() {
             // Rage click trigger (Easter Egg)
             setHeroMessage(getDynamicMessage('rage_click'));
             setClickInteraction({ count: 0, lastClick: now }); // Reset
-            setIsMessageLocked(true); // Lock future updates until refresh
+            setIsMessageLocked(true); // Lock future updates
+
+            // Unlock after 15 seconds
+            setTimeout(() => {
+                setIsMessageLocked(false);
+            }, 15000);
+
         } else {
             // Normal interaction
             setHeroMessage(getDynamicMessage('click'));
