@@ -288,7 +288,7 @@ export default function MyKPIPage() {
 
                 {/* Period Info */}
                 <div className="glass-panel p-5 rounded-xl flex items-center gap-4">
-                    <div className="p-3 bg-blue-600 text-white rounded-xl shadow-lg shadow-blue-600/20">
+                    <div className="p-3 bg-violet-500 text-white rounded-xl shadow-lg shadow-violet-500/20">
                         <Briefcase className="w-6 h-6" />
                     </div>
                     <div>
@@ -356,7 +356,7 @@ export default function MyKPIPage() {
                                                                 {Object.entries(metric.scoring_criteria).map(([score, desc]: any) => (
                                                                     <div key={score} className="flex gap-2">
                                                                         <span className={`font-bold w-3 shrink-0 ${score >= 4 ? 'text-emerald-400' :
-                                                                                score >= 3 ? 'text-amber-400' : 'text-rose-400'
+                                                                            score >= 3 ? 'text-amber-400' : 'text-rose-400'
                                                                             }`}>{score}:</span>
                                                                         <span className="text-gray-400">{desc}</span>
                                                                     </div>

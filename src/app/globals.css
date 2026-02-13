@@ -576,7 +576,7 @@ html.dark .career-text-current,
 /* Only convert white text on transparent/glass backgrounds */
 
 /* White text in glass panels and content areas should become dark */
-.light .glass-panel .text-white:not(.bg-emerald-500):not(.bg-rose-500):not(.bg-amber-500):not(.bg-purple-500):not(.bg-blue-500):not(.bg-indigo-500):not(.bg-pink-500):not(.bg-orange-500):not(.bg-gray-500):not(.bg-red-500):not(.bg-green-500) {
+.light .glass-panel .text-white:not(.bg-emerald-500):not(.bg-rose-500):not(.bg-amber-500):not(.bg-purple-500):not(.bg-violet-500):not(.bg-blue-500):not(.bg-indigo-500):not(.bg-pink-500):not(.bg-orange-500):not(.bg-gray-500):not(.bg-red-500):not(.bg-green-500) {
   color: #1c2120 !important;
 }
 
@@ -585,6 +585,7 @@ html.dark .career-text-current,
 .light .bg-rose-500.text-white,
 .light .bg-amber-500.text-white,
 .light .bg-purple-500.text-white,
+.light .bg-violet-500.text-white,
 .light .bg-blue-500.text-white,
 .light .bg-indigo-500.text-white,
 .light .bg-pink-500.text-white,
@@ -614,6 +615,7 @@ html.dark .career-text-current,
 .light .rounded-xl.bg-rose-500,
 .light .rounded-xl.bg-amber-500,
 .light .rounded-xl.bg-purple-500,
+.light .rounded-xl.bg-violet-500,
 .light .rounded-xl.bg-blue-500,
 .light .rounded-xl.bg-indigo-500,
 .light .rounded-xl.bg-pink-500,
@@ -820,6 +822,14 @@ html.dark .career-text-current,
   color: #ffffff !important;
 }
 
+.light .bg-violet-500 {
+  color: #ffffff !important;
+}
+
+.light .bg-violet-500 * {
+  color: #ffffff !important;
+}
+
 .light .bg-blue-500 {
   color: #ffffff !important;
 }
@@ -899,6 +909,10 @@ html.dark .career-text-current,
 }
 
 .light .bg-purple-500.text-white {
+  color: #ffffff !important;
+}
+
+.light .bg-violet-500.text-white {
   color: #ffffff !important;
 }
 
