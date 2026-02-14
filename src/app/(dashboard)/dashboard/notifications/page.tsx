@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
-import { Loader2 } from "lucide-react";
+import { Loader2, ChevronRight } from "lucide-react";
 
 type NotificationType = "success" | "info" | "warning" | "rejected" | "request_new" | "system";
 
@@ -234,6 +234,11 @@ export default function NotificationsPage() {
                         </svg>
                     </div>
                     <div>
+                        <div className="flex items-center gap-2 mb-1 text-sm text-[var(--text-secondary)]">
+                            <Link href="/dashboard" className="hover:text-[var(--text-primary)] transition-colors">Dashboard</Link>
+                            <ChevronRight className="h-4 w-4" />
+                            <span className="text-[var(--text-primary)]">Notifications</span>
+                        </div>
                         <h2 className="text-2xl font-bold text-[var(--text-primary)]">Notifications</h2>
                         <p className="text-sm text-[var(--text-secondary)]">Pusat informasi dan aktivitas Anda</p>
                     </div>

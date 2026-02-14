@@ -2,11 +2,12 @@
 
 import { useState, useEffect } from "react";
 import { createClient } from "@/lib/supabase/client";
-import { Thermometer, Plus, Calendar, User, Trash2, Edit2, X, Check, ArrowLeft, FileText, Loader2 } from "lucide-react";
+import { Thermometer, Plus, Calendar, User, Eye, Edit2, X, Check, FileText, Loader2, ChevronRight } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { useAuth } from "@/contexts/AuthContext";
 
 interface SickReport {
     id: string;
@@ -35,12 +36,18 @@ interface Profile {
 
 export default function SickReportsPage() {
     const supabase = createClient();
+    const { profile: authProfile } = useAuth();
+
+    // Full HR role = can view, edit, add. Flag-only HR (is_hr) = view only.
+    const isFullHR = authProfile?.role === 'hr' || authProfile?.role === 'ceo' || authProfile?.role === 'super_admin' || authProfile?.role === 'owner';
+
     const [reports, setReports] = useState<SickReport[]>([]);
     const [profiles, setProfiles] = useState<Profile[]>([]);
     const [loading, setLoading] = useState(true);
     const [showForm, setShowForm] = useState(false);
     const [editingId, setEditingId] = useState<string | null>(null);
     const [submitting, setSubmitting] = useState(false);
+    const [viewingReport, setViewingReport] = useState<SickReport | null>(null);
 
     // Form state
     const [formData, setFormData] = useState({
@@ -125,12 +132,7 @@ export default function SickReportsPage() {
         }
     };
 
-    const handleDelete = async (id: string) => {
-        if (confirm("Yakin ingin menghapus data laporan sakit ini?")) {
-            await supabase.from("leave_requests").delete().eq("id", id);
-            fetchData();
-        }
-    };
+
 
     const handleEdit = (report: SickReport) => {
         setFormData({
@@ -175,30 +177,36 @@ export default function SickReportsPage() {
     return (
         <div className="space-y-6 pb-20">
             {/* Header */}
-            <header className="flex flex-col gap-4 md:flex-row md:items-end justify-between">
+            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                 <div className="flex items-center gap-3">
-                    <Link href="/dashboard/hr" className="p-2 rounded-lg hover:bg-white/5 transition-colors">
-                        <ArrowLeft className="w-5 h-5 text-gray-400" />
-                    </Link>
                     <div className="w-12 h-12 rounded-xl bg-rose-500/10 flex items-center justify-center">
                         <Thermometer className="w-6 h-6 text-rose-500" />
                     </div>
                     <div>
+                        <div className="flex items-center gap-2 mb-1 text-sm text-[var(--text-secondary)]">
+                            <Link href="/dashboard" className="hover:text-[var(--text-primary)] transition-colors">Dashboard</Link>
+                            <ChevronRight className="h-4 w-4" />
+                            <Link href="/dashboard/hr" className="hover:text-[var(--text-primary)] transition-colors">Human Resource</Link>
+                            <ChevronRight className="h-4 w-4" />
+                            <span>Laporan Sakit</span>
+                        </div>
                         <h1 className="text-2xl font-bold text-[var(--text-primary)]">Laporan Sakit</h1>
                         <p className="text-sm text-[var(--text-secondary)]">Kelola data sick leave karyawan</p>
                     </div>
                 </div>
-                <Button
-                    onClick={() => setShowForm(!showForm)}
-                    className="bg-rose-500 hover:bg-rose-600 text-white"
-                >
-                    <Plus className="w-4 h-4 mr-2" />
-                    Tambah Laporan
-                </Button>
-            </header>
+                {isFullHR && (
+                    <Button
+                        onClick={() => setShowForm(!showForm)}
+                        className="bg-rose-500 hover:bg-rose-600 text-white"
+                    >
+                        <Plus className="w-4 h-4 mr-2" />
+                        Tambah Laporan
+                    </Button>
+                )}
+            </div>
 
-            {/* Form */}
-            {showForm && (
+            {/* Form - only for full HR */}
+            {showForm && isFullHR && (
                 <Card className="glass-panel border-rose-500/20">
                     <CardHeader>
                         <CardTitle className="text-lg flex items-center gap-2">
@@ -347,17 +355,21 @@ export default function SickReportsPage() {
                                         </div>
                                         <div className="flex gap-2">
                                             <button
-                                                onClick={() => handleEdit(report)}
-                                                className="p-2 rounded-lg hover:bg-white/5 text-gray-400 hover:text-rose-400 transition-colors"
+                                                onClick={() => setViewingReport(report)}
+                                                className="p-2 rounded-lg hover:bg-white/5 text-gray-400 hover:text-blue-400 transition-colors"
+                                                title="Lihat Detail"
                                             >
-                                                <Edit2 className="w-4 h-4" />
+                                                <Eye className="w-4 h-4" />
                                             </button>
-                                            <button
-                                                onClick={() => handleDelete(report.id)}
-                                                className="p-2 rounded-lg hover:bg-white/5 text-gray-400 hover:text-rose-400 transition-colors"
-                                            >
-                                                <Trash2 className="w-4 h-4" />
-                                            </button>
+                                            {isFullHR && (
+                                                <button
+                                                    onClick={() => handleEdit(report)}
+                                                    className="p-2 rounded-lg hover:bg-white/5 text-gray-400 hover:text-rose-400 transition-colors"
+                                                    title="Edit"
+                                                >
+                                                    <Edit2 className="w-4 h-4" />
+                                                </button>
+                                            )}
                                         </div>
                                     </div>
                                 </CardContent>
@@ -366,6 +378,64 @@ export default function SickReportsPage() {
                     </div>
                 )}
             </div>
+
+            {/* View Detail Modal */}
+            {viewingReport && (
+                <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4" onClick={() => setViewingReport(null)}>
+                    <div className="bg-card border border-border rounded-2xl p-6 w-full max-w-lg shadow-2xl" onClick={(e) => e.stopPropagation()}>
+                        <div className="flex items-center justify-between mb-4">
+                            <h2 className="text-lg font-bold text-[var(--text-primary)] flex items-center gap-2">
+                                <Thermometer className="w-5 h-5 text-rose-500" />
+                                Detail Laporan Sakit
+                            </h2>
+                            <button onClick={() => setViewingReport(null)} className="p-2 hover:bg-white/10 rounded-lg transition-colors">
+                                <X className="w-4 h-4 text-gray-400" />
+                            </button>
+                        </div>
+                        <div className="space-y-4">
+                            <div className="flex items-center gap-3">
+                                <div className="w-10 h-10 rounded-full bg-rose-500/10 flex items-center justify-center text-rose-500 font-bold">
+                                    {viewingReport.profile?.full_name?.charAt(0) || "?"}
+                                </div>
+                                <div>
+                                    <p className="font-bold text-[var(--text-primary)]">{viewingReport.profile?.full_name}</p>
+                                    <p className="text-xs text-gray-400">{viewingReport.profile?.job_type}</p>
+                                </div>
+                                <div className="ml-auto">{getStatusBadge(viewingReport.status)}</div>
+                            </div>
+                            <div className="grid grid-cols-2 gap-3">
+                                <div className="p-3 rounded-lg bg-white/5 border border-white/10">
+                                    <p className="text-xs text-gray-400 mb-1">Tanggal Mulai</p>
+                                    <p className="text-sm font-medium text-[var(--text-primary)]">{new Date(viewingReport.start_date).toLocaleDateString("id-ID", { day: "numeric", month: "long", year: "numeric" })}</p>
+                                </div>
+                                <div className="p-3 rounded-lg bg-white/5 border border-white/10">
+                                    <p className="text-xs text-gray-400 mb-1">Tanggal Selesai</p>
+                                    <p className="text-sm font-medium text-[var(--text-primary)]">{new Date(viewingReport.end_date).toLocaleDateString("id-ID", { day: "numeric", month: "long", year: "numeric" })}</p>
+                                </div>
+                            </div>
+                            <div className="p-3 rounded-lg bg-white/5 border border-white/10">
+                                <p className="text-xs text-gray-400 mb-1">Durasi</p>
+                                <p className="text-sm font-medium text-rose-400">{calculateDuration(viewingReport.start_date, viewingReport.end_date)} hari</p>
+                            </div>
+                            <div className="p-3 rounded-lg bg-white/5 border border-white/10">
+                                <p className="text-xs text-gray-400 mb-1">Keluhan / Gejala</p>
+                                <p className="text-sm text-[var(--text-primary)] whitespace-pre-line">{viewingReport.reason || "-"}</p>
+                            </div>
+                            {viewingReport.attachment_url && (
+                                <a href={viewingReport.attachment_url} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 text-sm text-rose-400 hover:underline">
+                                    <FileText className="w-4 h-4" />
+                                    Lihat Bukti Lampiran
+                                </a>
+                            )}
+                        </div>
+                        <div className="mt-6 flex justify-end">
+                            <Button variant="ghost" onClick={() => setViewingReport(null)}>
+                                Tutup
+                            </Button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

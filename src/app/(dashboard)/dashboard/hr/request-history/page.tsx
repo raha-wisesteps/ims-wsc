@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
-import { Loader2, RefreshCw, Download, ArrowLeft } from "lucide-react";
+import { Loader2, RefreshCw, Download, ChevronRight } from "lucide-react";
 
 // Request type config for display
 const REQUEST_TYPE_CONFIG: Record<string, { label: string; icon: string; color: string }> = {
@@ -91,8 +91,9 @@ export default function HRRequestHistoryPage() {
 
     // RBAC
     const isFullHR = profile?.role === 'hr' || profile?.role === 'ceo' || profile?.role === 'super_admin' || profile?.role === 'owner';
-    const isLimitedHR = profile?.is_hr === true;
-    const hasAccess = isFullHR || isLimitedHR;
+    // Request History is now RESTRICTED to Full HR only (HR, CEO, Owner, Super Admin)
+    // Flag-only HR (is_hr=true but role!=hr) cannot access this page.
+    const hasAccess = isFullHR;
 
     const [history, setHistory] = useState<HistoryRequest[]>([]);
     const [isLoading, setIsLoading] = useState(true);
@@ -302,22 +303,21 @@ export default function HRRequestHistoryPage() {
         <div className="flex flex-col h-full overflow-auto">
             {/* Page Header */}
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
-                <div>
-                    <div className="flex items-center gap-2 text-sm text-[var(--text-muted)] mb-1">
-                        <Link href="/dashboard" className="hover:text-[#3f545f] dark:hover:text-[#e8c559]">Dashboard</Link>
-                        <span>/</span>
-                        <Link href="/dashboard/hr" className="hover:text-[#3f545f] dark:hover:text-[#e8c559]">HR</Link>
-                        <span>/</span>
-                        <span className="text-[var(--text-primary)]">Request History</span>
+                <div className="flex items-center gap-3">
+                    <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-blue-600 to-blue-800 flex items-center justify-center text-2xl text-white shadow-lg">
+                        📜
                     </div>
-                    <div className="flex items-center gap-3">
-                        <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-blue-600 to-blue-800 flex items-center justify-center text-2xl text-white shadow-lg">
-                            📜
+                    <div>
+                        <div className="flex items-center gap-2 mb-1 text-sm text-[var(--text-secondary)]">
+                            <Link href="/dashboard" className="hover:text-[var(--text-primary)] transition-colors">Dashboard</Link>
+                            <ChevronRight className="h-4 w-4" />
+                            <Link href="/dashboard/hr" className="hover:text-[var(--text-primary)] transition-colors">Human Resource</Link>
+                            <ChevronRight className="h-4 w-4" />
+                            <span className="text-[var(--text-primary)]">Request History</span>
                         </div>
-                        <div>
-                            <h2 className="text-3xl font-bold tracking-tight text-[var(--text-primary)]">Request History</h2>
-                            <p className="text-[var(--text-secondary)] text-sm">Riwayat request yang sudah diproses</p>
-                        </div>
+
+                        <h2 className="text-3xl font-bold tracking-tight text-[var(--text-primary)]">Request History</h2>
+                        <p className="text-[var(--text-secondary)] text-sm">Riwayat request yang sudah diproses</p>
                     </div>
                 </div>
                 <div className="flex gap-2">
@@ -329,13 +329,6 @@ export default function HRRequestHistoryPage() {
                         <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
                         Refresh
                     </button>
-                    <Link
-                        href="/dashboard/hr"
-                        className="px-4 py-2 rounded-lg bg-[var(--glass-bg)] hover:bg-[var(--glass-border)] text-[var(--text-secondary)] font-medium transition-colors flex items-center gap-2"
-                    >
-                        <ArrowLeft className="w-4 h-4" />
-                        Kembali
-                    </Link>
                 </div>
             </div>
 

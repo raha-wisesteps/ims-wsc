@@ -5,7 +5,8 @@ import { useAuth } from "@/contexts/AuthContext";
 import { createClient } from "@/lib/supabase/client";
 import { toast } from "sonner";
 import Image from "next/image";
-import { BookOpen } from "lucide-react";
+import Link from "next/link";
+import { Lightbulb, ChevronRight } from "lucide-react";
 
 // Access Levels - from basic to confidential
 const ACCESS_LEVELS = [
@@ -894,13 +895,20 @@ export default function KnowledgeHubPage() {
             {/* Header & Controls */}
             {/* Header & Controls */}
             <header className="flex flex-col gap-4 md:flex-row md:items-end justify-between">
-                <div className="flex items-center gap-4">
-                    <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-[#e8c559] to-[#b88e22] flex items-center justify-center shadow-lg shadow-[#e8c559]/20">
-                        <BookOpen className="h-6 w-6 text-[#171611]" />
+                <div>
+                    <div className="flex items-center gap-2 text-sm text-[var(--text-muted)] mb-1">
+                        <Link href="/dashboard" className="hover:text-[#3f545f] dark:hover:text-[#e8c559]">Dashboard</Link>
+                        <ChevronRight className="w-4 h-4 text-[var(--text-muted)]" />
+                        <span className="text-[var(--text-primary)]">Knowledge Hub</span>
                     </div>
-                    <div>
-                        <h1 className="text-2xl font-bold text-[var(--text-primary)]">Knowledge Hub</h1>
-                        <p className="text-sm text-[var(--text-secondary)]">Pusat pembelajaran dan sumber daya perusahaan.</p>
+                    <div className="flex items-center gap-4">
+                        <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-orange-500 to-amber-600 flex items-center justify-center shadow-lg shadow-orange-500/20">
+                            <Lightbulb className="h-6 w-6 text-white" />
+                        </div>
+                        <div>
+                            <h1 className="text-2xl font-bold text-[var(--text-primary)]">Knowledge Hub</h1>
+                            <p className="text-[var(--text-secondary)]">Pusat pengetahuan dan sumber daya perusahaan</p>
+                        </div>
                     </div>
                 </div>
 

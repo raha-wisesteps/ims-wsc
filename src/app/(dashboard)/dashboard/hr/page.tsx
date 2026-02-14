@@ -131,12 +131,17 @@ export default function HRDashboardPage() {
 
     // Limited access Quick Actions (for is_hr flag users)
     const limitedQuickActions = [
-        { href: "/dashboard/hr/attendance-upload", icon: UploadCloud, title: "Attendance Upload", desc: "Import Absensi Mesin", color: "emerald", action: "Upload CSV" },
+        { href: "/dashboard/hr/attendance-upload", icon: UploadCloud, title: "Attendance Upload", desc: "Import Absensi Mesin", color: "emerald", action: "Upload Excel/CSV" },
         { href: "/dashboard/hr/attendance-history", icon: Clock, title: "Attendance History", desc: "Riwayat Absensi Karyawan", color: "indigo", action: "View Records" },
         { href: "/dashboard/hr/sick-reports", icon: Thermometer, title: "Laporan Sakit", desc: "Kelola Sick Reports", color: "rose", action: "View Reports" },
         { href: "/dashboard/hr/messages", icon: MessageSquare, title: "Message Center", desc: "Broadcast & Private Msg", color: "purple", action: "Send Updates" },
-        { href: "/dashboard/hr/request-history", icon: History, title: "Request History", desc: "Riwayat Request Karyawan", color: "blue", action: "View History" },
     ];
+
+    if (isFullHR) {
+        limitedQuickActions.push(
+            { href: "/dashboard/hr/request-history", icon: History, title: "Request History", desc: "Riwayat Request Karyawan", color: "blue", action: "View History" }
+        );
+    }
 
     return (
         <div className="space-y-8 pb-20">

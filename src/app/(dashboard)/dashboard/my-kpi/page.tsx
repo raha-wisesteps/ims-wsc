@@ -16,7 +16,8 @@ import {
     Save,
     HelpCircle,
     ChevronDown,
-    ChevronUp
+    ChevronUp,
+    ChevronRight,
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { createClient } from "@/lib/supabase/client";
@@ -218,7 +219,7 @@ export default function MyKPIPage() {
                 <div>
                     <div className="flex items-center gap-2 text-sm text-[var(--text-muted)] mb-1">
                         <Link href="/dashboard" className="hover:text-[#3f545f] dark:hover:text-[#e8c559]">Dashboard</Link>
-                        <span>/</span>
+                        <ChevronRight className="w-4 h-4 text-[var(--text-muted)]" />
                         <span className="text-[var(--text-primary)]">My KPI</span>
                     </div>
                     <div className="flex items-center gap-3">

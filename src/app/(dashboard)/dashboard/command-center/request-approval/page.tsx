@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
-import { CheckCircle, XCircle, Loader2, RefreshCw } from "lucide-react";
+import { CheckCircle, XCircle, Loader2, RefreshCw, ClipboardCheck, ChevronRight } from "lucide-react";
 
 // Request type config for display - aligned with my-request page
 const REQUEST_TYPE_CONFIG: Record<string, { label: string; icon: string; color: string }> = {
@@ -385,22 +385,20 @@ export default function RequestApprovalPage() {
         <div className="flex flex-col h-full overflow-hidden">
             {/* Header */}
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
-                <div>
-                    <div className="flex items-center gap-2 text-sm text-[var(--text-muted)] mb-1">
-                        <Link href="/dashboard" className="hover:text-[var(--text-primary)]">Dashboard</Link>
-                        <span>/</span>
-                        <Link href="/dashboard/command-center" className="hover:text-[var(--text-primary)]">Command Center</Link>
-                        <span>/</span>
-                        <span className="text-[var(--text-primary)]">Request Approval</span>
+                <div className="flex items-center gap-3">
+                    <div className="w-12 h-12 rounded-xl bg-emerald-500/10 flex items-center justify-center">
+                        <ClipboardCheck className="w-6 h-6 text-emerald-500" />
                     </div>
-                    <div className="flex items-center gap-3">
-                        <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-[#3f545f] to-[#5f788e] dark:from-[#e8c559] dark:to-[#dcb33e] flex items-center justify-center text-2xl text-white dark:text-[#171611] shadow-lg">
-                            ✅
+                    <div>
+                        <div className="flex items-center gap-2 mb-1 text-sm text-[var(--text-secondary)]">
+                            <Link href="/dashboard" className="hover:text-[var(--text-primary)] transition-colors">Dashboard</Link>
+                            <ChevronRight className="h-4 w-4" />
+                            <Link href="/dashboard/command-center" className="hover:text-[var(--text-primary)] transition-colors">Command Center</Link>
+                            <ChevronRight className="h-4 w-4" />
+                            <span>Request Approval</span>
                         </div>
-                        <div>
-                            <h2 className="text-3xl font-bold tracking-tight text-[var(--text-primary)]">Request Approval</h2>
-                            <p className="text-[var(--text-secondary)] text-sm">Review dan setujui permintaan staff</p>
-                        </div>
+                        <h1 className="text-2xl font-bold text-[var(--text-primary)]">Request Approval</h1>
+                        <p className="text-sm text-[var(--text-secondary)]">Review dan setujui permintaan staff</p>
                     </div>
                 </div>
                 <div className="flex gap-2">

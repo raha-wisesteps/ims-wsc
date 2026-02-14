@@ -3,7 +3,8 @@
 import { useState, useCallback } from "react";
 import Link from "next/link";
 import Papa from "papaparse";
-import { UploadCloud, FileText, ArrowLeft, CheckCircle, AlertCircle, Clock, Users, Calendar, Database, Loader2 } from "lucide-react";
+import * as XLSX from "xlsx";
+import { UploadCloud, FileText, CheckCircle, AlertCircle, Clock, Users, Calendar, Database, Loader2, ChevronRight } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 
 // Types
@@ -138,13 +139,64 @@ export default function AttendanceUploadPage() {
             return;
         }
 
-        // For now, only support CSV (Excel would need xlsx library)
+        // For Excel files, use xlsx library
         if (extension === "xlsx" || extension === "xls") {
-            setError("Untuk saat ini, hanya format CSV yang didukung. Silakan export ke CSV terlebih dahulu.");
-            setIsProcessing(false);
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                try {
+                    const data = new Uint8Array(e.target?.result as ArrayBuffer);
+                    const workbook = XLSX.read(data, { type: "array" });
+                    const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+                    const jsonData = XLSX.utils.sheet_to_json<RawAttendanceData>(firstSheet, { defval: "" });
+
+                    // Trim all string values and headers
+                    const trimmedData = jsonData.map((row: any) => {
+                        const trimmedRow: any = {};
+                        Object.keys(row).forEach(key => {
+                            const trimmedKey = key.trim();
+                            trimmedRow[trimmedKey] = typeof row[key] === 'string' ? row[key].trim() : String(row[key]);
+                        });
+                        return trimmedRow as RawAttendanceData;
+                    });
+
+                    const validData = trimmedData.filter(row => {
+                        const hasId = row["ID"] !== undefined && row["ID"] !== "";
+                        const hasDate = row["Tanggal Absensi"] !== undefined;
+                        return hasId && hasDate;
+                    });
+
+                    if (validData.length === 0) {
+                        const keys = Object.keys(trimmedData[0] || {});
+                        setError(`Tidak ada data valid ditemukan. Pastikan header kolom sesuai. Header terbaca: ${keys.join(", ")}`);
+                        setRawData([]);
+                        setProcessedData([]);
+                        setIsProcessing(false);
+                        return;
+                    }
+
+                    setRawData(validData);
+                    const processed = processAttendanceData(validData);
+
+                    if (processed.length === 0) {
+                        setError("Data ditemukan tapi tidak ada record 'Absensi Masuk' atau 'Absensi Pulang' yang valid.");
+                    }
+
+                    setProcessedData(processed);
+                    setIsProcessing(false);
+                } catch (err: any) {
+                    setError(`Error membaca file Excel: ${err.message}`);
+                    setIsProcessing(false);
+                }
+            };
+            reader.onerror = () => {
+                setError("Gagal membaca file.");
+                setIsProcessing(false);
+            };
+            reader.readAsArrayBuffer(file);
             return;
         }
 
+        // For CSV files, use PapaParse
         Papa.parse(file, {
             header: true,
             delimiter: ";",
@@ -358,24 +410,24 @@ export default function AttendanceUploadPage() {
     return (
         <div className="space-y-6 pb-20">
             {/* Header */}
-            <header className="flex flex-col gap-4 md:flex-row md:items-end justify-between">
+            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                 <div className="flex items-center gap-3">
                     <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-[#3f545f] to-[#5f788e] dark:from-[#e8c559] dark:to-[#dcb33e] flex items-center justify-center">
                         <UploadCloud className="w-6 h-6 text-white dark:text-[#171611]" />
                     </div>
                     <div>
+                        <div className="flex items-center gap-2 mb-1 text-sm text-[var(--text-secondary)]">
+                            <Link href="/dashboard" className="hover:text-[var(--text-primary)] transition-colors">Dashboard</Link>
+                            <ChevronRight className="h-4 w-4" />
+                            <Link href="/dashboard/hr" className="hover:text-[var(--text-primary)] transition-colors">Human Resource</Link>
+                            <ChevronRight className="h-4 w-4" />
+                            <span>Attendance Upload</span>
+                        </div>
                         <h1 className="text-2xl font-bold text-[var(--text-primary)]">Attendance Upload</h1>
                         <p className="text-sm text-[var(--text-secondary)]">Import data absensi dari mesin fingerprint</p>
                     </div>
                 </div>
-                <Link
-                    href="/dashboard/hr"
-                    className="flex items-center gap-2 px-4 py-2 rounded-lg border border-[var(--glass-border)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"
-                >
-                    <ArrowLeft className="w-4 h-4" />
-                    Back to Human Resource
-                </Link>
-            </header>
+            </div>
 
             {/* Upload Area */}
             <div
@@ -396,7 +448,7 @@ export default function AttendanceUploadPage() {
                         {isDragging ? "Drop file here..." : "Upload Attendance File"}
                     </h3>
                     <p className="text-sm text-[var(--text-secondary)] mb-4">
-                        Drag & drop file CSV atau klik tombol di bawah
+                        Drag & drop file Excel/CSV atau klik tombol di bawah
                     </p>
                     <label className="cursor-pointer">
                         <input
@@ -410,7 +462,7 @@ export default function AttendanceUploadPage() {
                         </span>
                     </label>
                     <p className="text-xs text-[var(--text-muted)] mt-3">
-                        Format yang didukung: CSV (dengan delimiter semicolon)
+                        Format yang didukung: Excel (.xlsx, .xls) dan CSV (delimiter semicolon)
                     </p>
                 </div>
             </div>
@@ -425,19 +477,12 @@ export default function AttendanceUploadPage() {
                 </div>
             )}
 
-            {/* Upload Result */}
-            {uploadResult && (
-                <div className={`glass-panel p-4 rounded-xl border-l-4 ${uploadResult.success
-                    ? 'border-emerald-500 bg-emerald-500/10'
-                    : 'border-amber-500 bg-amber-500/10'
-                    }`}>
+            {/* Upload Result (Error/Warning only) */}
+            {uploadResult && !uploadResult.success && (
+                <div className="glass-panel p-4 rounded-xl border-l-4 border-amber-500 bg-amber-500/10">
                     <div className="flex items-center gap-3">
-                        {uploadResult.success ? (
-                            <CheckCircle className="w-5 h-5 text-emerald-500 flex-shrink-0" />
-                        ) : (
-                            <AlertCircle className="w-5 h-5 text-amber-500 flex-shrink-0" />
-                        )}
-                        <p className={`text-sm ${uploadResult.success ? 'text-emerald-500' : 'text-amber-500'}`}>
+                        <AlertCircle className="w-5 h-5 text-amber-500 flex-shrink-0" />
+                        <p className="text-sm text-amber-500">
                             {uploadResult.message}
                         </p>
                     </div>
@@ -576,38 +621,66 @@ export default function AttendanceUploadPage() {
                         </div>
                     </div>
 
-                    {/* Action Buttons */}
-                    <div className="flex gap-4 justify-end">
-                        <button
-                            onClick={() => {
-                                setFileName(null);
-                                setRawData([]);
-                                setProcessedData([]);
-                            }}
-                            className="px-6 py-3 rounded-lg border border-[var(--glass-border)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] font-medium transition-colors"
-                        >
-                            Clear Data
-                        </button>
-                        <button
-                            onClick={uploadToDatabase}
-                            disabled={isUploading || processedData.length === 0}
-                            className={`px-6 py-3 rounded-lg font-bold transition-colors flex items-center gap-2 ${isUploading || processedData.length === 0
-                                ? 'bg-[#e8c559]/50 text-[#171611]/50 cursor-not-allowed'
-                                : 'bg-[#e8c559] hover:bg-[#dcb33e] text-[#171611]'
-                                }`}
-                        >
-                            {isUploading ? (
-                                <>
-                                    <Loader2 className="w-4 h-4 animate-spin" />
-                                    Uploading... {uploadProgress && `(${uploadProgress.success + uploadProgress.failed}/${uploadProgress.total})`}
-                                </>
-                            ) : (
-                                <>
-                                    <Database className="w-4 h-4" />
-                                    Upload ke Database
-                                </>
-                            )}
-                        </button>
+                    {/* Action Buttons or Success Message */}
+                    <div className="mt-6">
+                        {uploadResult?.success ? (
+                            <div className="glass-panel p-6 rounded-xl border border-emerald-500/20 bg-emerald-500/5 flex flex-col md:flex-row items-center justify-between gap-4 animate-in fade-in slide-in-from-bottom-4 duration-500">
+                                <div className="flex items-start gap-4">
+                                    <div className="p-3 rounded-full bg-emerald-500/20 text-emerald-500">
+                                        <CheckCircle className="w-8 h-8" />
+                                    </div>
+                                    <div>
+                                        <h3 className="text-lg font-bold text-[var(--text-primary)]">Upload Berhasil!</h3>
+                                        <p className="text-emerald-500 font-medium mb-1">{uploadResult.message}</p>
+                                        <p className="text-sm text-[var(--text-secondary)]">
+                                            Data absensi telah tersimpan. Silakan cek riwayat untuk memverifikasi data.
+                                        </p>
+                                    </div>
+                                </div>
+                                <div className="flex gap-3">
+                                    <Link
+                                        href="/dashboard/hr/attendance-history"
+                                        className="px-6 py-2 rounded-lg bg-emerald-500 hover:bg-emerald-600 text-white font-bold transition-colors flex items-center gap-2"
+                                    >
+                                        <Clock className="w-4 h-4" />
+                                        Cek History
+                                    </Link>
+                                </div>
+                            </div>
+                        ) : (
+                            <div className="flex gap-4 justify-end">
+                                <button
+                                    onClick={() => {
+                                        setFileName(null);
+                                        setRawData([]);
+                                        setProcessedData([]);
+                                    }}
+                                    className="px-6 py-3 rounded-lg border border-[var(--glass-border)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] font-medium transition-colors"
+                                >
+                                    Clear Data
+                                </button>
+                                <button
+                                    onClick={uploadToDatabase}
+                                    disabled={isUploading || processedData.length === 0}
+                                    className={`px-6 py-3 rounded-lg font-bold transition-colors flex items-center gap-2 ${isUploading || processedData.length === 0
+                                        ? 'bg-[#e8c559]/50 text-[#171611]/50 cursor-not-allowed'
+                                        : 'bg-[#e8c559] hover:bg-[#dcb33e] text-[#171611]'
+                                        }`}
+                                >
+                                    {isUploading ? (
+                                        <>
+                                            <Loader2 className="w-4 h-4 animate-spin" />
+                                            Uploading... {uploadProgress && `(${uploadProgress.success + uploadProgress.failed}/${uploadProgress.total})`}
+                                        </>
+                                    ) : (
+                                        <>
+                                            <Database className="w-4 h-4" />
+                                            Upload ke Database
+                                        </>
+                                    )}
+                                </button>
+                            </div>
+                        )}
                     </div>
                 </>
             )}

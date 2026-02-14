@@ -15,6 +15,7 @@ import {
     ArrowRight,
     LayoutDashboard,
     FileText,
+    ArrowLeftRight,
 } from "lucide-react";
 
 export default function CEODashboardPage() {
@@ -248,7 +249,7 @@ export default function CEODashboardPage() {
                         >
                             <div className="flex items-center gap-4 mb-4">
                                 <div className="p-3 rounded-full bg-blue-500/20 text-blue-500">
-                                    <ClipboardCheck className="w-6 h-6" />
+                                    <ArrowLeftRight className="w-6 h-6" />
                                 </div>
                                 <div>
                                     <h3 className="font-bold text-lg text-white group-hover:text-blue-500 transition-colors">Overtime Conversion</h3>

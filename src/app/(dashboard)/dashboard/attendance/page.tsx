@@ -12,7 +12,8 @@ import {
     ArrowLeft,
     Edit2,
     X,
-    Check
+    Check,
+    ChevronRight
 } from "lucide-react";
 import Link from "next/link";
 
@@ -179,7 +180,7 @@ export default function PersonalAttendancePage() {
                 <div>
                     <div className="flex items-center gap-2 text-sm text-[var(--text-muted)] mb-1">
                         <Link href="/dashboard" className="hover:text-[#3f545f] dark:hover:text-[#e8c559]">Dashboard</Link>
-                        <span>/</span>
+                        <ChevronRight className="w-4 h-4 text-[var(--text-muted)]" />
                         <span className="text-[var(--text-primary)]">Attendance</span>
                     </div>
                     <div className="flex items-center gap-3">

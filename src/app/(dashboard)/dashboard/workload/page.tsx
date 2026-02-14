@@ -4,7 +4,7 @@ import React, { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
-import { Activity, ArrowLeft, Loader2 } from "lucide-react";
+import { Activity, ArrowLeft, Loader2, ChevronRight } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 
@@ -197,6 +197,11 @@ export default function WorkloadPage() {
                             <Activity className="w-6 h-6 text-white" />
                         </div>
                         <div>
+                            <div className="flex items-center gap-2 text-sm text-[var(--text-muted)] mb-1">
+                                <Link href="/dashboard" className="hover:text-[#3f545f] dark:hover:text-[#e8c559]">Dashboard</Link>
+                                <ChevronRight className="w-4 h-4 text-[var(--text-muted)]" />
+                                <span className="text-[var(--text-primary)]">Workload</span>
+                            </div>
                             <h1 className="text-2xl font-bold tracking-tight text-foreground">Team Workload</h1>
                             <p className="text-sm text-muted-foreground">
                                 Monitor team capacity. <span className="text-amber-500 font-medium">{formattedDate}</span>

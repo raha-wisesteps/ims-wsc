@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Briefcase, ArrowLeft, Calendar, MapPin, Send, Loader2, FileText, CheckCircle, XCircle, AlertCircle } from "lucide-react";
+import { Briefcase, ArrowLeft, Calendar, MapPin, Send, Loader2, FileText, CheckCircle, XCircle, AlertCircle, ChevronRight } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 
@@ -134,9 +134,9 @@ export default function BusinessTripPage() {
                 <div>
                     <div className="flex items-center gap-2 text-sm text-[var(--text-muted)] mb-1">
                         <Link href="/dashboard" className="hover:text-[#3f545f] dark:hover:text-[#e8c559]">Dashboard</Link>
-                        <span>/</span>
+                        <ChevronRight className="w-4 h-4 text-[var(--text-muted)]" />
                         <Link href="/dashboard/my-request" className="hover:text-[#3f545f] dark:hover:text-[#e8c559]">My Request</Link>
-                        <span>/</span>
+                        <ChevronRight className="w-4 h-4 text-[var(--text-muted)]" />
                         <span className="text-[var(--text-primary)]">Perjalanan Dinas</span>
                     </div>
                     <div className="flex items-center gap-3">

@@ -5,7 +5,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import {
-    Database,
+    Folder,
     ChevronRight,
     Plus,
     Search,
@@ -96,6 +96,8 @@ export default function CRMPage() {
     const [filterTag, setFilterTag] = useState<CRMTag | "">("");
     const [showForm, setShowForm] = useState(false);
     const [editingClient, setEditingClient] = useState<CRMClient | null>(null);
+    const [currentPage, setCurrentPage] = useState(1);
+    const itemsPerPage = 9;
 
     // Form state
     const [formData, setFormData] = useState({
@@ -309,6 +311,18 @@ export default function CRMPage() {
         });
     }, [clients, searchQuery, filterCategory, filterClientType, filterTag]);
 
+    // Pagination Logic
+    const totalPages = Math.max(1, Math.ceil(filteredClients.length / itemsPerPage));
+    const paginatedClients = useMemo(() => {
+        const start = (currentPage - 1) * itemsPerPage;
+        return filteredClients.slice(start, start + itemsPerPage);
+    }, [filteredClients, currentPage]);
+
+    // Reset to page 1 when filters change
+    useEffect(() => {
+        setCurrentPage(1);
+    }, [searchQuery, filterCategory, filterClientType, filterTag]);
+
     // Loading & Access Check
     if (authLoading || isLoading) {
         return (
@@ -374,7 +388,7 @@ export default function CRMPage() {
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
                 <div className="flex items-center gap-4">
                     <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-indigo-500 to-indigo-600 flex items-center justify-center shadow-lg shadow-indigo-500/20">
-                        <Database className="h-6 w-6 text-white" />
+                        <Folder className="h-6 w-6 text-white" />
                     </div>
                     <div>
                         <div className="flex items-center gap-2 mb-1 text-sm text-[var(--text-secondary)]">
@@ -482,48 +496,50 @@ export default function CRMPage() {
                     <h3 className="text-lg font-bold text-[var(--text-primary)] mb-2">No clients found</h3>
                     <p className="text-[var(--text-secondary)]">Add your first client to get started</p>
                 </div>
-            ) : viewMode === "grid" ? (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                    {filteredClients.map((client) => {
-                        const primaryContact = client.contacts?.find(c => c.is_primary) || client.contacts?.[0];
-                        return (
-                            <div
-                                key={client.id}
-                                className="group relative flex flex-col p-5 rounded-2xl bg-white dark:bg-[#1c2120] border border-[var(--glass-border)] hover:border-[#e8c559]/50 hover:shadow-xl transition-all duration-300"
-                            >
-                                {/* Card Header - Tags Top Right */}
-                                <div className="absolute top-4 right-4 flex -space-x-2 overflow-hidden hover:space-x-1 transition-all z-10">
-                                    {client.tags && client.tags.length > 0 && (
-                                        client.tags.slice(0, 3).map((t, i) => (
-                                            <div key={i} className="w-8 h-8 rounded-full bg-white dark:bg-[#1c2120] border border-[var(--glass-border)] flex items-center justify-center text-sm shadow-sm cursor-help" title={`${TAG_CONFIG[t.tag]?.label}${t.notes ? `: ${t.notes}` : ''}`}>
-                                                {TAG_CONFIG[t.tag]?.icon}
-                                            </div>
-                                        ))
-                                    )}
-                                </div>
-
-                                <div className="flex justify-between items-start mb-4 pr-16">
-                                    <div className="flex-1">
-                                        <div className="flex items-center gap-2 mb-2">
-                                            <span className={`px-2.5 py-1 rounded-full text-[10px] uppercase tracking-wider font-bold text-white ${CATEGORY_CONFIG[client.category]?.color || "bg-gray-500"}`}>
-                                                {CATEGORY_CONFIG[client.category]?.label || client.category}
-                                            </span>
-                                            {client.client_type && (
-                                                <span className={`px-2.5 py-1 rounded-full text-[10px] uppercase tracking-wider font-bold ${client.client_type === 'company'
-                                                    ? "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300"
-                                                    : "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300"
-                                                    }`}>
-                                                    {client.client_type}
-                                                </span>
+            ) : (
+                <>
+                    {viewMode === "grid" ? (
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                            {paginatedClients.map((client) => {
+                                const primaryContact = client.contacts?.find(c => c.is_primary) || client.contacts?.[0];
+                                return (
+                                    <div
+                                        key={client.id}
+                                        className="group relative flex flex-col p-5 rounded-2xl bg-white dark:bg-[#1c2120] border border-[var(--glass-border)] hover:border-[#e8c559]/50 hover:shadow-xl transition-all duration-300"
+                                    >
+                                        {/* Card Header - Tags Top Right */}
+                                        <div className="absolute top-4 right-4 flex -space-x-2 overflow-hidden hover:space-x-1 transition-all z-10">
+                                            {client.tags && client.tags.length > 0 && (
+                                                client.tags.slice(0, 3).map((t, i) => (
+                                                    <div key={i} className="w-8 h-8 rounded-full bg-white dark:bg-[#1c2120] border border-[var(--glass-border)] flex items-center justify-center text-sm shadow-sm cursor-help" title={`${TAG_CONFIG[t.tag]?.label}${t.notes ? `: ${t.notes}` : ''}`}>
+                                                        {TAG_CONFIG[t.tag]?.icon}
+                                                    </div>
+                                                ))
                                             )}
                                         </div>
-                                        <Link href={`/dashboard/bisdev/crm/${client.id}`} className="block">
-                                            <h3 className="text-lg font-bold text-[var(--text-primary)] group-hover:text-[#e8c559] transition-colors line-clamp-1 mb-1">
-                                                {client.company_name}
-                                            </h3>
-                                        </Link>
-                                    </div>
-                                    {/* HIDDEN EDIT MENU 
+
+                                        <div className="flex justify-between items-start mb-4 pr-16">
+                                            <div className="flex-1">
+                                                <div className="flex items-center gap-2 mb-2">
+                                                    <span className={`px-2.5 py-1 rounded-full text-[10px] uppercase tracking-wider font-bold text-white ${CATEGORY_CONFIG[client.category]?.color || "bg-gray-500"}`}>
+                                                        {CATEGORY_CONFIG[client.category]?.label || client.category}
+                                                    </span>
+                                                    {client.client_type && (
+                                                        <span className={`px-2.5 py-1 rounded-full text-[10px] uppercase tracking-wider font-bold ${client.client_type === 'company'
+                                                            ? "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300"
+                                                            : "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300"
+                                                            }`}>
+                                                            {client.client_type}
+                                                        </span>
+                                                    )}
+                                                </div>
+                                                <Link href={`/dashboard/bisdev/crm/${client.id}`} className="block">
+                                                    <h3 className="text-lg font-bold text-[var(--text-primary)] group-hover:text-[#e8c559] transition-colors line-clamp-1 mb-1">
+                                                        {client.company_name}
+                                                    </h3>
+                                                </Link>
+                                            </div>
+                                            {/* HIDDEN EDIT MENU 
                                     <div className="opacity-0 group-hover:opacity-100 transition-opacity">
                                         <button
                                             onClick={() => openEditForm(client)}
@@ -533,123 +549,164 @@ export default function CRMPage() {
                                         </button>
                                     </div>
                                     */}
-                                </div>
+                                        </div>
 
-                                {/* Contact Person */}
-                                <div className="flex items-center gap-3 mb-4 p-3 rounded-xl bg-[var(--glass-bg)] border border-[var(--glass-border)]">
-                                    <div className="w-10 h-10 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white font-bold text-sm">
-                                        {primaryContact?.name?.charAt(0) || <User className="w-5 h-5" />}
-                                    </div>
-                                    <div className="flex-1 min-w-0">
-                                        <p className="text-sm font-semibold text-[var(--text-primary)] truncate">
-                                            {primaryContact?.name || "No Conctact"}
-                                        </p>
-                                        <p className="text-xs text-[var(--text-secondary)] truncate">
-                                            {primaryContact?.position || "Position not set"}
-                                        </p>
-                                    </div>
-                                </div>
+                                        {/* Contact Person */}
+                                        <div className="flex items-center gap-3 mb-4 p-3 rounded-xl bg-[var(--glass-bg)] border border-[var(--glass-border)]">
+                                            <div className="w-10 h-10 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-white font-bold text-sm">
+                                                {primaryContact?.name?.charAt(0) || <User className="w-5 h-5" />}
+                                            </div>
+                                            <div className="flex-1 min-w-0">
+                                                <p className="text-sm font-semibold text-[var(--text-primary)] truncate">
+                                                    {primaryContact?.name || "No Conctact"}
+                                                </p>
+                                                <p className="text-xs text-[var(--text-secondary)] truncate">
+                                                    {primaryContact?.position || "Position not set"}
+                                                </p>
+                                            </div>
+                                        </div>
 
-                                {/* Footer */}
-                                <div className="mt-auto pt-4 border-t border-[var(--glass-border)] flex items-center justify-between">
-                                    <div className="flex items-center gap-3 text-[var(--text-secondary)]">
-                                        {primaryContact?.email && (
-                                            <a href={`mailto:${primaryContact.email}`} className="hover:text-[#e8c559] transition-colors">
-                                                <Mail className="w-4 h-4" />
-                                            </a>
-                                        )}
-                                        {primaryContact?.phone && (
-                                            <a href={`tel:${primaryContact.phone}`} className="hover:text-[#e8c559] transition-colors">
-                                                <Phone className="w-4 h-4" />
-                                            </a>
-                                        )}
-                                    </div>
-                                    <Link href={`/dashboard/bisdev/crm/${client.id}`} className="flex items-center gap-1 text-xs font-medium hover:text-[#e8c559] transition-colors ml-2">
-                                        Details <ChevronRight className="w-3 h-3" />
-                                    </Link>
-                                </div>
-                            </div>
-                        );
-                    })}
-                </div>
-            ) : (
-                /* List View (Table) */
-                <div className="bg-white dark:bg-[#1c2120] rounded-2xl border border-[var(--glass-border)] overflow-hidden">
-                    <div className="overflow-x-auto">
-                        <table className="w-full text-sm text-left">
-                            <thead className="bg-[var(--glass-bg)] border-b border-[var(--glass-border)]">
-                                <tr>
-                                    <th className="px-6 py-4 font-semibold text-[var(--text-primary)]">Company/Name</th>
-                                    <th className="px-6 py-4 font-semibold text-[var(--text-primary)]">Type</th>
-                                    <th className="px-6 py-4 font-semibold text-[var(--text-primary)]">Category</th>
-                                    <th className="px-6 py-4 font-semibold text-[var(--text-primary)]">Contact</th>
-                                    <th className="px-6 py-4 font-semibold text-[var(--text-primary)]">Tags</th>
-                                    <th className="px-6 py-4 font-semibold text-[var(--text-primary)] text-right">Actions</th>
-                                </tr>
-                            </thead>
-                            <tbody className="divide-y divide-[var(--glass-border)]">
-                                {filteredClients.map((client) => {
-                                    const primaryContact = client.contacts?.find(c => c.is_primary) || client.contacts?.[0];
-                                    return (
-                                        <tr key={client.id} className="hover:bg-[var(--glass-bg)] transition-colors">
-                                            <td className="px-6 py-4">
-                                                <Link href={`/dashboard/bisdev/crm/${client.id}`} className="font-semibold text-[var(--text-primary)] hover:text-[#e8c559]">
-                                                    {client.company_name}
-                                                </Link>
-                                            </td>
-                                            <td className="px-6 py-4">
-                                                {client.client_type && (
-                                                    <span className={`px-2 py-0.5 rounded text-xs font-bold capitalize ${client.client_type === 'company'
-                                                        ? "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300"
-                                                        : "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300"
-                                                        }`}>
-                                                        {client.client_type}
-                                                    </span>
+                                        {/* Footer */}
+                                        <div className="mt-auto pt-4 border-t border-[var(--glass-border)] flex items-center justify-between">
+                                            <div className="flex items-center gap-3 text-[var(--text-secondary)]">
+                                                {primaryContact?.email && (
+                                                    <a href={`mailto:${primaryContact.email}`} className="hover:text-[#e8c559] transition-colors">
+                                                        <Mail className="w-4 h-4" />
+                                                    </a>
                                                 )}
-                                            </td>
-
-                                            <td className="px-6 py-4">
-                                                <span className={`px-2 py-1 rounded-full text-xs font-medium text-white ${CATEGORY_CONFIG[client.category]?.color || "bg-gray-500"}`}>
-                                                    {CATEGORY_CONFIG[client.category]?.label || client.category}
-                                                </span>
-                                            </td>
-                                            <td className="px-6 py-4">
-                                                <div className="flex flex-col">
-                                                    <span className="text-[var(--text-primary)] font-medium">{primaryContact?.name || "-"}</span>
-                                                    <span className="text-xs text-[var(--text-secondary)]">{primaryContact?.email || primaryContact?.phone || "-"}</span>
-                                                </div>
-                                            </td>
-                                            <td className="px-6 py-4">
-                                                <div className="flex flex-wrap gap-1">
-                                                    {client.tags && client.tags.map((t, i) => (
-                                                        <span key={i} className="text-lg cursor-help" title={`${TAG_CONFIG[t.tag]?.label}${t.notes ? `: ${t.notes}` : ''}`}>
-                                                            {TAG_CONFIG[t.tag]?.icon}
-                                                        </span>
-                                                    ))}
-                                                </div>
-                                            </td>
-
-                                            <td className="px-6 py-4 text-right">
-                                                <div className="flex items-center justify-end gap-2">
-                                                    <button
-                                                        onClick={() => openEditForm(client)}
-                                                        className="p-2 text-[var(--text-secondary)] hover:text-[#e8c559] hover:bg-[#e8c559]/10 rounded-lg transition-colors"
-                                                    >
-                                                        <Edit3 className="w-4 h-4" />
-                                                    </button>
-                                                    <button
-                                                        onClick={() => handleDelete(client.id)}
-                                                        className="p-2 text-[var(--text-secondary)] hover:text-red-500 hover:bg-red-500/10 rounded-lg transition-colors"
-                                                    >
-                                                        <Trash2 className="w-4 h-4" />
-                                                    </button>
-                                                </div>
-                                            </td>
+                                                {primaryContact?.phone && (
+                                                    <a href={`tel:${primaryContact.phone}`} className="hover:text-[#e8c559] transition-colors">
+                                                        <Phone className="w-4 h-4" />
+                                                    </a>
+                                                )}
+                                            </div>
+                                            <Link href={`/dashboard/bisdev/crm/${client.id}`} className="flex items-center gap-1 text-xs font-medium hover:text-[#e8c559] transition-colors ml-2">
+                                                Details <ChevronRight className="w-3 h-3" />
+                                            </Link>
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    ) : (
+                        /* List View (Table) */
+                        <div className="bg-white dark:bg-[#1c2120] rounded-2xl border border-[var(--glass-border)] overflow-hidden">
+                            <div className="overflow-x-auto">
+                                <table className="w-full text-sm text-left">
+                                    <thead className="bg-[var(--glass-bg)] border-b border-[var(--glass-border)]">
+                                        <tr>
+                                            <th className="px-6 py-4 font-semibold text-[var(--text-primary)]">Company/Name</th>
+                                            <th className="px-6 py-4 font-semibold text-[var(--text-primary)]">Type</th>
+                                            <th className="px-6 py-4 font-semibold text-[var(--text-primary)]">Category</th>
+                                            <th className="px-6 py-4 font-semibold text-[var(--text-primary)]">Contact</th>
+                                            <th className="px-6 py-4 font-semibold text-[var(--text-primary)]">Tags</th>
+                                            <th className="px-6 py-4 font-semibold text-[var(--text-primary)] text-right">Actions</th>
                                         </tr>
-                                    );
-                                })}
-                            </tbody>
-                        </table>
+                                    </thead>
+                                    <tbody className="divide-y divide-[var(--glass-border)]">
+                                        {paginatedClients.map((client) => {
+                                            const primaryContact = client.contacts?.find(c => c.is_primary) || client.contacts?.[0];
+                                            return (
+                                                <tr key={client.id} className="hover:bg-[var(--glass-bg)] transition-colors">
+                                                    <td className="px-6 py-4">
+                                                        <Link href={`/dashboard/bisdev/crm/${client.id}`} className="font-semibold text-[var(--text-primary)] hover:text-[#e8c559]">
+                                                            {client.company_name}
+                                                        </Link>
+                                                    </td>
+                                                    <td className="px-6 py-4">
+                                                        {client.client_type && (
+                                                            <span className={`px-2 py-0.5 rounded text-xs font-bold capitalize ${client.client_type === 'company'
+                                                                ? "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300"
+                                                                : "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300"
+                                                                }`}>
+                                                                {client.client_type}
+                                                            </span>
+                                                        )}
+                                                    </td>
+
+                                                    <td className="px-6 py-4">
+                                                        <span className={`px-2 py-1 rounded-full text-xs font-medium text-white ${CATEGORY_CONFIG[client.category]?.color || "bg-gray-500"}`}>
+                                                            {CATEGORY_CONFIG[client.category]?.label || client.category}
+                                                        </span>
+                                                    </td>
+                                                    <td className="px-6 py-4">
+                                                        <div className="flex flex-col">
+                                                            <span className="text-[var(--text-primary)] font-medium">{primaryContact?.name || "-"}</span>
+                                                            <span className="text-xs text-[var(--text-secondary)]">{primaryContact?.email || primaryContact?.phone || "-"}</span>
+                                                        </div>
+                                                    </td>
+                                                    <td className="px-6 py-4">
+                                                        <div className="flex flex-wrap gap-1">
+                                                            {client.tags && client.tags.map((t, i) => (
+                                                                <span key={i} className="text-lg cursor-help" title={`${TAG_CONFIG[t.tag]?.label}${t.notes ? `: ${t.notes}` : ''}`}>
+                                                                    {TAG_CONFIG[t.tag]?.icon}
+                                                                </span>
+                                                            ))}
+                                                        </div>
+                                                    </td>
+
+                                                    <td className="px-6 py-4 text-right">
+                                                        <div className="flex items-center justify-end gap-2">
+                                                            <button
+                                                                onClick={() => openEditForm(client)}
+                                                                className="p-2 text-[var(--text-secondary)] hover:text-[#e8c559] hover:bg-[#e8c559]/10 rounded-lg transition-colors"
+                                                            >
+                                                                <Edit3 className="w-4 h-4" />
+                                                            </button>
+                                                            <button
+                                                                onClick={() => handleDelete(client.id)}
+                                                                className="p-2 text-[var(--text-secondary)] hover:text-red-500 hover:bg-red-500/10 rounded-lg transition-colors"
+                                                            >
+                                                                <Trash2 className="w-4 h-4" />
+                                                            </button>
+                                                        </div>
+                                                    </td>
+                                                </tr>
+                                            );
+                                        })}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    )}
+                </>
+            )}
+
+            {/* Pagination Controls */}
+            {filteredClients.length > 0 && (
+                <div className="flex items-center justify-between mt-6 border-t border-[var(--glass-border)] pt-4">
+                    <p className="text-sm text-[var(--text-secondary)]">
+                        Showing {((currentPage - 1) * itemsPerPage) + 1} to {Math.min(currentPage * itemsPerPage, filteredClients.length)} of {filteredClients.length} clients
+                    </p>
+                    <div className="flex items-center gap-2">
+                        <button
+                            onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                            disabled={currentPage === 1}
+                            className="px-3 py-1 rounded-lg border border-[var(--glass-border)] text-[var(--text-secondary)] hover:bg-black/5 dark:hover:bg-white/5 disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                            Previous
+                        </button>
+                        <div className="flex items-center gap-1">
+                            {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => (
+                                <button
+                                    key={page}
+                                    onClick={() => setCurrentPage(page)}
+                                    className={`w-8 h-8 rounded-lg flex items-center justify-center text-sm font-medium transition-colors ${currentPage === page
+                                        ? 'bg-[#e8c559] text-[#171611]'
+                                        : 'text-[var(--text-secondary)] hover:bg-black/5 dark:hover:bg-white/5'
+                                        }`}
+                                >
+                                    {page}
+                                </button>
+                            ))}
+                        </div>
+                        <button
+                            onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                            disabled={currentPage === totalPages}
+                            className="px-3 py-1 rounded-lg border border-[var(--glass-border)] text-[var(--text-secondary)] hover:bg-black/5 dark:hover:bg-white/5 disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                            Next
+                        </button>
                     </div>
                 </div>
             )}

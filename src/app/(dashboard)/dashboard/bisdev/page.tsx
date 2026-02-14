@@ -27,6 +27,7 @@ import {
     Crown,
     Star,
     Award,
+    Folder,
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { createClient } from "@/lib/supabase/client";
@@ -1056,7 +1057,7 @@ export default function BisDevDashboardPage() {
                         >
                             <div className="flex items-center gap-4 mb-4">
                                 <div className="p-3 rounded-full bg-[#e8c559]/20 text-[#e8c559]">
-                                    <LayoutDashboard className="w-6 h-6" />
+                                    <TrendingUp className="w-6 h-6" />
                                 </div>
                                 <div>
                                     <h3 className="font-bold text-lg text-[var(--text-primary)] group-hover:text-[#e8c559] transition-colors">Opportunity Board</h3>
@@ -1074,7 +1075,7 @@ export default function BisDevDashboardPage() {
                         >
                             <div className="flex items-center gap-4 mb-4">
                                 <div className="p-3 rounded-full bg-sky-500/20 text-sky-500">
-                                    <Users className="w-6 h-6" />
+                                    <Folder className="w-6 h-6" />
                                 </div>
                                 <div>
                                     <h3 className="font-bold text-lg text-[var(--text-primary)] group-hover:text-sky-500 transition-colors">CRM Database</h3>

@@ -2742,7 +2742,7 @@ export default function DashboardPage() {
                                                     </div>
                                                 )}
                                                 {/* Online indicator */}
-                                                <div className="absolute -bottom-0.5 -right-0.5 w-4 h-4 rounded-full bg-emerald-500 border-2 border-white dark:border-[var(--glass-bg)]" />
+                                                <div className={`absolute -bottom-0.5 -right-0.5 w-4 h-4 rounded-full border-2 border-white dark:border-[var(--glass-bg)] ${memberStatusInfo?.color || 'bg-emerald-500'}`} />
                                             </div>
                                             <div className="flex-1 min-w-0 flex items-start gap-3">
                                                 <div className="flex flex-col min-w-[120px] max-w-[200px]">

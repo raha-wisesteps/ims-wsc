@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import { Plus, Clock, CheckCircle, XCircle, AlertCircle, ChevronRight, Calendar, Home, Thermometer, GraduationCap, DollarSign, Users, Package, Loader2, RefreshCw, Briefcase } from "lucide-react";
+import { Plus, Clock, CheckCircle, XCircle, AlertCircle, ChevronRight, Calendar, Home, Thermometer, GraduationCap, DollarSign, Users, Package, Loader2, RefreshCw, Briefcase, ClipboardList } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 
@@ -261,12 +261,12 @@ export default function MyRequestPage() {
                 <div>
                     <div className="flex items-center gap-2 text-sm text-[var(--text-muted)] mb-1">
                         <Link href="/dashboard" className="hover:text-[#3f545f] dark:hover:text-[#e8c559]">Dashboard</Link>
-                        <span>/</span>
+                        <ChevronRight className="w-4 h-4 text-[var(--text-muted)]" />
                         <span className="text-[var(--text-primary)]">My Request</span>
                     </div>
                     <div className="flex items-center gap-3">
-                        <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-[#3f545f] to-[#5f788e] dark:from-[#e8c559] dark:to-[#dcb33e] flex items-center justify-center text-2xl text-white dark:text-[#171611] shadow-lg">
-                            📋
+                        <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center shadow-lg shadow-blue-500/20">
+                            <ClipboardList className="w-6 h-6 text-white" />
                         </div>
                         <div>
                             <h2 className="text-3xl font-bold tracking-tight text-[var(--text-primary)]">My Request</h2>

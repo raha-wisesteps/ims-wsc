@@ -21,7 +21,9 @@ import {
     List,
     ArrowRight,
     Edit3,
-    ChevronLeft
+    ChevronRight,
+    Trophy,
+    FileText
 } from "lucide-react";
 
 export default function AssessmentCenterPage() {
@@ -113,17 +115,22 @@ export default function AssessmentCenterPage() {
     return (
         <div className="space-y-6 pb-20">
             {/* Header */}
-            <header className="flex flex-col gap-4 md:flex-row md:items-end justify-between">
-                <div>
-                    <Link
-                        href="/dashboard/command-center"
-                        className="inline-flex items-center gap-2 text-gray-400 hover:text-white mb-2 transition-colors group"
-                    >
-                        <ChevronLeft className="w-4 h-4 group-hover:-translate-x-1 transition-transform" />
-                        Back to Command Center
-                    </Link>
-                    <h1 className="text-3xl font-black tracking-tight text-white">Assessment Center</h1>
-                    <p className="text-gray-400">Input & Update KPI Scores for WSC Team.</p>
+            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                <div className="flex items-center gap-3">
+                    <div className="w-12 h-12 rounded-xl bg-amber-500/10 flex items-center justify-center">
+                        <FileText className="w-6 h-6 text-amber-500" />
+                    </div>
+                    <div>
+                        <div className="flex items-center gap-2 mb-1 text-sm text-gray-400">
+                            <Link href="/dashboard" className="hover:text-white transition-colors">Dashboard</Link>
+                            <ChevronRight className="h-4 w-4" />
+                            <Link href="/dashboard/command-center" className="hover:text-white transition-colors">Command Center</Link>
+                            <ChevronRight className="h-4 w-4" />
+                            <span className="text-white">KPI Management</span>
+                        </div>
+                        <h1 className="text-2xl font-bold text-white">Assessment Center</h1>
+                        <p className="text-sm text-gray-400">Input & Update KPI Scores for WSC Team.</p>
+                    </div>
                 </div>
 
                 <div className="flex items-center gap-4">
@@ -157,7 +164,7 @@ export default function AssessmentCenterPage() {
                         </button>
                     </div>
                 </div>
-            </header>
+            </div>
 
             {viewMode === "grid" ? (
                 /* GRID VIEW */

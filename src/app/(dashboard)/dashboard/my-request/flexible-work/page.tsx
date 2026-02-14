@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Home, MapPin, ArrowLeft, Calendar, Send, Loader2, CheckCircle, XCircle, AlertCircle } from "lucide-react";
+import { Home, MapPin, ArrowLeft, Calendar, Send, Loader2, CheckCircle, XCircle, AlertCircle, ChevronRight } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 
@@ -164,14 +164,14 @@ export default function FlexibleWorkPage() {
                 <div>
                     <div className="flex items-center gap-2 text-sm text-[var(--text-muted)] mb-1">
                         <Link href="/dashboard" className="hover:text-[#3f545f] dark:hover:text-[#e8c559]">Dashboard</Link>
-                        <span>/</span>
+                        <ChevronRight className="w-4 h-4 text-[var(--text-muted)]" />
                         <Link href="/dashboard/my-request" className="hover:text-[#3f545f] dark:hover:text-[#e8c559]">My Request</Link>
-                        <span>/</span>
+                        <ChevronRight className="w-4 h-4 text-[var(--text-muted)]" />
                         <span className="text-[var(--text-primary)]">{isIntern ? "WFH" : "WFH/WFA"}</span>
                     </div>
                     <div className="flex items-center gap-3">
-                        <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-purple-500 to-violet-500 flex items-center justify-center text-2xl text-white shadow-lg">
-                            {workType === "wfh" ? "🏠" : "📍"}
+                        <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-purple-500 to-violet-500 flex items-center justify-center shadow-lg">
+                            {workType === "wfh" ? <Home className="w-6 h-6 text-white" /> : <MapPin className="w-6 h-6 text-white" />}
                         </div>
                         <div>
                             <h2 className="text-3xl font-bold tracking-tight text-[var(--text-primary)]">

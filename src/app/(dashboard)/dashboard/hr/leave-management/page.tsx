@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
-import { Loader2, ArrowLeft, Search, ShieldAlert, User, MoreVertical, Pencil, X, Save } from "lucide-react";
+import { Loader2, Calendar, Search, ShieldAlert, User, MoreVertical, Pencil, X, Save, ChevronRight } from "lucide-react";
 import Link from "next/link";
 import Image from "next/image";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -185,26 +185,32 @@ export default function LeaveManagementPage() {
     return (
         <div className="space-y-6 pb-10">
             {/* Header */}
-            <div className="flex flex-col gap-4">
-                <Link href="/dashboard/hr" className="flex items-center gap-2 text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors w-fit">
-                    <ArrowLeft className="w-4 h-4" /> Back to HR Dashboard
-                </Link>
-
-                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                <div className="flex items-center gap-3">
+                    <div className="w-12 h-12 rounded-xl bg-amber-500/10 flex items-center justify-center">
+                        <Calendar className="w-6 h-6 text-amber-500" />
+                    </div>
                     <div>
+                        <div className="flex items-center gap-2 mb-1 text-sm text-[var(--text-secondary)]">
+                            <Link href="/dashboard" className="hover:text-[var(--text-primary)] transition-colors">Dashboard</Link>
+                            <ChevronRight className="h-4 w-4" />
+                            <Link href="/dashboard/hr" className="hover:text-[var(--text-primary)] transition-colors">Human Resource</Link>
+                            <ChevronRight className="h-4 w-4" />
+                            <span>Leave Management</span>
+                        </div>
                         <h1 className="text-2xl font-bold text-[var(--text-primary)]">Leave Management</h1>
                         <p className="text-sm text-[var(--text-secondary)]">Overview of employee leave quotas and usage</p>
                     </div>
+                </div>
 
-                    <div className="relative w-full md:w-64">
-                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                        <input
-                            placeholder="Search employee..."
-                            className="w-full pl-9 h-10 rounded-md bg-white/5 border border-white/10 focus:outline-none focus:ring-1 focus:ring-[#e8c559] text-sm"
-                            value={searchQuery}
-                            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearchQuery(e.target.value)}
-                        />
-                    </div>
+                <div className="relative w-full md:w-64">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                    <input
+                        placeholder="Search employee..."
+                        className="w-full pl-9 h-10 rounded-md bg-white/5 border border-white/10 focus:outline-none focus:ring-1 focus:ring-[#e8c559] text-sm"
+                        value={searchQuery}
+                        onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearchQuery(e.target.value)}
+                    />
                 </div>
             </div>
 

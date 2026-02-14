@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import { ChevronLeft, Loader2 } from "lucide-react";
+import { ChevronRight, Loader2, Users } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 
@@ -163,19 +163,24 @@ export default function UserManagementPage() {
     return (
         <div className="flex flex-col gap-8 pb-20">
             {/* Page Header */}
-            <header className="flex flex-col justify-between gap-6 md:flex-row md:items-end">
-                <div className="flex flex-col gap-2">
-                    <Link
-                        href="/dashboard/hr"
-                        className="inline-flex items-center gap-2 text-gray-400 hover:text-white mb-2 transition-colors group"
-                    >
-                        <ChevronLeft className="w-4 h-4 group-hover:-translate-x-1 transition-transform" />
-                        Back to Human Resource
-                    </Link>
-                    <h1 className="text-4xl font-black tracking-tight text-[var(--text-primary)]">User Management</h1>
-                    <p className="text-lg text-[var(--text-secondary)]">Manage employee accounts, roles, and access permissions.</p>
+            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                <div className="flex items-center gap-3">
+                    <div className="w-12 h-12 rounded-xl bg-blue-500/10 flex items-center justify-center">
+                        <Users className="w-6 h-6 text-blue-500" />
+                    </div>
+                    <div>
+                        <div className="flex items-center gap-2 mb-1 text-sm text-[var(--text-secondary)]">
+                            <Link href="/dashboard" className="hover:text-[var(--text-primary)] transition-colors">Dashboard</Link>
+                            <ChevronRight className="h-4 w-4" />
+                            <Link href="/dashboard/hr" className="hover:text-[var(--text-primary)] transition-colors">Human Resource</Link>
+                            <ChevronRight className="h-4 w-4" />
+                            <span>User Management</span>
+                        </div>
+                        <h1 className="text-2xl font-bold text-[var(--text-primary)]">User Management</h1>
+                        <p className="text-sm text-[var(--text-secondary)]">Manage employee accounts, roles, and access permissions.</p>
+                    </div>
                 </div>
-            </header>
+            </div>
 
             {/* Summary Cards */}
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">

@@ -3,7 +3,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, Gift, Calendar, Clock, AlertCircle } from "lucide-react";
+import { ArrowLeft, Gift, Calendar, Clock, AlertCircle, ChevronRight } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -21,21 +21,24 @@ export default function ExtraLeavePage() {
                 <div className="space-y-1">
                     <div className="flex items-center gap-2 text-sm text-[var(--text-secondary)] mb-1">
                         <Link href="/dashboard" className="hover:text-[var(--primary-main)] transition-colors flex items-center gap-1">
-                            <ArrowLeft className="h-4 w-4" />
-                            Back to Dashboard
+                            Dashboard
                         </Link>
-                        <span className="text-[var(--text-tertiary)]">/</span>
+                        <ChevronRight className="h-4 w-4 text-[var(--text-tertiary)]" />
                         <span>Libur Ekstra</span>
                     </div>
-                    <h1 className="text-3xl font-bold tracking-tight text-[var(--foreground)] flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-pink-500 to-rose-600 flex items-center justify-center shadow-lg shadow-pink-500/20">
+                    <div className="flex items-center gap-3">
+                        <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-pink-500 to-rose-600 flex items-center justify-center shadow-lg shadow-pink-500/20">
                             <Gift className="h-6 w-6 text-white" />
                         </div>
-                        Libur Ekstra
-                    </h1>
-                    <p className="text-[var(--text-secondary)] max-w-2xl">
-                        Daftar cuti tambahan yang Anda miliki. Libur ekstra diberikan sebagai reward atau bonus dan memiliki masa berlaku terbatas.
-                    </p>
+                        <div>
+                            <h1 className="text-3xl font-bold tracking-tight text-[var(--foreground)]">
+                                Libur Ekstra
+                            </h1>
+                            <p className="text-[var(--text-secondary)] text-sm max-w-2xl">
+                                Daftar cuti tambahan yang Anda miliki. Libur ekstra diberikan sebagai reward atau bonus.
+                            </p>
+                        </div>
+                    </div>
                 </div>
             </div>
 

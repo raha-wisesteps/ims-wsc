@@ -4,9 +4,11 @@ import { useState, useEffect, useMemo } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import {
-    Clock, ArrowLeft, CalendarDays, Users, Filter, Search,
-    ChevronDown, MapPin, AlertCircle, CheckCircle, Download
+    Clock, CalendarDays, Users, Filter, Search,
+    ChevronDown, MapPin, AlertCircle, CheckCircle,
+    ChevronRight, FileSpreadsheet
 } from "lucide-react";
+import * as XLSX from "xlsx";
 
 // Types
 interface Profile {
@@ -43,6 +45,7 @@ const STATUS_COLORS: Record<string, { bg: string; text: string }> = {
     field: { bg: "bg-blue-500/10", text: "text-blue-500" },
     dinas: { bg: "bg-blue-500/10", text: "text-blue-500" },
     lembur: { bg: "bg-orange-500/10", text: "text-orange-500" },
+    remote: { bg: "bg-purple-500/10", text: "text-purple-500" },
 };
 
 // Format time for display
@@ -99,7 +102,9 @@ export default function AttendanceHistoryPage() {
             const { data, error } = await supabase
                 .from("profiles")
                 .select("id, full_name, employee_id, job_type, job_level")
+
                 .eq("is_active", true)
+                .neq("role", "hr") // Exclude HR role
                 .order("full_name");
 
             if (error) {
@@ -184,61 +189,60 @@ export default function AttendanceHistoryPage() {
         return { total, late, complete, uniqueDays };
     }, [filteredRecords]);
 
-    // Export to CSV
-    const exportToCSV = () => {
+    // Export to Excel
+    const exportToExcel = () => {
         const headers = ["Tanggal", "Nama", "Employee ID", "Status", "Clock In", "Clock Out", "Durasi", "Late", "Source"];
         const rows = filteredRecords.map(record => {
             const profile = record.profiles as unknown as Profile;
-            return [
-                record.checkin_date,
-                profile?.full_name || "-",
-                record.employee_id || "-",
-                record.status || "-",
-                formatTime(record.clock_in_time),
-                formatTime(record.clock_out_time),
-                calculateDuration(record.clock_in_time, record.clock_out_time),
-                record.is_late ? "Ya" : "Tidak",
-                record.source || "-"
-            ].join(",");
+            return {
+                "Tanggal": record.checkin_date,
+                "Nama": profile?.full_name || "-",
+                "Employee ID": record.employee_id || "-",
+                "Status": record.status || "-",
+                "Clock In": formatTime(record.clock_in_time),
+                "Clock Out": formatTime(record.clock_out_time),
+                "Durasi": calculateDuration(record.clock_in_time, record.clock_out_time),
+                "Late": record.is_late ? "Ya" : "Tidak",
+                "Source": record.source || "-"
+            };
         });
-        const csv = [headers.join(","), ...rows].join("\n");
-        const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-        const link = document.createElement("a");
-        link.href = URL.createObjectURL(blob);
-        link.download = `attendance_${startDate}_to_${endDate}.csv`;
-        link.click();
+
+        const worksheet = XLSX.utils.json_to_sheet(rows);
+        const workbook = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(workbook, worksheet, "Attendance Data");
+        XLSX.writeFile(workbook, `attendance_${startDate}_to_${endDate}.xlsx`);
     };
 
     return (
         <div className="space-y-6 pb-20">
             {/* Header */}
-            <header className="flex flex-col gap-4 md:flex-row md:items-end justify-between">
+            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                 <div className="flex items-center gap-3">
                     <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-indigo-600 to-indigo-800 flex items-center justify-center shadow-lg shadow-indigo-900/20">
                         <Clock className="w-6 h-6 text-white" />
                     </div>
                     <div>
+                        <div className="flex items-center gap-2 mb-1 text-sm text-[var(--text-secondary)]">
+                            <Link href="/dashboard" className="hover:text-[var(--text-primary)] transition-colors">Dashboard</Link>
+                            <ChevronRight className="h-4 w-4" />
+                            <Link href="/dashboard/hr" className="hover:text-[var(--text-primary)] transition-colors">Human Resource</Link>
+                            <ChevronRight className="h-4 w-4" />
+                            <span>Attendance History</span>
+                        </div>
                         <h1 className="text-2xl font-bold text-[var(--text-primary)]">Attendance History</h1>
                         <p className="text-sm text-[var(--text-secondary)]">Riwayat absensi karyawan</p>
                     </div>
                 </div>
                 <div className="flex gap-2">
                     <button
-                        onClick={exportToCSV}
-                        className="flex items-center gap-2 px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-medium transition-colors"
+                        onClick={exportToExcel}
+                        className="flex items-center gap-2 px-4 py-2 rounded-lg border border-[var(--glass-border)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--glass-border)]/50 transition-colors"
                     >
-                        <Download className="w-4 h-4" />
-                        Export CSV
+                        <FileSpreadsheet className="w-4 h-4" />
+                        Export Excel
                     </button>
-                    <Link
-                        href="/dashboard/hr"
-                        className="flex items-center gap-2 px-4 py-2 rounded-lg border border-[var(--glass-border)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"
-                    >
-                        <ArrowLeft className="w-4 h-4" />
-                        Back to HR
-                    </Link>
                 </div>
-            </header>
+            </div>
 
             {/* Filters */}
             <div className="glass-panel p-4 rounded-xl space-y-4">
@@ -317,14 +321,14 @@ export default function AttendanceHistoryPage() {
                             onChange={(e) => setStatusFilter(e.target.value)}
                             className="w-full pl-10 pr-4 py-2 rounded-lg bg-[var(--glass-bg)] border border-[var(--glass-border)] text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--accent-gold)]/50 appearance-none cursor-pointer"
                         >
-                            <option value="all">Semua Status</option>
-                            <option value="office">Office</option>
+                            <option value="all">SEMUA STATUS</option>
+                            <option value="office">OFFICE</option>
                             <option value="wfh">WFH</option>
                             <option value="wfa">WFA</option>
-                            <option value="sick">Sakit</option>
-                            <option value="cuti">Cuti</option>
-                            <option value="izin">Izin</option>
-                            <option value="field">Dinas Luar</option>
+                            <option value="sick">SAKIT</option>
+                            <option value="cuti">CUTI</option>
+                            <option value="izin">IZIN</option>
+                            <option value="dinas">DINAS</option>
                         </select>
                         <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--text-muted)] pointer-events-none" />
                     </div>
@@ -352,123 +356,129 @@ export default function AttendanceHistoryPage() {
             </div>
 
             {/* Error State */}
-            {error && (
-                <div className="glass-panel p-4 rounded-xl border-l-4 border-rose-500 bg-rose-500/10">
-                    <div className="flex items-center gap-3">
-                        <AlertCircle className="w-5 h-5 text-rose-500 flex-shrink-0" />
-                        <p className="text-sm text-rose-500">{error}</p>
+            {
+                error && (
+                    <div className="glass-panel p-4 rounded-xl border-l-4 border-rose-500 bg-rose-500/10">
+                        <div className="flex items-center gap-3">
+                            <AlertCircle className="w-5 h-5 text-rose-500 flex-shrink-0" />
+                            <p className="text-sm text-rose-500">{error}</p>
+                        </div>
                     </div>
-                </div>
-            )}
+                )
+            }
 
             {/* Loading State */}
-            {isLoading && (
-                <div className="glass-panel p-8 rounded-xl flex items-center justify-center">
-                    <div className="w-8 h-8 border-4 border-[var(--accent-gold)] border-t-transparent rounded-full animate-spin" />
-                </div>
-            )}
+            {
+                isLoading && (
+                    <div className="glass-panel p-8 rounded-xl flex items-center justify-center">
+                        <div className="w-8 h-8 border-4 border-[var(--accent-gold)] border-t-transparent rounded-full animate-spin" />
+                    </div>
+                )
+            }
 
             {/* Data Table */}
-            {!isLoading && !error && (
-                <div className="glass-panel rounded-xl overflow-hidden">
-                    <div className="overflow-x-auto">
-                        <table className="w-full text-sm">
-                            <thead>
-                                <tr className="text-left text-[var(--text-muted)] border-b border-[var(--glass-border)] bg-black/5 dark:bg-white/5">
-                                    <th className="p-3 font-medium">Tanggal</th>
-                                    <th className="p-3 font-medium">Nama</th>
-                                    <th className="p-3 font-medium">Status</th>
-                                    <th className="p-3 font-medium">Clock In</th>
-                                    <th className="p-3 font-medium">Clock Out</th>
-                                    <th className="p-3 font-medium">Durasi</th>
-                                    <th className="p-3 font-medium">Late</th>
-                                    <th className="p-3 font-medium">Source</th>
-                                </tr>
-                            </thead>
-                            <tbody className="divide-y divide-[var(--glass-border)]">
-                                {filteredRecords.length === 0 ? (
-                                    <tr>
-                                        <td colSpan={8} className="p-8 text-center text-[var(--text-muted)]">
-                                            Tidak ada data absensi untuk filter yang dipilih
-                                        </td>
+            {
+                !isLoading && !error && (
+                    <div className="glass-panel rounded-xl overflow-hidden">
+                        <div className="overflow-x-auto">
+                            <table className="w-full text-sm">
+                                <thead>
+                                    <tr className="text-left text-[var(--text-muted)] border-b border-[var(--glass-border)] bg-black/5 dark:bg-white/5">
+                                        <th className="p-3 font-medium">Tanggal</th>
+                                        <th className="p-3 font-medium">Nama</th>
+                                        <th className="p-3 font-medium">Status</th>
+                                        <th className="p-3 font-medium">Clock In</th>
+                                        <th className="p-3 font-medium">Clock Out</th>
+                                        <th className="p-3 font-medium">Durasi</th>
+                                        <th className="p-3 font-medium">Late</th>
+                                        <th className="p-3 font-medium">Source</th>
                                     </tr>
-                                ) : (
-                                    filteredRecords.map((record) => {
-                                        const profile = record.profiles as unknown as Profile;
-                                        // Case-insensitive lookup
-                                        const statusKey = (record.status || "").toLowerCase();
-                                        // Map synonymous keys
-                                        let finalKey = statusKey;
-                                        if (statusKey === 'sakit') finalKey = 'sick';
-                                        if (statusKey === 'dinas') finalKey = 'dinas';
-                                        if (statusKey === 'lembur') finalKey = 'lembur';
+                                </thead>
+                                <tbody className="divide-y divide-[var(--glass-border)]">
+                                    {filteredRecords.length === 0 ? (
+                                        <tr>
+                                            <td colSpan={8} className="p-8 text-center text-[var(--text-muted)]">
+                                                Tidak ada data absensi untuk filter yang dipilih
+                                            </td>
+                                        </tr>
+                                    ) : (
+                                        filteredRecords.map((record) => {
+                                            const profile = record.profiles as unknown as Profile;
+                                            // Case-insensitive lookup
+                                            const statusKey = (record.status || "").toLowerCase();
+                                            // Map synonymous keys
+                                            let finalKey = statusKey;
+                                            if (statusKey === 'sakit') finalKey = 'sick';
+                                            if (statusKey === 'dinas') finalKey = 'dinas';
+                                            if (statusKey === 'lembur') finalKey = 'lembur';
 
-                                        const statusColor = STATUS_COLORS[finalKey] || { bg: "bg-gray-500/10", text: "text-gray-500" };
+                                            const statusColor = STATUS_COLORS[finalKey] || { bg: "bg-gray-500/10", text: "text-gray-500" };
 
-                                        return (
-                                            <tr key={record.id} className="hover:bg-black/5 dark:hover:bg-white/5 transition-colors">
-                                                <td className="p-3 text-[var(--text-secondary)]">
-                                                    {formatDate(record.checkin_date)}
-                                                </td>
-                                                <td className="p-3 font-medium text-[var(--text-primary)]">
-                                                    {profile?.full_name || "-"}
-                                                    {record.employee_id && (
-                                                        <span className="ml-2 text-xs text-[var(--text-muted)]">#{record.employee_id}</span>
-                                                    )}
-                                                </td>
-                                                <td className="p-3">
-                                                    <span className={`px-2 py-1 rounded text-xs font-medium uppercase ${statusColor.bg} ${statusColor.text}`}>
-                                                        {record.status}
-                                                    </span>
-                                                </td>
-                                                <td className="p-3">
-                                                    {record.clock_in_time ? (
-                                                        <span className="px-2 py-1 rounded bg-emerald-500/10 text-emerald-500 font-medium">
-                                                            {formatTime(record.clock_in_time)}
+                                            return (
+                                                <tr key={record.id} className="hover:bg-black/5 dark:hover:bg-white/5 transition-colors">
+                                                    <td className="p-3 text-[var(--text-secondary)]">
+                                                        {formatDate(record.checkin_date)}
+                                                    </td>
+                                                    <td className="p-3 font-medium text-[var(--text-primary)]">
+                                                        {profile?.full_name || "-"}
+                                                        {record.employee_id && (
+                                                            <span className="ml-2 text-xs text-[var(--text-muted)]">#{record.employee_id}</span>
+                                                        )}
+                                                    </td>
+                                                    <td className="p-3">
+                                                        <span className={`px-2 py-1 rounded text-xs font-medium uppercase ${statusColor.bg} ${statusColor.text}`}>
+                                                            {record.status}
                                                         </span>
-                                                    ) : (
-                                                        <span className="text-[var(--text-muted)]">-</span>
-                                                    )}
-                                                </td>
-                                                <td className="p-3">
-                                                    {record.clock_out_time ? (
-                                                        <span className="px-2 py-1 rounded bg-rose-500/10 text-rose-500 font-medium">
-                                                            {formatTime(record.clock_out_time)}
+                                                    </td>
+                                                    <td className="p-3">
+                                                        {record.clock_in_time ? (
+                                                            <span className="px-2 py-1 rounded bg-emerald-500/10 text-emerald-500 font-medium">
+                                                                {formatTime(record.clock_in_time)}
+                                                            </span>
+                                                        ) : (
+                                                            <span className="text-[var(--text-muted)]">-</span>
+                                                        )}
+                                                    </td>
+                                                    <td className="p-3">
+                                                        {record.clock_out_time ? (
+                                                            <span className="px-2 py-1 rounded bg-rose-500/10 text-rose-500 font-medium">
+                                                                {formatTime(record.clock_out_time)}
+                                                            </span>
+                                                        ) : (
+                                                            <span className="text-[var(--text-muted)]">-</span>
+                                                        )}
+                                                    </td>
+                                                    <td className="p-3 text-[var(--text-secondary)]">
+                                                        {calculateDuration(record.clock_in_time, record.clock_out_time)}
+                                                    </td>
+                                                    <td className="p-3">
+                                                        {record.is_late ? (
+                                                            <span className="flex items-center gap-1 text-rose-500">
+                                                                <AlertCircle className="w-4 h-4" />
+                                                                Ya
+                                                            </span>
+                                                        ) : (
+                                                            <span className="flex items-center gap-1 text-emerald-500">
+                                                                <CheckCircle className="w-4 h-4" />
+                                                                Tidak
+                                                            </span>
+                                                        )}
+                                                    </td>
+                                                    <td className="p-3">
+                                                        <span className="px-2 py-1 rounded bg-[var(--accent-gold)]/10 text-[var(--accent-gold)] text-xs">
+                                                            {record.source || "web"}
                                                         </span>
-                                                    ) : (
-                                                        <span className="text-[var(--text-muted)]">-</span>
-                                                    )}
-                                                </td>
-                                                <td className="p-3 text-[var(--text-secondary)]">
-                                                    {calculateDuration(record.clock_in_time, record.clock_out_time)}
-                                                </td>
-                                                <td className="p-3">
-                                                    {record.is_late ? (
-                                                        <span className="flex items-center gap-1 text-rose-500">
-                                                            <AlertCircle className="w-4 h-4" />
-                                                            Ya
-                                                        </span>
-                                                    ) : (
-                                                        <span className="flex items-center gap-1 text-emerald-500">
-                                                            <CheckCircle className="w-4 h-4" />
-                                                            Tidak
-                                                        </span>
-                                                    )}
-                                                </td>
-                                                <td className="p-3">
-                                                    <span className="px-2 py-1 rounded bg-[var(--accent-gold)]/10 text-[var(--accent-gold)] text-xs">
-                                                        {record.source || "web"}
-                                                    </span>
-                                                </td>
-                                            </tr>
-                                        );
-                                    })
-                                )}
-                            </tbody>
-                        </table>
+                                                    </td>
+                                                </tr>
+                                            );
+                                        })
+                                    )}
+                                </tbody>
+                            </table>
+                        </div>
                     </div>
-                </div>
-            )}
-        </div>
+                )
+            }
+        </div >
     );
 }
