@@ -31,10 +31,15 @@ export default function CEODashboardPage() {
             // 1. Fetch all profiles (employees)
             const { data: profiles } = await supabase
                 .from('profiles')
-                .select('id, full_name, job_title, job_level, job_type')
+                .select('id, full_name, job_title, job_level, job_type, role')
                 .neq('job_type', 'intern'); // Exclude interns from KPI view
 
             if (!profiles) return;
+
+            // Filter out CEO, HR, Owner (but keep Super Admin)
+            const filteredProfiles = profiles.filter((p: any) =>
+                !['ceo', 'hr', 'owner'].includes(p.role)
+            );
 
             // 2. Fetch KPI Scores for Selected Period
             const { data: scores } = await supabase
@@ -43,7 +48,7 @@ export default function CEODashboardPage() {
                 .eq('period', selectedPeriod);
 
             // 3. Merge Data
-            const merged = profiles.map((p: any) => {
+            const merged = filteredProfiles.map((p: any) => {
                 const scoreRec = scores?.find((s: any) => s.profile_id === p.id);
                 return {
                     ...p,

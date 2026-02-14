@@ -30,6 +30,7 @@ interface Profile {
     full_name: string;
     avatar_url: string;
     job_type: string;
+    role: string;
 }
 
 export default function SickReportsPage() {
@@ -39,6 +40,7 @@ export default function SickReportsPage() {
     const [loading, setLoading] = useState(true);
     const [showForm, setShowForm] = useState(false);
     const [editingId, setEditingId] = useState<string | null>(null);
+    const [submitting, setSubmitting] = useState(false);
 
     // Form state
     const [formData, setFormData] = useState({
@@ -67,11 +69,12 @@ export default function SickReportsPage() {
             .eq("leave_type", "sick_leave")
             .order("start_date", { ascending: false });
 
-        // Fetch all profiles for dropdown
+        // Fetch all profiles for dropdown (exclude HR, CEO, Owner)
         const { data: profilesData } = await supabase
             .from("profiles")
-            .select("id, full_name, avatar_url, job_type")
+            .select("id, full_name, avatar_url, job_type, role")
             .eq("is_active", true)
+            .not("role", "in", '("hr","ceo","owner")')
             .order("full_name");
 
         setReports(reportsData || []);
@@ -81,30 +84,45 @@ export default function SickReportsPage() {
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
+        setSubmitting(true);
 
-        const insertData = {
-            profile_id: formData.profile_id,
-            leave_type: "sick_leave",
-            start_date: formData.start_date,
-            end_date: formData.end_date || formData.start_date,
-            reason: `${formData.reason}${formData.has_doctor_note ? "\n\n✓ Surat dokter tersedia" : ""}`,
-            attachment_url: formData.attachment_url || null,
-            status: "approved", // HR input = auto approved
-        };
+        try {
+            const insertData = {
+                profile_id: formData.profile_id,
+                leave_type: "sick_leave",
+                start_date: formData.start_date,
+                end_date: formData.end_date || formData.start_date,
+                reason: `${formData.reason}${formData.has_doctor_note ? "\n\n✓ Surat dokter tersedia" : ""}`,
+                attachment_url: formData.attachment_url || null,
+                status: "pending", // Pending for CEO/super_admin approval
+            };
 
-        if (editingId) {
-            await supabase
-                .from("leave_requests")
-                .update(insertData)
-                .eq("id", editingId);
-        } else {
-            await supabase
-                .from("leave_requests")
-                .insert(insertData);
+            let error;
+            if (editingId) {
+                const result = await supabase
+                    .from("leave_requests")
+                    .update(insertData)
+                    .eq("id", editingId);
+                error = result.error;
+            } else {
+                const result = await supabase
+                    .from("leave_requests")
+                    .insert(insertData);
+                error = result.error;
+            }
+
+            if (error) {
+                alert("Gagal menyimpan: " + error.message);
+            } else {
+                alert(editingId ? "Laporan berhasil diperbarui" : "Laporan sakit berhasil diajukan. Menunggu approval.");
+                resetForm();
+                fetchData();
+            }
+        } catch (err) {
+            alert("Terjadi kesalahan. Silakan coba lagi.");
+        } finally {
+            setSubmitting(false);
         }
-
-        resetForm();
-        fetchData();
     };
 
     const handleDelete = async (id: string) => {
@@ -264,8 +282,8 @@ export default function SickReportsPage() {
                                 <Button type="button" variant="ghost" onClick={resetForm}>
                                     <X className="w-4 h-4 mr-1" /> Batal
                                 </Button>
-                                <Button type="submit" className="bg-rose-500 hover:bg-rose-600">
-                                    <Check className="w-4 h-4 mr-1" /> {editingId ? "Simpan" : "Tambah"}
+                                <Button type="submit" className="bg-rose-500 hover:bg-rose-600" disabled={submitting}>
+                                    {submitting ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <Check className="w-4 h-4 mr-1" />} {editingId ? "Simpan" : "Ajukan"}
                                 </Button>
                             </div>
                         </form>

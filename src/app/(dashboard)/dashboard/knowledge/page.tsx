@@ -38,7 +38,7 @@ const DOCUMENT_SUBTYPES = [
 const ROLE_FILTERS = [
     { id: "all", label: "All Roles", icon: "👥" },
     { id: "bisdev", label: "Business Development", icon: "📈" },
-    { id: "sales", label: "Marketing & Sales", icon: "🎯" },
+    // { id: "sales", label: "Marketing & Sales", icon: "🎯" }, // Hidden temporarily
     { id: "analyst", label: "Analyst", icon: "📊" },
     { id: "hr", label: "HR", icon: "👥" },
 ];
@@ -607,6 +607,7 @@ export default function KnowledgeHubPage() {
         stockTotal: 0,
     });
     const [tagInput, setTagInput] = useState("");
+    const [validationError, setValidationError] = useState<string | null>(null);
 
     const resetForm = () => {
         setNewResource({
@@ -624,6 +625,7 @@ export default function KnowledgeHubPage() {
         });
         setEditingId(null);
         setThumbnailError("");
+        setValidationError(null);
         setTagInput("");
     };
 
@@ -732,10 +734,20 @@ export default function KnowledgeHubPage() {
 
     // Handle form submission
     const handleAddResource = async () => {
-        if (!newResource.title || !newResource.resourceUrl) {
-            toast.error("Judul dan URL Resource wajib diisi!");
+        // Validation
+        const missingFields = [];
+        if (!newResource.title.trim()) missingFields.push("Judul Resource");
+        if (!newResource.resourceUrl.trim()) missingFields.push("URL / Link");
+        if (newResource.type === 'document' && !newResource.documentSubtype) missingFields.push("Tipe Dokumen");
+
+        if (missingFields.length > 0) {
+            const errorMsg = `Mohon lengkapi field wajib: ${missingFields.join(", ")}`;
+            setValidationError(errorMsg);
+            toast.error(errorMsg);
             return;
         }
+
+        setValidationError(null);
 
         if (newResource.thumbnailUrl && !isValidUrl(newResource.thumbnailUrl)) {
             // Non-blocking warning
@@ -1179,7 +1191,9 @@ export default function KnowledgeHubPage() {
                             {/* Form Fields */}
                             <div className="space-y-4">
                                 <div>
-                                    <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1">Judul Resource</label>
+                                    <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1">
+                                        Judul Resource <span className="text-red-500">*</span>
+                                    </label>
                                     <input
                                         type="text"
                                         className="w-full h-10 px-3 rounded-lg border border-gray-200 dark:border-[var(--glass-border)] bg-gray-50 dark:bg-[var(--card-bg)] text-gray-900 dark:text-[var(--text-primary)] focus:border-[#e8c559] outline-none"
@@ -1190,7 +1204,9 @@ export default function KnowledgeHubPage() {
 
                                 <div className="grid grid-cols-2 gap-4">
                                     <div>
-                                        <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1">Tipe</label>
+                                        <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1">
+                                            Tipe <span className="text-red-500">*</span>
+                                        </label>
                                         <select
                                             className="w-full h-10 px-3 rounded-lg border border-gray-200 dark:border-[var(--glass-border)] bg-gray-50 dark:bg-[var(--card-bg)] text-gray-900 dark:text-[var(--text-primary)] focus:border-[#e8c559] outline-none disabled:opacity-60 disabled:cursor-not-allowed"
                                             value={newResource.type}
@@ -1202,7 +1218,9 @@ export default function KnowledgeHubPage() {
                                         </select>
                                     </div>
                                     <div>
-                                        <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1">URL / Link</label>
+                                        <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1">
+                                            URL / Link <span className="text-red-500">*</span>
+                                        </label>
                                         <input
                                             type="text"
                                             placeholder="https://..."
@@ -1216,7 +1234,9 @@ export default function KnowledgeHubPage() {
                                 {/* Document Subtype (conditional) */}
                                 {newResource.type === 'document' && (
                                     <div className="animate-in fade-in slide-in-from-top-2 duration-200">
-                                        <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1">Tipe Dokumen</label>
+                                        <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1">
+                                            Tipe Dokumen <span className="text-red-500">*</span>
+                                        </label>
                                         <select
                                             className="w-full h-10 px-3 rounded-lg border border-gray-200 dark:border-[var(--glass-border)] bg-gray-50 dark:bg-[var(--card-bg)] text-gray-900 dark:text-[var(--text-primary)] focus:border-[#e8c559] outline-none"
                                             value={newResource.documentSubtype}
@@ -1232,7 +1252,9 @@ export default function KnowledgeHubPage() {
 
                                 {/* Tags Input — Add Button Style */}
                                 <div>
-                                    <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1">Tags</label>
+                                    <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1">
+                                        Tags <span className="text-[var(--text-muted)] font-normal">(Opsional)</span>
+                                    </label>
                                     <div className="flex gap-2">
                                         <input
                                             type="text"
@@ -1275,7 +1297,9 @@ export default function KnowledgeHubPage() {
                                 </div>
 
                                 <div>
-                                    <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1">Deskripsi</label>
+                                    <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1">
+                                        Deskripsi <span className="text-[var(--text-muted)] font-normal">(Opsional)</span>
+                                    </label>
                                     <textarea
                                         rows={3}
                                         className="w-full p-3 rounded-lg border border-gray-200 dark:border-[var(--glass-border)] bg-gray-50 dark:bg-[var(--card-bg)] text-gray-900 dark:text-[var(--text-primary)] focus:border-[#e8c559] outline-none resize-none"
@@ -1351,7 +1375,9 @@ export default function KnowledgeHubPage() {
                                 {/* Access Level & Roles */}
                                 <div className="grid grid-cols-2 gap-4">
                                     <div>
-                                        <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1">Akses Minimal</label>
+                                        <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1">
+                                            Akses Minimal <span className="text-red-500">*</span>
+                                        </label>
                                         {isIntern ? (
                                             <div className="w-full h-10 px-3 rounded-lg border border-gray-200 dark:border-[var(--glass-border)] bg-gray-100 dark:bg-white/5 text-[var(--text-muted)] flex items-center text-sm cursor-not-allowed">
                                                 Intern (Locked)
@@ -1369,7 +1395,9 @@ export default function KnowledgeHubPage() {
                                         )}
                                     </div>
                                     <div>
-                                        <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1">Target Department</label>
+                                        <label className="block text-xs font-medium text-[var(--text-secondary)] mb-1">
+                                            Target Department <span className="text-red-500">*</span>
+                                        </label>
                                         <select
                                             className="w-full h-10 px-3 rounded-lg border border-gray-200 dark:border-[var(--glass-border)] bg-gray-50 dark:bg-[var(--card-bg)] text-gray-900 dark:text-[var(--text-primary)] focus:border-[#e8c559] outline-none"
                                             value={newResource.targetRoles}
@@ -1384,20 +1412,27 @@ export default function KnowledgeHubPage() {
                             </div>
                         </div>
 
-                        <div className="p-6 pt-0 flex justify-end gap-3">
-                            <button
-                                onClick={() => setShowAddModal(false)}
-                                className="px-5 py-2 rounded-lg text-sm font-medium text-[var(--text-secondary)] hover:bg-white/5 transition-colors"
-                            >
-                                Batal
-                            </button>
-                            <button
-                                disabled={isSubmitting}
-                                onClick={handleAddResource}
-                                className="px-5 py-2 rounded-lg bg-[#e8c559] hover:bg-[#dcb33e] text-[#171611] text-sm font-bold shadow-[0_0_15px_rgba(232,197,89,0.2)] disabled:opacity-50 disabled:cursor-not-allowed"
-                            >
-                                {isSubmitting ? "Menyimpan..." : (editingId ? "Update Resource" : "Simpan Resource")}
-                            </button>
+                        <div className="p-6 pt-0 flex flex-col items-end gap-3">
+                            {validationError && (
+                                <div className="text-red-500 text-sm font-medium bg-red-50 dark:bg-red-500/10 px-3 py-2 rounded-lg border border-red-200 dark:border-red-500/20 w-full text-center">
+                                    ⚠️ {validationError}
+                                </div>
+                            )}
+                            <div className="flex justify-end gap-3 w-full">
+                                <button
+                                    onClick={() => setShowAddModal(false)}
+                                    className="px-5 py-2 rounded-lg text-sm font-medium text-[var(--text-secondary)] hover:bg-white/5 transition-colors"
+                                >
+                                    Batal
+                                </button>
+                                <button
+                                    disabled={isSubmitting}
+                                    onClick={handleAddResource}
+                                    className="px-5 py-2 rounded-lg bg-[#e8c559] hover:bg-[#dcb33e] text-[#171611] text-sm font-bold shadow-[0_0_15px_rgba(232,197,89,0.2)] disabled:opacity-50 disabled:cursor-not-allowed"
+                                >
+                                    {isSubmitting ? "Menyimpan..." : (editingId ? "Update Resource" : "Simpan Resource")}
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </div>

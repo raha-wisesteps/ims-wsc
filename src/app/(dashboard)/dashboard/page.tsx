@@ -2021,6 +2021,24 @@ export default function DashboardPage() {
 
                                         {/* Jira Quick Link */}
                                         <div className="flex justify-end gap-2">
+                                            {/* Canva Business Plan */}
+                                            {!isIntern && (
+                                                <a
+                                                    href="https://www.canva.com/design/DAG5lNBxhQQ/71cLaKySEqnGr7_bqe67Ow/edit"
+                                                    target="_blank"
+                                                    rel="noopener noreferrer"
+                                                    className="flex items-center gap-2 px-3 py-2 rounded-xl bg-white/10 backdrop-blur-md border border-white/20 hover:bg-white/20 transition-all duration-300 group shadow-lg"
+                                                    title="WSC Business Plan 2026"
+                                                >
+                                                    <Image
+                                                        src="/Canva_Logo.svg"
+                                                        alt="WSC Business Plan 2026"
+                                                        width={60}
+                                                        height={24}
+                                                        className="h-5 w-auto brightness-0 invert group-hover:scale-105 transition-transform"
+                                                    />
+                                                </a>
+                                            )}
                                             {/* WSG Website Link */}
                                             <a
                                                 href="https://wisestepsconsulting.id/"
@@ -2073,21 +2091,23 @@ export default function DashboardPage() {
                                             </a>
 
                                             {/* Google Drive Quick Link */}
-                                            <a
-                                                href="https://drive.google.com/drive/folders/1qdNyMYgQBmlVnC09xwaNDBkLhXYC_g9Q?usp=sharing"
-                                                target="_blank"
-                                                rel="noopener noreferrer"
-                                                className="flex items-center gap-2 px-3 py-2 rounded-xl bg-white/10 backdrop-blur-md border border-white/20 hover:bg-white/20 transition-all duration-300 group shadow-lg"
-                                                title="Open Google Drive"
-                                            >
-                                                <Image
-                                                    src="/Google_Drive_icon_(2020).svg"
-                                                    alt="Google Drive"
-                                                    width={24}
-                                                    height={24}
-                                                    className="h-5 w-auto brightness-0 invert group-hover:scale-105 transition-transform"
-                                                />
-                                            </a>
+                                            {!isIntern && (
+                                                <a
+                                                    href="https://drive.google.com/drive/folders/1qdNyMYgQBmlVnC09xwaNDBkLhXYC_g9Q?usp=sharing"
+                                                    target="_blank"
+                                                    rel="noopener noreferrer"
+                                                    className="flex items-center gap-2 px-3 py-2 rounded-xl bg-white/10 backdrop-blur-md border border-white/20 hover:bg-white/20 transition-all duration-300 group shadow-lg"
+                                                    title="Open Google Drive"
+                                                >
+                                                    <Image
+                                                        src="/Google_Drive_-_New_Logo.png"
+                                                        alt="Google Drive"
+                                                        width={90}
+                                                        height={24}
+                                                        className="h-5 w-auto brightness-0 invert group-hover:scale-105 transition-transform"
+                                                    />
+                                                </a>
+                                            )}
 
                                             {/* Jira Quick Link */}
                                             <a

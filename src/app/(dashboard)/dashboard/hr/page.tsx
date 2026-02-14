@@ -19,7 +19,9 @@ export default function HRDashboardPage() {
         presentToday: 0,
         onLeave: 0,
         lateToday: 0,
-        attendanceRate: 0
+        attendanceRate: 0,
+        onOfficeCount: 0,
+        latePercentage: 0
     });
     const [isLoadingStats, setIsLoadingStats] = useState(true);
 
@@ -37,7 +39,32 @@ export default function HRDashboardPage() {
                     .select('*', { count: 'exact', head: true })
                     .eq('is_active', true);
 
-                // 2. Get today's checkins
+                // 2. Get "On Office" Count (Status = Office)
+                const { count: onOfficeCount } = await supabase
+                    .from('profiles')
+                    .select('*', { count: 'exact', head: true })
+                    .eq('is_active', true)
+                    .ilike('status', 'office');
+
+                // 3. Get Late Percentage for Current Month (Excluding Executives)
+                const startOfMonth = new Date(today.substring(0, 7) + '-01').toISOString().split('T')[0];
+                const endOfMonth = new Date(new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0)).toISOString().split('T')[0];
+
+                const { data: monthCheckins } = await supabase
+                    .from('daily_checkins')
+                    .select('is_late, profiles!inner(role)')
+                    .gte('checkin_date', startOfMonth)
+                    .lte('checkin_date', endOfMonth)
+                    .not('profiles.role', 'in', '("ceo","hr","owner")'); // Exclude executives
+
+                let latePercentage = 0;
+                if (monthCheckins && monthCheckins.length > 0) {
+                    const totalCheckins = monthCheckins.length;
+                    const lateCheckins = monthCheckins.filter((c: any) => c.is_late).length;
+                    latePercentage = Math.round((lateCheckins / totalCheckins) * 100);
+                }
+
+                // 4. Get today's checkins (Keep for 'Present Today' and 'On Leave' stats)
                 const { data: checkins } = await supabase
                     .from('daily_checkins')
                     .select('status, is_late')
@@ -62,7 +89,9 @@ export default function HRDashboardPage() {
                         presentToday: present,
                         onLeave,
                         lateToday: late,
-                        attendanceRate: totalEmployees ? Math.round((present / totalEmployees) * 100) : 0
+                        attendanceRate: totalEmployees ? Math.round((present / totalEmployees) * 100) : 0,
+                        onOfficeCount: onOfficeCount || 0,
+                        latePercentage
                     });
                 }
             } catch (error) {
@@ -149,7 +178,7 @@ export default function HRDashboardPage() {
 
                     <div className="glass-panel p-5 rounded-xl border-l-4 border-emerald-500">
                         <div className="flex justify-between items-start mb-2">
-                            <p className="text-xs text-gray-500 uppercase tracking-wider">Attendance</p>
+                            <p className="text-xs text-gray-500 uppercase tracking-wider">Staff On Office</p>
                             <div className="w-4 h-4 text-emerald-500">
                                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z" /></svg>
                             </div>
@@ -157,9 +186,9 @@ export default function HRDashboardPage() {
                         {isLoadingStats ? (
                             <Loader2 className="w-6 h-6 animate-spin text-emerald-500" />
                         ) : (
-                            <p className="text-3xl font-black text-[var(--text-primary)]">{stats.attendanceRate}%</p>
+                            <p className="text-3xl font-black text-[var(--text-primary)]">{stats.onOfficeCount}</p>
                         )}
-                        <p className="text-xs text-gray-400 mt-1">Present Today ({stats.presentToday})</p>
+                        <p className="text-xs text-gray-400 mt-1">Currently in office</p>
                     </div>
 
                     <div className="glass-panel p-5 rounded-xl border-l-4 border-orange-500">
@@ -179,7 +208,7 @@ export default function HRDashboardPage() {
 
                     <div className="glass-panel p-5 rounded-xl border-l-4 border-rose-500">
                         <div className="flex justify-between items-start mb-2">
-                            <p className="text-xs text-gray-500 uppercase tracking-wider">Late Today</p>
+                            <p className="text-xs text-gray-500 uppercase tracking-wider">Late Percentage (Month)</p>
                             <div className="w-4 h-4 text-rose-500">
                                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4"><path d="M11.99 2C6.47 2 2 6.48 2 12s4.47 10 9.99 10C17.52 22 22 17.52 22 12S17.52 2 11.99 2zM12 20c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8zm.5-13H11v6l5.25 3.15.75-1.23-4.5-2.67z" /></svg>
                             </div>
@@ -187,9 +216,9 @@ export default function HRDashboardPage() {
                         {isLoadingStats ? (
                             <Loader2 className="w-6 h-6 animate-spin text-rose-500" />
                         ) : (
-                            <p className="text-3xl font-black text-[var(--text-primary)]">{stats.lateToday}</p>
+                            <p className="text-3xl font-black text-[var(--text-primary)]">{stats.latePercentage}%</p>
                         )}
-                        <p className="text-xs text-gray-400 mt-1">Check-ins &gt; 08:30</p>
+                        <p className="text-xs text-gray-400 mt-1">Accumulated this month</p>
                     </div>
                 </div>
             )}
