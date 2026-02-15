@@ -67,7 +67,7 @@ export default function LeaveManagementPage() {
                     // Filter out excluded roles (CEO, HR, Owner, Super Admin)
                     const filtered = (data as unknown as LeaveQuota[]).filter(item => {
                         const role = item.profiles.role.toLowerCase();
-                        return !['ceo', 'hr', 'owner', 'super_admin'].includes(role);
+                        return !['ceo', 'hr', 'owner'].includes(role);
                     });
 
                     // Sort by name

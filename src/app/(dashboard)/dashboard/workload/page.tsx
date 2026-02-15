@@ -129,9 +129,13 @@ export default function WorkloadPage() {
 
             const mappedEmployees: Employee[] = (profiles || [])
                 .filter((p: any) => {
-                    // Filter out HR if user is not privileged
+                    // Filter out HR from workload view entirely (as requested)
                     const isTargetHR = p.role === 'hr' || p.job_type === 'hr' || p.is_hr;
-                    if (isTargetHR && !isPrivileged) return false;
+
+                    // Allow interns even if they are marked as HR (e.g. HR Intern)
+                    const isIntern = p.job_type === 'intern' || p.job_level === 'Intern';
+
+                    if (isTargetHR && !isIntern) return false;
                     return true;
                 })
                 .map((p: any) => {

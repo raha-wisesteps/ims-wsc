@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Users, UploadCloud, MessageSquare, LayoutDashboard, ArrowRight, Clock, ShieldAlert, Thermometer, History, Loader2, Calendar } from "lucide-react";
+import { Users, UploadCloud, MessageSquare, LayoutDashboard, ArrowRight, Clock, ShieldAlert, Thermometer, History, Loader2, Calendar, MapPin } from "lucide-react";
 import Link from "next/link";
 import { useAuth } from "@/contexts/AuthContext";
 import { createClient } from "@/lib/supabase/client";
@@ -139,6 +139,7 @@ export default function HRDashboardPage() {
 
     if (isFullHR) {
         limitedQuickActions.push(
+            { href: "/dashboard/hr/wfh-wfa-report", icon: MapPin, title: "Laporan WFH/WFA/Dinas", desc: "Kelola laporan WFH/WFA/Dinas", color: "violet", action: "Buat Request" },
             { href: "/dashboard/hr/request-history", icon: History, title: "Request History", desc: "Riwayat Request Karyawan", color: "blue", action: "View History" }
         );
     }
