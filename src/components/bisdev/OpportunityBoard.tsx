@@ -279,8 +279,13 @@ export default function OpportunityBoard() {
         if (!editingOpp) return;
 
         try {
+            // Calculate total cash in from revenue records
+            const totalRevenue = existingRevenue.reduce((sum, r) => sum + (r.amount || 0), 0) +
+                pendingRevenue.reduce((sum, r) => sum + (r.amount || 0), 0);
+
             const payload = {
                 ...editForm,
+                cash_in: totalRevenue, // Use calculated revenue instead of manual input
                 opportunity_type: editForm.opportunity_type || null,
                 created_at: editForm.created_at ? new Date(editForm.created_at).toISOString() : undefined
             };
@@ -448,8 +453,8 @@ export default function OpportunityBoard() {
                                                                         {activeTab === 'sales' ? (
                                                                             <>
                                                                                 <span className="text-[10px] text-[var(--text-muted)] uppercase tracking-wider">Cash In</span>
-                                                                                <span className="text-sm font-mono font-bold text-emerald-600 truncate block max-w-[140px]" title={`Rp ${opp.cash_in?.toLocaleString('id-ID')}`}>
-                                                                                    {new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumSignificantDigits: 3 }).format(opp.cash_in || 0)}
+                                                                                <span className="text-sm font-mono font-bold text-emerald-600 truncate block max-w-[140px]" title={`Rp ${(opp.revenue?.reduce((sum, r) => sum + (r.amount || 0), 0) || 0).toLocaleString('id-ID')}`}>
+                                                                                    {new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumSignificantDigits: 3 }).format(opp.revenue?.reduce((sum, r) => sum + (r.amount || 0), 0) || 0)}
                                                                                 </span>
                                                                             </>
                                                                         ) : (
@@ -491,7 +496,8 @@ export default function OpportunityBoard() {
                                                                             if (activeTab === 'sales') {
                                                                                 // Only allow "Won" if status is Full Payment AND Cash In equals Value
                                                                                 const isFullPayment = opp.status === 'full_payment';
-                                                                                const isPaidInFull = (opp.cash_in || 0) >= (opp.value || 0);
+                                                                                const currentCashIn = opp.revenue?.reduce((sum, r) => sum + (r.amount || 0), 0) || 0;
+                                                                                const isPaidInFull = currentCashIn >= (opp.value || 0);
                                                                                 const canComplete = isFullPayment && isPaidInFull;
 
                                                                                 return (
@@ -699,7 +705,8 @@ export default function OpportunityBoard() {
                                                         {activeTab === 'sales' ? (
                                                             (() => {
                                                                 const isFullPayment = opp.status === 'full_payment';
-                                                                const isPaidInFull = (opp.cash_in || 0) >= (opp.value || 0);
+                                                                const currentCashIn = opp.revenue?.reduce((sum, r) => sum + (r.amount || 0), 0) || 0;
+                                                                const isPaidInFull = currentCashIn >= (opp.value || 0);
                                                                 const canComplete = isFullPayment && isPaidInFull;
                                                                 return (
                                                                     <button
@@ -808,8 +815,8 @@ export default function OpportunityBoard() {
                                             {editingOpp.stage === 'sales' && (
                                                 <div className="p-4 rounded-xl bg-[var(--glass-bg)] border border-[var(--glass-border)]">
                                                     <p className="text-xs text-[var(--text-muted)] uppercase tracking-wider mb-1">Cash In</p>
-                                                    <p className="text-xl font-mono font-bold text-emerald-600 break-words line-clamp-2" title={`Rp ${(editingOpp.cash_in || 0).toLocaleString('id-ID')}`}>
-                                                        {new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR' }).format(editingOpp.cash_in || 0)}
+                                                    <p className="text-xl font-mono font-bold text-emerald-600 break-words line-clamp-2" title={`Rp ${(editingOpp.revenue?.reduce((sum, r) => sum + (r.amount || 0), 0) || 0).toLocaleString('id-ID')}`}>
+                                                        {new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR' }).format(editingOpp.revenue?.reduce((sum, r) => sum + (r.amount || 0), 0) || 0)}
                                                     </p>
                                                 </div>
                                             )}
@@ -907,7 +914,7 @@ export default function OpportunityBoard() {
                                             </div>
                                         </div>
                                         <div className="grid grid-cols-2 gap-4">
-                                            <div className={editForm.stage === 'sales' ? "" : "col-span-2"}>
+                                            <div className="col-span-2">
                                                 <label className="block text-sm font-bold text-[var(--text-primary)] mb-1">Value (IDR)</label>
                                                 <div className="space-y-1">
                                                     <input
@@ -926,38 +933,6 @@ export default function OpportunityBoard() {
                                                     )}
                                                 </div>
                                             </div>
-                                            {editForm.stage === 'sales' && (
-                                                <div>
-                                                    <label className="block text-sm font-bold text-[var(--text-primary)] mb-1">Cash In (IDR)</label>
-                                                    <div className="space-y-1">
-                                                        <div className="flex gap-2">
-                                                            <input
-                                                                type="text"
-                                                                value={editForm.cash_in}
-                                                                onChange={(e) => {
-                                                                    const val = e.target.value.replace(/[^0-9]/g, '');
-                                                                    setEditForm({ ...editForm, cash_in: val ? parseFloat(val) : 0 });
-                                                                }}
-                                                                className="w-full px-4 py-2 rounded-xl border border-[var(--glass-border)] bg-white dark:bg-[#232b2a] text-[var(--text-primary)]"
-                                                            />
-                                                            {/* Keeping Full Payment button but sizing it better */}
-                                                            <button
-                                                                type="button"
-                                                                onClick={() => setEditForm({ ...editForm, cash_in: editForm.value })}
-                                                                className="px-2 py-2 rounded-xl bg-emerald-100 text-emerald-700 hover:bg-emerald-200 border border-emerald-200 text-[10px] font-bold whitespace-nowrap transition-colors"
-                                                                title="Set to Full Value"
-                                                            >
-                                                                Full
-                                                            </button>
-                                                        </div>
-                                                        {editForm.cash_in > 0 && (
-                                                            <p className="text-xs text-[var(--text-muted)]">
-                                                                Rp {editForm.cash_in.toLocaleString('id-ID')}
-                                                            </p>
-                                                        )}
-                                                    </div>
-                                                </div>
-                                            )}
                                         </div>
 
                                         {/* Revenue & Payments Section */}

@@ -837,6 +837,11 @@ export default function ClientDetailPage() {
             }
 
             if (editingOpportunity) {
+                // Calculate total cash_in: existing revenue + new pending revenue
+                const existingRevenue = editingOpportunity.revenue?.reduce((sum: number, r: any) => sum + (r.amount || 0), 0) || 0;
+                const newRevenue = pendingRevenue.reduce((sum, r) => sum + (r.amount || 0), 0);
+                const totalCashIn = existingRevenue + newRevenue;
+
                 // Update
                 const { error } = await supabase
                     .from("crm_opportunities")
@@ -850,6 +855,7 @@ export default function ClientDetailPage() {
                         created_at: finalDate, // Allow updating created_at
                         updated_at: new Date().toISOString(),
                         has_proposal: opportunityForm.has_proposal,
+                        cash_in: totalCashIn,
                     })
                     .eq("id", editingOpportunity.id);
 
@@ -923,6 +929,9 @@ export default function ClientDetailPage() {
                 fetchAllData();
             } else {
                 // Insert New
+                // Insert New
+                const initialCashIn = pendingRevenue.reduce((sum, r) => sum + (r.amount || 0), 0);
+
                 const newOpp = {
                     client_id: clientId,
                     title: opportunityForm.title, // Title is NOT NULL
@@ -935,6 +944,7 @@ export default function ClientDetailPage() {
                     created_at: finalDate, // Set custom date
                     created_by: profile.id,
                     has_proposal: opportunityForm.has_proposal,
+                    cash_in: initialCashIn,
                 };
 
                 const { data: opp, error } = await supabase
