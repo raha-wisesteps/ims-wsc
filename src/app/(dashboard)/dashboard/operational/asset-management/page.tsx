@@ -1,492 +1,675 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useMemo } from "react";
 import Link from "next/link";
+import { createClient } from "@/lib/supabase/client";
+import { useAuth } from "@/contexts/AuthContext";
+import {
+    LayoutGrid,
+    List,
+    Plus,
+    Search,
+    Filter,
+    FileDown,
+    ChevronRight,
+    Package, // Icon for Asset
+    MapPin,
+    Calendar,
+    User,
+    Tag,
+    AlertCircle,
+    CheckCircle2,
+    Truck,
+    Laptop,
+    Armchair,
+    BookOpen,
+    Paperclip,
+    Box
+} from "lucide-react";
+import * as XLSX from 'xlsx';
+import { saveAs } from 'file-saver';
 
-// Asset categories with code prefixes
-const ASSET_CATEGORIES = {
-    F: { label: "Furniture", icon: "🪑", color: "bg-amber-500" },
-    E: { label: "Electronics", icon: "💻", color: "bg-blue-500" },
-    B: { label: "Books & Stationery", icon: "📚", color: "bg-emerald-500" },
-    V: { label: "Vehicles", icon: "🚗", color: "bg-purple-500" },
-    O: { label: "Office Supplies", icon: "📎", color: "bg-rose-500" },
+// --- CONFIGURATION ---
+
+const CATEGORY_CONFIG: Record<string, { label: string; icon: any; color: string }> = {
+    furniture: { label: "Furniture", icon: Armchair, color: "bg-amber-500" },
+    electronics: { label: "Electronics", icon: Laptop, color: "bg-blue-500" },
+    books: { label: "Books & Stationery", icon: BookOpen, color: "bg-emerald-500" },
+    office_supplies: { label: "Office Supplies", icon: Paperclip, color: "bg-purple-500" },
+    vehicles: { label: "Vehicles", icon: Truck, color: "bg-red-500" },
+    others: { label: "Others", icon: Box, color: "bg-gray-500" },
 };
 
-type CategoryCode = keyof typeof ASSET_CATEGORIES;
-
-// Asset conditions
-const ASSET_CONDITIONS = {
-    excellent: { label: "Excellent", color: "bg-emerald-500", textColor: "text-emerald-500" },
-    good: { label: "Good", color: "bg-sky-500", textColor: "text-sky-500" },
-    fair: { label: "Fair", color: "bg-amber-500", textColor: "text-amber-500" },
-    poor: { label: "Poor", color: "bg-orange-500", textColor: "text-orange-500" },
-    damaged: { label: "Damaged", color: "bg-rose-500", textColor: "text-rose-500" },
+const CONDITION_CONFIG: Record<string, { label: string; color: string }> = {
+    excellent: { label: "Excellent", color: "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300" },
+    good: { label: "Good", color: "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300" },
+    fair: { label: "Fair", color: "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-300" },
+    poor: { label: "Poor", color: "bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300" },
+    damaged: { label: "Damaged", color: "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300" },
 };
 
-type ConditionType = keyof typeof ASSET_CONDITIONS;
+const STATUS_CONFIG: Record<string, { label: string; color: string }> = {
+    available: { label: "Available", color: "bg-green-500" },
+    in_use: { label: "In Use", color: "bg-blue-500" },
+    maintenance: { label: "Maintenance", color: "bg-orange-500" },
+    lost: { label: "Lost", color: "bg-red-500" },
+    disposed: { label: "Disposed", color: "bg-gray-500" },
+};
+
+// --- TYPES ---
 
 interface Asset {
     id: string;
-    code: string;
     name: string;
-    category: CategoryCode;
-    condition: ConditionType;
+    code: string;
+    category: string;
+    condition: string;
+    status: string;
     location: string;
-    acquisitionDate: string;
-    purchasePrice?: number;
-    lastMaintenanceDate?: string;
-    assignedTo?: string;
-    notes?: string;
+    purchase_value: number;
+    acquisition_date: string;
+    current_holder_id: string | null;
+    current_holder?: { full_name: string }; // Join result
+    description: string | null;
+    image_url: string | null;
+    created_at: string;
 }
 
-// Mock asset data based on the image provided
-const mockAssets: Asset[] = [
-    // Furniture
-    { id: "1", code: "F-001-23", name: "Meja Kerja", category: "F", condition: "good", location: "Ruang Kerja A", acquisitionDate: "2023-01-15", purchasePrice: 1500000 },
-    { id: "2", code: "F-002-23", name: "Meja Kerja Kayu", category: "F", condition: "excellent", location: "Ruang Kerja B", acquisitionDate: "2023-02-10", purchasePrice: 2500000 },
-    { id: "3", code: "F-003-23", name: "Meja Rapat", category: "F", condition: "good", location: "Ruang Meeting", acquisitionDate: "2023-03-05", purchasePrice: 5000000 },
-    { id: "4", code: "F-004-23", name: "Kursi Putar", category: "F", condition: "fair", location: "Ruang Kerja A", acquisitionDate: "2023-01-15", purchasePrice: 800000 },
-    { id: "5", code: "F-005-23", name: "Rak Kayu", category: "F", condition: "good", location: "Gudang", acquisitionDate: "2023-04-20", purchasePrice: 1200000 },
-    { id: "6", code: "F-006-23", name: "Rak Piring", category: "F", condition: "excellent", location: "Pantry", acquisitionDate: "2023-05-12", purchasePrice: 600000 },
-    { id: "7", code: "F-007-23", name: "Rak Besi", category: "F", condition: "good", location: "Gudang", acquisitionDate: "2023-06-01", purchasePrice: 1800000 },
-    { id: "8", code: "F-008-23", name: "Box File", category: "F", condition: "excellent", location: "Ruang Arsip", acquisitionDate: "2023-07-15", purchasePrice: 150000 },
-
-    // Electronics
-    { id: "9", code: "E-001-23", name: "Printer", category: "E", condition: "good", location: "Ruang Kerja A", acquisitionDate: "2023-01-20", purchasePrice: 3500000, assignedTo: "IT Dept" },
-    { id: "10", code: "E-002-23", name: "Laptop", category: "E", condition: "excellent", location: "Ruang Kerja B", acquisitionDate: "2023-02-15", purchasePrice: 15000000, assignedTo: "Andi Pratama" },
-    { id: "11", code: "E-003-23", name: "AC", category: "E", condition: "good", location: "Ruang Meeting", acquisitionDate: "2023-03-10", purchasePrice: 8000000 },
-    { id: "12", code: "E-004-23", name: "LED TV", category: "E", condition: "excellent", location: "Ruang Meeting", acquisitionDate: "2023-04-05", purchasePrice: 12000000 },
-    { id: "13", code: "E-005-23", name: "Komputer", category: "E", condition: "fair", location: "Ruang Kerja A", acquisitionDate: "2023-05-20", purchasePrice: 10000000, assignedTo: "Budi Santoso" },
-    { id: "14", code: "E-006-23", name: "Dispenser", category: "E", condition: "good", location: "Pantry", acquisitionDate: "2023-06-15", purchasePrice: 2500000 },
-    { id: "15", code: "E-007-23", name: "Microphone", category: "E", condition: "excellent", location: "Ruang Meeting", acquisitionDate: "2023-07-01", purchasePrice: 1500000 },
-    { id: "16", code: "E-008-23", name: "Wifi Router", category: "E", condition: "good", location: "Server Room", acquisitionDate: "2023-08-10", purchasePrice: 2000000 },
-
-    // Books
-    { id: "17", code: "B-001-23", name: "Buku Panduan HR", category: "B", condition: "excellent", location: "Ruang Arsip", acquisitionDate: "2023-01-05", purchasePrice: 250000 },
-    { id: "18", code: "B-002-23", name: "Buku Akuntansi", category: "B", condition: "good", location: "Ruang Arsip", acquisitionDate: "2023-02-20", purchasePrice: 350000 },
-
-    // Office Supplies
-    { id: "19", code: "O-001-24", name: "Proyektor", category: "O", condition: "excellent", location: "Ruang Meeting", acquisitionDate: "2024-01-10", purchasePrice: 7500000 },
-    { id: "20", code: "O-002-24", name: "Whiteboard", category: "O", condition: "good", location: "Ruang Meeting", acquisitionDate: "2024-02-05", purchasePrice: 1200000 },
-];
+interface Employee {
+    id: string;
+    full_name: string;
+}
 
 export default function AssetManagementPage() {
+    const supabase = createClient();
+    const { profile, isLoading: authLoading } = useAuth(); // Assuming profile has necessary role info
+
+    // State
+    const [assets, setAssets] = useState<Asset[]>([]);
+    const [employees, setEmployees] = useState<Employee[]>([]);
+    const [isLoading, setIsLoading] = useState(true);
+    const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
     const [searchQuery, setSearchQuery] = useState("");
-    const [categoryFilter, setCategoryFilter] = useState<CategoryCode | "all">("all");
-    const [conditionFilter, setConditionFilter] = useState<ConditionType | "all">("all");
-    const [yearFilter, setYearFilter] = useState<string>("all");
+
+    // Filters
+    const [filterCategory, setFilterCategory] = useState<string>("");
+    const [filterStatus, setFilterStatus] = useState<string>("");
+    const [filterCondition, setFilterCondition] = useState<string>("");
+
+    // Modal
     const [showAddModal, setShowAddModal] = useState(false);
-    const [selectedAsset, setSelectedAsset] = useState<Asset | null>(null);
-
-    // Get unique years from assets
-    const years = [...new Set(mockAssets.map(a => a.code.split("-")[2]))].sort().reverse();
-
-    // Filter assets
-    const filteredAssets = mockAssets.filter(asset => {
-        const matchesSearch =
-            asset.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-            asset.code.toLowerCase().includes(searchQuery.toLowerCase()) ||
-            asset.location.toLowerCase().includes(searchQuery.toLowerCase());
-        const matchesCategory = categoryFilter === "all" || asset.category === categoryFilter;
-        const matchesCondition = conditionFilter === "all" || asset.condition === conditionFilter;
-        const matchesYear = yearFilter === "all" || asset.code.split("-")[2] === yearFilter;
-        return matchesSearch && matchesCategory && matchesCondition && matchesYear;
+    const [formData, setFormData] = useState({
+        name: "",
+        category: "electronics",
+        condition: "good",
+        acquisition_date: new Date().toISOString().split('T')[0],
+        location: "",
+        purchase_value: 0,
+        existing_value: 0,
+        current_holder_id: "",
+        description: "",
+        image_url: ""
     });
 
-    // Calculate stats
-    const totalAssets = mockAssets.length;
-    const totalValue = mockAssets.reduce((sum, a) => sum + (a.purchasePrice || 0), 0);
-    const categoryStats = Object.entries(ASSET_CATEGORIES).map(([code, config]) => ({
-        code,
-        ...config,
-        count: mockAssets.filter(a => a.category === code).length,
-    }));
+    // --- FETCH DATA ---
 
-    const formatCurrency = (value: number) => {
-        return new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0 }).format(value);
+    useEffect(() => {
+        if (!authLoading) {
+            fetchAssets();
+            fetchEmployees();
+        }
+    }, [authLoading]);
+
+    const fetchAssets = async () => {
+        setIsLoading(true);
+        try {
+            const { data, error } = await supabase
+                .from("operational_assets")
+                .select(`
+                    *,
+                    current_holder:profiles!operational_assets_current_holder_id_fkey(full_name)
+                `)
+                .order("created_at", { ascending: false });
+
+            if (error) throw error;
+            setAssets(data || []);
+        } catch (error) {
+            console.error("Error fetching assets:", error);
+        } finally {
+            setIsLoading(false);
+        }
     };
 
+    const fetchEmployees = async () => {
+        try {
+            // Fetch employees excluding HR role as requested
+            const { data, error } = await supabase
+                .from("profiles")
+                .select("id, full_name")
+                .neq("role", "hr")
+                .order("full_name");
+
+            if (error) throw error;
+            setEmployees(data || []);
+        } catch (error) {
+            console.error("Error fetching employees:", error);
+        }
+    };
+
+    // --- HANDLERS ---
+
+    const handleAddAsset = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!profile) return;
+
+        try {
+            const payload = {
+                name: formData.name,
+                category: formData.category,
+                condition: formData.condition,
+                status: formData.current_holder_id ? 'in_use' : 'available', // Auto-set status
+                location: formData.location,
+                purchase_value: formData.purchase_value,
+                existing_value: formData.existing_value,
+                acquisition_date: formData.acquisition_date,
+                current_holder_id: formData.current_holder_id || null,
+                description: formData.description || null,
+                image_url: formData.image_url || null,
+                created_by: profile.id
+            };
+
+            const { data: newAsset, error } = await supabase
+                .from("operational_assets")
+                .insert(payload)
+                .select()
+                .single();
+
+            if (error) throw error;
+
+            // Create Creation Log
+            await supabase.from("operational_asset_logs").insert({
+                asset_id: newAsset.id,
+                action_type: 'creation',
+                actor_id: profile.id,
+                new_condition: formData.condition,
+                notes: 'Initial asset creation'
+            });
+
+            // If assigned immediately, create Assignment Log
+            if (formData.current_holder_id) {
+                await supabase.from("operational_asset_logs").insert({
+                    asset_id: newAsset.id,
+                    action_type: 'assignment',
+                    actor_id: profile.id,
+                    new_holder_id: formData.current_holder_id,
+                    notes: 'Assigned upon creation'
+                });
+            }
+
+            setShowAddModal(false);
+            setFormData({
+                name: "",
+                category: "electronics",
+                condition: "good",
+                acquisition_date: new Date().toISOString().split('T')[0],
+                location: "",
+                purchase_value: 0,
+                existing_value: 0,
+                current_holder_id: "",
+                description: "",
+                image_url: ""
+            });
+            fetchAssets();
+
+        } catch (error) {
+            console.error("Error adding asset:", error);
+            alert("Failed to add asset.");
+        }
+    };
+
+    const handleExport = () => {
+        const exportData = filteredAssets.map(asset => ({
+            "Code": asset.code,
+            "Name": asset.name,
+            "Category": CATEGORY_CONFIG[asset.category]?.label || asset.category,
+            "Status": STATUS_CONFIG[asset.status]?.label || asset.status,
+            "Condition": CONDITION_CONFIG[asset.condition]?.label || asset.condition,
+            "Location": asset.location,
+            "Value": asset.purchase_value,
+            "Acquisition Date": asset.acquisition_date,
+            "Holder": asset.current_holder?.full_name || "None",
+            "Description": asset.description || ""
+        }));
+
+        const workbook = XLSX.utils.book_new();
+        const worksheet = XLSX.utils.json_to_sheet(exportData);
+        XLSX.utils.book_append_sheet(workbook, worksheet, "Assets");
+        const excelBuffer = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
+        const data = new Blob([excelBuffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;charset=UTF-8' });
+        saveAs(data, `assets_${new Date().toISOString().split('T')[0]}.xlsx`);
+    };
+
+    // --- FILTERING ---
+
+    const filteredAssets = useMemo(() => {
+        return assets.filter(asset => {
+            const matchSearch =
+                asset.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                asset.code?.toLowerCase().includes(searchQuery.toLowerCase());
+            const matchCategory = !filterCategory || asset.category === filterCategory;
+            const matchStatus = !filterStatus || asset.status === filterStatus;
+            const matchCondition = !filterCondition || asset.condition === filterCondition;
+
+            return matchSearch && matchCategory && matchStatus && matchCondition;
+        });
+    }, [assets, searchQuery, filterCategory, filterStatus, filterCondition]);
+
+
+    if (authLoading || isLoading) {
+        return (
+            <div className="flex items-center justify-center h-64">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#e8c559]"></div>
+            </div>
+        );
+    }
+
     return (
-        <div className="flex flex-col h-full overflow-auto">
-            {/* Page Header */}
-            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
-                <div>
-                    <div className="flex items-center gap-2 text-sm text-[var(--text-muted)] mb-1">
-                        <Link href="/dashboard" className="hover:text-[#e8c559]">Dashboard</Link>
-                        <span>/</span>
-                        <Link href="/dashboard/operational/asset-request" className="hover:text-[#e8c559]">Operational</Link>
-                        <span>/</span>
-                        <span className="text-[var(--text-primary)]">Asset Management</span>
-                    </div>
-                    <div className="flex items-center gap-3">
-                        <span className="text-3xl">📦</span>
-                        <h2 className="text-3xl font-bold tracking-tight text-[var(--text-primary)]">Asset Management</h2>
-                    </div>
-                    <p className="text-[var(--text-secondary)] text-sm mt-1">Kelola dan pantau semua aset kantor.</p>
-                </div>
-                <button
-                    onClick={() => setShowAddModal(true)}
-                    className="h-10 px-5 rounded-lg bg-[#e8c559] hover:bg-[#dcb33e] text-[#171611] text-sm font-bold transition-colors flex items-center gap-2"
-                >
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 24 24" fill="currentColor">
-                        <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z" />
-                    </svg>
-                    Tambah Aset
-                </button>
-            </div>
+        <div className="flex flex-col h-full space-y-6">
 
-            {/* Stats Cards */}
-            <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4 mb-6">
-                <div className="glass-panel p-4 rounded-xl col-span-2">
-                    <div className="flex items-center gap-3 mb-2">
-                        <span className="text-2xl">📊</span>
-                        <span className="text-xs text-[var(--text-muted)]">Total Aset</span>
+            {/* --- HEADER --- */}
+            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                <div className="flex items-center gap-4">
+                    <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-amber-500 to-orange-600 flex items-center justify-center shadow-lg shadow-amber-500/20">
+                        <Package className="h-6 w-6 text-white" />
                     </div>
-                    <p className="text-3xl font-bold text-[#e8c559]">{totalAssets}</p>
-                    <p className="text-xs text-[var(--text-muted)] mt-1">Nilai: {formatCurrency(totalValue)}</p>
-                </div>
-                {categoryStats.map((cat) => (
-                    <div key={cat.code} className="glass-panel p-4 rounded-xl">
-                        <div className="flex items-center gap-2 mb-2">
-                            <span className="text-xl">{cat.icon}</span>
-                            <span className="text-xs text-[var(--text-muted)] truncate">{cat.label}</span>
+                    <div>
+                        <div className="flex items-center gap-2 mb-1 text-sm text-[var(--text-secondary)]">
+                            <Link href="/dashboard" className="hover:text-[var(--text-primary)]">Dashboard</Link>
+                            <ChevronRight className="h-4 w-4" />
+                            <Link href="/dashboard/operational" className="hover:text-[var(--text-primary)]">Operational</Link>
+                            <ChevronRight className="h-4 w-4" />
+                            <span className="text-[var(--text-primary)]">Asset Management</span>
                         </div>
-                        <p className="text-2xl font-bold text-[var(--text-primary)]">{cat.count}</p>
+                        <h1 className="text-2xl font-bold text-[var(--text-primary)]">Asset Database</h1>
+                        <p className="text-sm text-[var(--text-secondary)]">
+                            Track and manage company assets, assignments, and conditions.
+                        </p>
                     </div>
-                ))}
+                </div>
+
+                <div className="flex items-center gap-3">
+                    <button
+                        onClick={handleExport}
+                        className="flex items-center gap-2 px-4 py-2 rounded-xl text-[var(--text-secondary)] hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
+                    >
+                        <FileDown className="h-4 w-4" />
+                        <span className="hidden sm:inline">Export</span>
+                    </button>
+                    <button
+                        onClick={() => setShowAddModal(true)}
+                        className="flex items-center gap-2 px-4 py-2 rounded-xl bg-[#e8c559] text-[#171611] font-bold hover:bg-[#d4b44e] transition-colors shadow-lg shadow-amber-500/20"
+                    >
+                        <Plus className="h-4 w-4" />
+                        Add Asset
+                    </button>
+                </div>
             </div>
 
-            {/* Filters */}
-            <div className="glass-panel p-4 rounded-xl mb-6">
-                <div className="flex flex-col md:flex-row gap-4">
+            {/* --- CONTROLS --- */}
+            <div className="flex flex-col md:flex-row justify-between items-center gap-4">
+                <div className="flex flex-wrap flex-1 gap-3 w-full">
                     {/* Search */}
-                    <div className="flex-1">
-                        <div className="relative">
-                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-muted)]" viewBox="0 0 24 24" fill="currentColor">
-                                <path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z" />
-                            </svg>
-                            <input
-                                type="text"
-                                placeholder="Cari kode, nama, atau lokasi..."
-                                value={searchQuery}
-                                onChange={(e) => setSearchQuery(e.target.value)}
-                                className="w-full pl-10 pr-4 py-2.5 rounded-lg border border-[var(--glass-border)] bg-[var(--card-bg)] text-[var(--text-primary)] placeholder-[var(--text-muted)]"
-                            />
-                        </div>
+                    <div className="relative flex-1 min-w-[200px]">
+                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-[var(--text-muted)]" />
+                        <input
+                            type="text"
+                            placeholder="Search asset name or code..."
+                            value={searchQuery}
+                            onChange={(e) => setSearchQuery(e.target.value)}
+                            className="w-full pl-10 pr-4 py-2 rounded-xl border border-[var(--glass-border)] bg-white dark:bg-[#1c2120] text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-[#e8c559]"
+                        />
                     </div>
 
-                    {/* Category Filter */}
+                    {/* Filters */}
                     <select
-                        value={categoryFilter}
-                        onChange={(e) => setCategoryFilter(e.target.value as CategoryCode | "all")}
-                        className="px-4 py-2.5 rounded-lg border border-[var(--glass-border)] bg-[var(--card-bg)] text-[var(--text-primary)]"
+                        value={filterCategory}
+                        onChange={(e) => setFilterCategory(e.target.value)}
+                        className="px-4 py-2 rounded-xl border border-[var(--glass-border)] bg-white dark:bg-[#1c2120] text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-[#e8c559]"
                     >
-                        <option value="all">Semua Kategori</option>
-                        {Object.entries(ASSET_CATEGORIES).map(([code, config]) => (
-                            <option key={code} value={code}>{config.icon} {config.label}</option>
-                        ))}
-                    </select>
-
-                    {/* Condition Filter */}
-                    <select
-                        value={conditionFilter}
-                        onChange={(e) => setConditionFilter(e.target.value as ConditionType | "all")}
-                        className="px-4 py-2.5 rounded-lg border border-[var(--glass-border)] bg-[var(--card-bg)] text-[var(--text-primary)]"
-                    >
-                        <option value="all">Semua Kondisi</option>
-                        {Object.entries(ASSET_CONDITIONS).map(([key, config]) => (
+                        <option value="">All Categories</option>
+                        {Object.entries(CATEGORY_CONFIG).map(([key, config]) => (
                             <option key={key} value={key}>{config.label}</option>
                         ))}
                     </select>
 
-                    {/* Year Filter */}
                     <select
-                        value={yearFilter}
-                        onChange={(e) => setYearFilter(e.target.value)}
-                        className="px-4 py-2.5 rounded-lg border border-[var(--glass-border)] bg-[var(--card-bg)] text-[var(--text-primary)]"
+                        value={filterStatus}
+                        onChange={(e) => setFilterStatus(e.target.value)}
+                        className="px-4 py-2 rounded-xl border border-[var(--glass-border)] bg-white dark:bg-[#1c2120] text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-[#e8c559]"
                     >
-                        <option value="all">Semua Tahun</option>
-                        {years.map(year => (
-                            <option key={year} value={year}>20{year}</option>
+                        <option value="">All Statuses</option>
+                        {Object.entries(STATUS_CONFIG).map(([key, config]) => (
+                            <option key={key} value={key}>{config.label}</option>
+                        ))}
+                    </select>
+
+                    <select
+                        value={filterCondition}
+                        onChange={(e) => setFilterCondition(e.target.value)}
+                        className="px-4 py-2 rounded-xl border border-[var(--glass-border)] bg-white dark:bg-[#1c2120] text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-[#e8c559]"
+                    >
+                        <option value="">All Conditions</option>
+                        {Object.entries(CONDITION_CONFIG).map(([key, config]) => (
+                            <option key={key} value={key}>{config.label}</option>
                         ))}
                     </select>
                 </div>
-            </div>
 
-            {/* Asset Table */}
-            <div className="glass-panel rounded-xl overflow-hidden flex-1">
-                <div className="overflow-x-auto">
-                    <table className="w-full text-left">
-                        <thead>
-                            <tr className="border-b border-[var(--glass-border)] text-xs text-[var(--text-muted)] uppercase tracking-wider">
-                                <th className="p-4 font-semibold">Kode</th>
-                                <th className="p-4 font-semibold">Nama Aset</th>
-                                <th className="p-4 font-semibold">Kategori</th>
-                                <th className="p-4 font-semibold">Kondisi</th>
-                                <th className="p-4 font-semibold">Lokasi</th>
-                                <th className="p-4 font-semibold">Tgl Akuisisi</th>
-                                <th className="p-4 font-semibold">Nilai</th>
-                                <th className="p-4 font-semibold">Aksi</th>
-                            </tr>
-                        </thead>
-                        <tbody className="divide-y divide-[var(--glass-border)]">
-                            {filteredAssets.length === 0 ? (
-                                <tr>
-                                    <td colSpan={8} className="p-8 text-center text-[var(--text-muted)]">
-                                        <span className="text-4xl block mb-2">📭</span>
-                                        Tidak ada aset yang ditemukan
-                                    </td>
-                                </tr>
-                            ) : (
-                                filteredAssets.map((asset) => {
-                                    const categoryConfig = ASSET_CATEGORIES[asset.category];
-                                    const conditionConfig = ASSET_CONDITIONS[asset.condition];
-                                    return (
-                                        <tr key={asset.id} className="hover:bg-[var(--glass-bg)] transition-colors">
-                                            <td className="p-4">
-                                                <span className="font-mono font-bold text-[#e8c559]">{asset.code}</span>
-                                            </td>
-                                            <td className="p-4">
-                                                <p className="font-medium text-[var(--text-primary)]">{asset.name}</p>
-                                                {asset.assignedTo && (
-                                                    <p className="text-xs text-[var(--text-muted)]">→ {asset.assignedTo}</p>
-                                                )}
-                                            </td>
-                                            <td className="p-4">
-                                                <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium ${categoryConfig.color} text-white`}>
-                                                    {categoryConfig.icon} {categoryConfig.label}
-                                                </span>
-                                            </td>
-                                            <td className="p-4">
-                                                <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium ${conditionConfig.color}/20 ${conditionConfig.textColor}`}>
-                                                    {conditionConfig.label}
-                                                </span>
-                                            </td>
-                                            <td className="p-4 text-[var(--text-secondary)] text-sm">
-                                                {asset.location}
-                                            </td>
-                                            <td className="p-4 text-[var(--text-secondary)] text-sm">
-                                                {new Date(asset.acquisitionDate).toLocaleDateString("id-ID", { day: "numeric", month: "short", year: "numeric" })}
-                                            </td>
-                                            <td className="p-4 text-[var(--text-secondary)] text-sm">
-                                                {asset.purchasePrice ? formatCurrency(asset.purchasePrice) : "-"}
-                                            </td>
-                                            <td className="p-4">
-                                                <div className="flex gap-2">
-                                                    <button
-                                                        onClick={() => setSelectedAsset(asset)}
-                                                        className="p-2 rounded-lg hover:bg-[var(--glass-border)] text-[var(--text-muted)] hover:text-[#e8c559] transition-colors"
-                                                        title="Detail"
-                                                    >
-                                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor">
-                                                            <path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z" />
-                                                        </svg>
-                                                    </button>
-                                                    <button
-                                                        className="p-2 rounded-lg hover:bg-[var(--glass-border)] text-[var(--text-muted)] hover:text-sky-500 transition-colors"
-                                                        title="Edit"
-                                                    >
-                                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor">
-                                                            <path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z" />
-                                                        </svg>
-                                                    </button>
-                                                </div>
-                                            </td>
-                                        </tr>
-                                    );
-                                })
-                            )}
-                        </tbody>
-                    </table>
+                {/* View Toggle */}
+                <div className="flex items-center gap-1 bg-white dark:bg-[#1c2120] border border-[var(--glass-border)] p-1 rounded-lg">
+                    <button
+                        onClick={() => setViewMode("grid")}
+                        className={`p-2 rounded-md transition-colors ${viewMode === "grid" ? "bg-[#e8c559] text-[#171611]" : "text-[var(--text-secondary)] hover:bg-black/5 dark:hover:bg-white/5"}`}
+                    >
+                        <LayoutGrid className="w-4 h-4" />
+                    </button>
+                    <button
+                        onClick={() => setViewMode("list")}
+                        className={`p-2 rounded-md transition-colors ${viewMode === "list" ? "bg-[#e8c559] text-[#171611]" : "text-[var(--text-secondary)] hover:bg-black/5 dark:hover:bg-white/5"}`}
+                    >
+                        <List className="w-4 h-4" />
+                    </button>
                 </div>
             </div>
 
-            {/* Results count */}
-            <div className="mt-4 text-sm text-[var(--text-muted)]">
-                Menampilkan {filteredAssets.length} dari {totalAssets} aset
-            </div>
+            {/* --- CONTENT --- */}
 
-            {/* Asset Detail Modal */}
-            {selectedAsset && (
-                <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-                    <div className="glass-panel w-full max-w-lg rounded-2xl p-6">
-                        <div className="flex justify-between items-start mb-6">
-                            <div>
-                                <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium ${ASSET_CATEGORIES[selectedAsset.category].color} text-white mb-2`}>
-                                    {ASSET_CATEGORIES[selectedAsset.category].icon} {ASSET_CATEGORIES[selectedAsset.category].label}
-                                </span>
-                                <h2 className="text-xl font-bold text-[var(--text-primary)]">{selectedAsset.name}</h2>
-                                <p className="text-[#e8c559] font-mono font-bold">{selectedAsset.code}</p>
-                            </div>
-                            <button
-                                onClick={() => setSelectedAsset(null)}
-                                className="p-2 rounded-lg hover:bg-[var(--glass-border)] text-[var(--text-muted)]"
-                            >
-                                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 24 24" fill="currentColor">
-                                    <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" />
-                                </svg>
-                            </button>
-                        </div>
-
-                        <div className="space-y-4">
-                            <div className="grid grid-cols-2 gap-4">
-                                <div className="p-3 rounded-lg bg-[var(--glass-bg)]">
-                                    <p className="text-xs text-[var(--text-muted)] mb-1">Kondisi</p>
-                                    <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium ${ASSET_CONDITIONS[selectedAsset.condition].color}/20 ${ASSET_CONDITIONS[selectedAsset.condition].textColor}`}>
-                                        {ASSET_CONDITIONS[selectedAsset.condition].label}
-                                    </span>
-                                </div>
-                                <div className="p-3 rounded-lg bg-[var(--glass-bg)]">
-                                    <p className="text-xs text-[var(--text-muted)] mb-1">Lokasi</p>
-                                    <p className="text-sm font-medium text-[var(--text-primary)]">{selectedAsset.location}</p>
-                                </div>
-                            </div>
-
-                            <div className="grid grid-cols-2 gap-4">
-                                <div className="p-3 rounded-lg bg-[var(--glass-bg)]">
-                                    <p className="text-xs text-[var(--text-muted)] mb-1">Tanggal Akuisisi</p>
-                                    <p className="text-sm font-medium text-[var(--text-primary)]">
-                                        {new Date(selectedAsset.acquisitionDate).toLocaleDateString("id-ID", { day: "numeric", month: "long", year: "numeric" })}
-                                    </p>
-                                </div>
-                                <div className="p-3 rounded-lg bg-[var(--glass-bg)]">
-                                    <p className="text-xs text-[var(--text-muted)] mb-1">Nilai Pembelian</p>
-                                    <p className="text-sm font-medium text-[#e8c559]">
-                                        {selectedAsset.purchasePrice ? formatCurrency(selectedAsset.purchasePrice) : "-"}
-                                    </p>
-                                </div>
-                            </div>
-
-                            {selectedAsset.assignedTo && (
-                                <div className="p-3 rounded-lg bg-[var(--glass-bg)]">
-                                    <p className="text-xs text-[var(--text-muted)] mb-1">Digunakan Oleh</p>
-                                    <p className="text-sm font-medium text-[var(--text-primary)]">{selectedAsset.assignedTo}</p>
-                                </div>
-                            )}
-                        </div>
-
-                        <div className="flex gap-3 mt-6">
-                            <button
-                                onClick={() => setSelectedAsset(null)}
-                                className="flex-1 px-4 py-3 rounded-lg border border-[var(--glass-border)] text-[var(--text-secondary)] font-medium"
-                            >
-                                Tutup
-                            </button>
-                            <button
-                                className="flex-1 px-4 py-3 rounded-lg bg-[#e8c559] text-[#171611] font-bold"
-                            >
-                                Edit Aset
-                            </button>
-                        </div>
+            {filteredAssets.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-16 text-center">
+                    <div className="w-20 h-20 bg-[var(--glass-bg)] rounded-full flex items-center justify-center mb-4">
+                        <Package className="h-10 w-10 text-[var(--text-muted)]" />
                     </div>
+                    <h3 className="text-xl font-bold text-[var(--text-primary)] mb-2">No assets found</h3>
+                    <p className="text-[var(--text-secondary)] max-w-sm">
+                        Try adjusting your filters or add a new asset to get started.
+                    </p>
                 </div>
+            ) : (
+                <>
+                    {viewMode === "grid" ? (
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                            {filteredAssets.map(asset => {
+                                const CategoryIcon = CATEGORY_CONFIG[asset.category]?.icon || Box;
+                                return (
+                                    <Link key={asset.id} href={`/dashboard/operational/asset-management/${asset.id}`}>
+                                        <div className="group h-full bg-white dark:bg-[#1c2120] border border-[var(--glass-border)] rounded-2xl p-5 hover:border-[#e8c559] hover:shadow-lg transition-all duration-300 flex flex-col">
+
+                                            {/* Top Row: Icon + Status */}
+                                            <div className="flex justify-between items-start mb-4">
+                                                <div className={`w-10 h-10 rounded-lg ${CATEGORY_CONFIG[asset.category]?.color || "bg-gray-500"} flex items-center justify-center`}>
+                                                    <CategoryIcon className="h-5 w-5 text-white" />
+                                                </div>
+                                                <div className={`px-2 py-1 rounded-full text-xs font-bold text-white ${STATUS_CONFIG[asset.status]?.color || "bg-gray-500"}`}>
+                                                    {STATUS_CONFIG[asset.status]?.label}
+                                                </div>
+                                            </div>
+
+                                            {/* Main Info */}
+                                            <div className="mb-4 flex-1">
+                                                <p className="text-xs font-mono text-[var(--text-secondary)] mb-1">{asset.code || "PENDING"}</p>
+                                                <h3 className="text-lg font-bold text-[var(--text-primary)] line-clamp-2 group-hover:text-[#e8c559] transition-colors">{asset.name}</h3>
+                                            </div>
+
+                                            {/* Meta Details */}
+                                            <div className="space-y-2 text-sm text-[var(--text-secondary)]">
+                                                <div className="flex items-center gap-2">
+                                                    <div className={`w-2 h-2 rounded-full ${asset.current_holder ? 'bg-blue-500' : 'bg-gray-300'}`}></div>
+                                                    <span className="truncate">{asset.current_holder?.full_name || "Unassigned"}</span>
+                                                </div>
+                                                <div className="flex items-center gap-2">
+                                                    <MapPin className="h-4 w-4" />
+                                                    <span className="truncate">{asset.location}</span>
+                                                </div>
+                                            </div>
+
+                                            {/* Footer: Condition */}
+                                            <div className="mt-4 pt-3 border-t border-[var(--glass-border)] flex justify-between items-center">
+                                                <span className={`text-xs px-2 py-0.5 rounded-md ${CONDITION_CONFIG[asset.condition]?.color || 'bg-gray-100'}`}>
+                                                    {CONDITION_CONFIG[asset.condition]?.label}
+                                                </span>
+                                                {asset.image_url && <Paperclip className="h-4 w-4 text-[var(--text-muted)]" />}
+                                            </div>
+
+                                        </div>
+                                    </Link>
+                                );
+                            })}
+                        </div>
+                    ) : (
+                        <div className="bg-white dark:bg-[#1c2120] rounded-2xl border border-[var(--glass-border)] overflow-hidden">
+                            <div className="overflow-x-auto">
+                                <table className="w-full text-sm text-left">
+                                    <thead className="bg-[var(--glass-bg)] border-b border-[var(--glass-border)] text-[var(--text-secondary)]">
+                                        <tr>
+                                            <th className="px-6 py-4 font-semibold">Code</th>
+                                            <th className="px-6 py-4 font-semibold">Asset Name</th>
+                                            <th className="px-6 py-4 font-semibold">Category</th>
+                                            <th className="px-6 py-4 font-semibold">Holder</th>
+                                            <th className="px-6 py-4 font-semibold">Status</th>
+                                            <th className="px-6 py-4 font-semibold">Condition</th>
+                                            <th className="px-6 py-4 font-semibold">Location</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-[var(--glass-border)]">
+                                        {filteredAssets.map(asset => (
+                                            <tr key={asset.id} className="hover:bg-[var(--glass-bg)] transition-colors">
+                                                <td className="px-6 py-4 font-mono text-[var(--text-secondary)]">
+                                                    <Link href={`/dashboard/operational/asset-management/${asset.id}`} className="hover:underline">
+                                                        {asset.code}
+                                                    </Link>
+                                                </td>
+                                                <td className="px-6 py-4 font-semibold text-[var(--text-primary)]">
+                                                    <Link href={`/dashboard/operational/asset-management/${asset.id}`} className="hover:text-[#e8c559]">
+                                                        {asset.name}
+                                                    </Link>
+                                                </td>
+                                                <td className="px-6 py-4">
+                                                    {CATEGORY_CONFIG[asset.category]?.label}
+                                                </td>
+                                                <td className="px-6 py-4">
+                                                    {asset.current_holder?.full_name || "-"}
+                                                </td>
+                                                <td className="px-6 py-4">
+                                                    <span className={`px-2 py-1 rounded-full text-xs font-bold text-white ${STATUS_CONFIG[asset.status]?.color}`}>
+                                                        {STATUS_CONFIG[asset.status]?.label}
+                                                    </span>
+                                                </td>
+                                                <td className="px-6 py-4">
+                                                    <span className={`px-2 py-1 rounded text-xs ${CONDITION_CONFIG[asset.condition]?.color}`}>
+                                                        {CONDITION_CONFIG[asset.condition]?.label}
+                                                    </span>
+                                                </td>
+                                                <td className="px-6 py-4">
+                                                    {asset.location}
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    )}
+                </>
             )}
 
-            {/* Add Asset Modal */}
+            {/* --- ADD MODAL --- */}
             {showAddModal && (
-                <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-                    <div className="glass-panel w-full max-w-lg rounded-2xl p-6 max-h-[90vh] overflow-y-auto">
-                        <div className="flex justify-between items-center mb-6">
-                            <h2 className="text-xl font-bold text-[var(--text-primary)]">Tambah Aset Baru</h2>
-                            <button
-                                onClick={() => setShowAddModal(false)}
-                                className="p-2 rounded-lg hover:bg-[var(--glass-border)] text-[var(--text-muted)]"
-                            >
-                                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 24 24" fill="currentColor">
-                                    <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" />
-                                </svg>
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+                    <div className="w-full max-w-2xl bg-white dark:bg-[#1c2120] rounded-2xl shadow-2xl max-h-[90vh] overflow-y-auto">
+                        <div className="flex items-center justify-between p-6 border-b border-[var(--glass-border)]">
+                            <h2 className="text-xl font-bold text-[var(--text-primary)]">Add New Asset</h2>
+                            <button onClick={() => setShowAddModal(false)} className="p-2 rounded-lg hover:bg-black/10 dark:hover:bg-white/10">
+                                <span className="sr-only">Close</span>
+                                <Plus className="h-5 w-5 rotate-45" />
                             </button>
                         </div>
 
-                        <div className="space-y-4">
-                            <div>
-                                <label className="block text-sm font-medium text-[var(--text-secondary)] mb-1">Nama Aset *</label>
-                                <input
-                                    type="text"
-                                    placeholder="Contoh: Laptop Dell XPS 15"
-                                    className="w-full p-3 rounded-lg border border-[var(--glass-border)] bg-[var(--card-bg)] text-[var(--text-primary)]"
-                                />
-                            </div>
+                        <form onSubmit={handleAddAsset} className="p-6 space-y-6">
 
-                            <div className="grid grid-cols-2 gap-4">
-                                <div>
-                                    <label className="block text-sm font-medium text-[var(--text-secondary)] mb-1">Kategori *</label>
-                                    <select className="w-full p-3 rounded-lg border border-[var(--glass-border)] bg-[var(--card-bg)] text-[var(--text-primary)]">
-                                        {Object.entries(ASSET_CATEGORIES).map(([code, config]) => (
-                                            <option key={code} value={code}>{config.icon} {config.label}</option>
-                                        ))}
-                                    </select>
+                            {/* Grid Layout for compact form */}
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                <div className="col-span-1 md:col-span-2">
+                                    <label className="block text-sm font-bold text-[var(--text-primary)] mb-1">Asset Name *</label>
+                                    <input
+                                        type="text"
+                                        required
+                                        value={formData.name}
+                                        onChange={e => setFormData({ ...formData, name: e.target.value })}
+                                        className="w-full px-4 py-2 rounded-xl border border-[var(--glass-border)] bg-[var(--glass-bg)] text-[var(--text-primary)]"
+                                        placeholder="e.g. MacBook Pro M3, High-Back Ergonomic Chair"
+                                    />
                                 </div>
+
                                 <div>
-                                    <label className="block text-sm font-medium text-[var(--text-secondary)] mb-1">Kondisi *</label>
-                                    <select className="w-full p-3 rounded-lg border border-[var(--glass-border)] bg-[var(--card-bg)] text-[var(--text-primary)]">
-                                        {Object.entries(ASSET_CONDITIONS).map(([key, config]) => (
+                                    <label className="block text-sm font-bold text-[var(--text-primary)] mb-1">Category *</label>
+                                    <select
+                                        value={formData.category}
+                                        onChange={e => setFormData({ ...formData, category: e.target.value })}
+                                        className="w-full px-4 py-2 rounded-xl border border-[var(--glass-border)] bg-[var(--glass-bg)] text-[var(--text-primary)]"
+                                    >
+                                        {Object.entries(CATEGORY_CONFIG).map(([key, config]) => (
                                             <option key={key} value={key}>{config.label}</option>
                                         ))}
                                     </select>
                                 </div>
-                            </div>
 
-                            <div>
-                                <label className="block text-sm font-medium text-[var(--text-secondary)] mb-1">Lokasi *</label>
-                                <input
-                                    type="text"
-                                    placeholder="Contoh: Ruang Meeting A"
-                                    className="w-full p-3 rounded-lg border border-[var(--glass-border)] bg-[var(--card-bg)] text-[var(--text-primary)]"
-                                />
-                            </div>
-
-                            <div className="grid grid-cols-2 gap-4">
                                 <div>
-                                    <label className="block text-sm font-medium text-[var(--text-secondary)] mb-1">Tanggal Akuisisi</label>
+                                    <label className="block text-sm font-bold text-[var(--text-primary)] mb-1">Condition *</label>
+                                    <select
+                                        value={formData.condition}
+                                        onChange={e => setFormData({ ...formData, condition: e.target.value })}
+                                        className="w-full px-4 py-2 rounded-xl border border-[var(--glass-border)] bg-[var(--glass-bg)] text-[var(--text-primary)]"
+                                    >
+                                        {Object.entries(CONDITION_CONFIG).map(([key, config]) => (
+                                            <option key={key} value={key}>{config.label}</option>
+                                        ))}
+                                    </select>
+                                </div>
+
+                                <div>
+                                    <label className="block text-sm font-bold text-[var(--text-primary)] mb-1">Acquisition Date *</label>
                                     <input
                                         type="date"
-                                        className="w-full p-3 rounded-lg border border-[var(--glass-border)] bg-[var(--card-bg)] text-[var(--text-primary)]"
+                                        required
+                                        value={formData.acquisition_date}
+                                        onChange={e => setFormData({ ...formData, acquisition_date: e.target.value })}
+                                        className="w-full px-4 py-2 rounded-xl border border-[var(--glass-border)] bg-[var(--glass-bg)] text-[var(--text-primary)]"
                                     />
+                                    <p className="text-xs text-[var(--text-secondary)] mt-1">Used for Asset Code Generation</p>
                                 </div>
+
                                 <div>
-                                    <label className="block text-sm font-medium text-[var(--text-secondary)] mb-1">Nilai Pembelian</label>
+                                    <label className="block text-sm font-bold text-[var(--text-primary)] mb-1">Purchase Value</label>
                                     <input
                                         type="number"
-                                        placeholder="Rp"
-                                        className="w-full p-3 rounded-lg border border-[var(--glass-border)] bg-[var(--card-bg)] text-[var(--text-primary)]"
+                                        value={formData.purchase_value}
+                                        onChange={e => setFormData({ ...formData, purchase_value: Number(e.target.value) })}
+                                        className="w-full px-4 py-2 rounded-xl border border-[var(--glass-border)] bg-[var(--glass-bg)] text-[var(--text-primary)]"
+                                        min="0"
+                                    />
+                                    {formData.purchase_value > 0 && (
+                                        <p className="text-xs text-[#e8c559] mt-1 font-mono">
+                                            {new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR' }).format(formData.purchase_value)}
+                                        </p>
+                                    )}
+                                </div>
+
+                                <div>
+                                    <label className="block text-sm font-bold text-[var(--text-primary)] mb-1">Existing Value</label>
+                                    <input
+                                        type="number"
+                                        value={formData.existing_value}
+                                        onChange={e => setFormData({ ...formData, existing_value: Number(e.target.value) })}
+                                        className="w-full px-4 py-2 rounded-xl border border-[var(--glass-border)] bg-[var(--glass-bg)] text-[var(--text-primary)]"
+                                        min="0"
+                                    />
+                                    <p className="text-xs text-[var(--text-secondary)] mt-1">Current estimated value</p>
+                                    {formData.existing_value > 0 && (
+                                        <p className="text-xs text-[#e8c559] mt-1 font-mono">
+                                            {new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR' }).format(formData.existing_value)}
+                                        </p>
+                                    )}
+                                </div>
+
+                                <div>
+                                    <label className="block text-sm font-bold text-[var(--text-primary)] mb-1">Location *</label>
+                                    <input
+                                        type="text"
+                                        required
+                                        value={formData.location}
+                                        onChange={e => setFormData({ ...formData, location: e.target.value })}
+                                        className="w-full px-4 py-2 rounded-xl border border-[var(--glass-border)] bg-[var(--glass-bg)] text-[var(--text-primary)]"
+                                        placeholder="e.g. Main Office, Warehouse A"
+                                    />
+                                </div>
+
+                                <div>
+                                    <label className="block text-sm font-bold text-[var(--text-primary)] mb-1">Used By (Optional)</label>
+                                    <select
+                                        value={formData.current_holder_id}
+                                        onChange={e => setFormData({ ...formData, current_holder_id: e.target.value })}
+                                        className="w-full px-4 py-2 rounded-xl border border-[var(--glass-border)] bg-[var(--glass-bg)] text-[var(--text-primary)]"
+                                    >
+                                        <option value="">-- Available / No Holder --</option>
+                                        {employees.map(emp => (
+                                            <option key={emp.id} value={emp.id}>{emp.full_name}</option>
+                                        ))}
+                                    </select>
+                                </div>
+
+                                <div className="col-span-1 md:col-span-2">
+                                    <label className="block text-sm font-bold text-[var(--text-primary)] mb-1">Photo / GDrive Link (Optional)</label>
+                                    <div className="flex items-center gap-2">
+                                        <Paperclip className="h-4 w-4 text-[var(--text-secondary)]" />
+                                        <input
+                                            type="url"
+                                            value={formData.image_url}
+                                            onChange={e => setFormData({ ...formData, image_url: e.target.value })}
+                                            className="w-full px-4 py-2 rounded-xl border border-[var(--glass-border)] bg-[var(--glass-bg)] text-[var(--text-primary)]"
+                                            placeholder="https://drive.google.com/..."
+                                        />
+                                    </div>
+                                </div>
+
+                                <div className="col-span-1 md:col-span-2">
+                                    <label className="block text-sm font-bold text-[var(--text-primary)] mb-1">Notes (Optional)</label>
+                                    <textarea
+                                        rows={3}
+                                        value={formData.description}
+                                        onChange={e => setFormData({ ...formData, description: e.target.value })}
+                                        className="w-full px-4 py-2 rounded-xl border border-[var(--glass-border)] bg-[var(--glass-bg)] text-[var(--text-primary)] resize-none"
+                                        placeholder="Additional details, SN, model number..."
                                     />
                                 </div>
                             </div>
 
-                            <div>
-                                <label className="block text-sm font-medium text-[var(--text-secondary)] mb-1">Digunakan Oleh (Opsional)</label>
-                                <input
-                                    type="text"
-                                    placeholder="Nama karyawan atau departemen"
-                                    className="w-full p-3 rounded-lg border border-[var(--glass-border)] bg-[var(--card-bg)] text-[var(--text-primary)]"
-                                />
+                            <div className="flex justify-end gap-3 pt-4 border-t border-[var(--glass-border)]">
+                                <button
+                                    type="button"
+                                    onClick={() => setShowAddModal(false)}
+                                    className="px-4 py-2 rounded-xl text-[var(--text-secondary)] hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    type="submit"
+                                    className="px-6 py-2 rounded-xl bg-[#e8c559] text-[#171611] font-bold hover:bg-[#d4b44e] transition-colors"
+                                >
+                                    Save Asset
+                                </button>
                             </div>
 
-                            <div>
-                                <label className="block text-sm font-medium text-[var(--text-secondary)] mb-1">Catatan (Opsional)</label>
-                                <textarea
-                                    rows={2}
-                                    placeholder="Catatan tambahan..."
-                                    className="w-full p-3 rounded-lg border border-[var(--glass-border)] bg-[var(--card-bg)] text-[var(--text-primary)] resize-none"
-                                />
-                            </div>
-                        </div>
-
-                        <div className="flex gap-3 mt-6">
-                            <button
-                                onClick={() => setShowAddModal(false)}
-                                className="flex-1 px-4 py-3 rounded-lg border border-[var(--glass-border)] text-[var(--text-secondary)] font-medium"
-                            >
-                                Batal
-                            </button>
-                            <button
-                                onClick={() => setShowAddModal(false)}
-                                className="flex-1 px-4 py-3 rounded-lg bg-[#e8c559] text-[#171611] font-bold"
-                            >
-                                Simpan Aset
-                            </button>
-                        </div>
+                        </form>
                     </div>
                 </div>
             )}
