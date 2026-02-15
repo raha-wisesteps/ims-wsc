@@ -1047,7 +1047,7 @@ export default function BisDevDashboardPage() {
                 <div className="lg:col-span-2 space-y-6">
                     {/* Quick Access Section */}
                     <h2 className="text-xl font-bold text-[var(--text-primary)] flex items-center gap-2">
-                        <LayoutDashboard className="w-5 h-5 text-[#e8c559]" /> Quick Access
+                        <LayoutDashboard className="w-5 h-5 text-[#e8c559]" /> Quick Actions
                     </h2>
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

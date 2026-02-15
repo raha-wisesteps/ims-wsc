@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
-import { Loader2, RefreshCw, Download, ChevronRight } from "lucide-react";
+import { Loader2, RefreshCw, Download, ChevronRight, History as HistoryIcon } from "lucide-react";
 
 // Request type config for display
 const REQUEST_TYPE_CONFIG: Record<string, { label: string; icon: string; color: string }> = {
@@ -304,8 +304,8 @@ export default function HRRequestHistoryPage() {
             {/* Page Header */}
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
                 <div className="flex items-center gap-3">
-                    <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-blue-600 to-blue-800 flex items-center justify-center text-2xl text-white shadow-lg">
-                        📜
+                    <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-blue-600 to-blue-800 flex items-center justify-center text-white shadow-lg">
+                        <HistoryIcon className="w-6 h-6" />
                     </div>
                     <div>
                         <div className="flex items-center gap-2 mb-1 text-sm text-[var(--text-secondary)]">
