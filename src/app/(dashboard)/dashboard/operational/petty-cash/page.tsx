@@ -1,347 +1,753 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useMemo } from "react";
 import Link from "next/link";
+import { createClient } from "@/lib/supabase/client";
+import { useAuth } from "@/contexts/AuthContext";
+import {
+    LayoutGrid,
+    List,
+    Plus,
+    Search,
+    Filter,
+    FileDown,
+    ChevronRight,
+    Wallet,
+    ArrowUpCircle,
+    ArrowDownCircle,
+    TrendingUp,
+    Calendar as CalendarIcon,
+    DollarSign,
+    MoreHorizontal,
+    Trash2,
+    Briefcase,
+    Coffee,
+    Truck,
+    Hotel,
+    Paperclip,
+    Box,
+    ExternalLink,
+    Pencil
+} from "lucide-react";
+import * as XLSX from 'xlsx';
+import { saveAs } from 'file-saver';
+import {
+    BarChart,
+    Bar,
+    XAxis,
+    YAxis,
+    CartesianGrid,
+    Tooltip,
+    ResponsiveContainer,
+    PieChart,
+    Pie,
+    Cell,
+    Legend
+} from 'recharts';
 
-// Expense categories
-const EXPENSE_CATEGORIES = [
-    { id: "supplies", label: "ATK & Supplies", icon: "📎", color: "bg-blue-500" },
-    { id: "transport", label: "Transport", icon: "🚗", color: "bg-amber-500" },
-    { id: "meals", label: "Konsumsi", icon: "🍽️", color: "bg-emerald-500" },
-    { id: "utilities", label: "Utilitas", icon: "💡", color: "bg-purple-500" },
-    { id: "maintenance", label: "Maintenance", icon: "🔧", color: "bg-rose-500" },
-    { id: "other", label: "Lainnya", icon: "📦", color: "bg-gray-500" },
-];
+// --- CONFIGURATION ---
+
+const CATEGORY_CONFIG: Record<string, { label: string; icon: any; color: string }> = {
+    transportation: { label: "Transportation", icon: Truck, color: "#3b82f6" }, // blue-500
+    fnb: { label: "Food & Beverage", icon: Coffee, color: "#f97316" }, // orange-500
+    office_supplies: { label: "Office Supplies", icon: Box, color: "#a855f7" }, // purple-500
+    accommodation: { label: "Accommodation", icon: Hotel, color: "#ec4899" }, // pink-500
+    others: { label: "Others", icon: Briefcase, color: "#6b7280" }, // gray-500
+    topup: { label: "Top Up / Income", icon: DollarSign, color: "#22c55e" }, // green-500
+};
+
+// --- TYPES ---
 
 interface Transaction {
     id: string;
-    date: string;
+    transaction_date: string;
     description: string;
     category: string;
     amount: number;
-    staff: string;
-    receipt?: string;
-    type: "expense" | "topup";
+    is_expense: boolean;
+    proof_link: string | null;
+    created_at: string;
+    created_by: string;
 }
 
-// Mock transactions
-const mockTransactions: Transaction[] = [
-    { id: "1", date: "2024-12-20", description: "Beli ATK - Kertas A4 & Pulpen", category: "supplies", amount: 125000, staff: "Eva Wijaya", type: "expense" },
-    { id: "2", date: "2024-12-19", description: "Grab ke Bank BCA", category: "transport", amount: 45000, staff: "Budi Santoso", type: "expense" },
-    { id: "3", date: "2024-12-18", description: "Lunch Meeting - Client PT ABC", category: "meals", amount: 350000, staff: "Andi Pratama", type: "expense" },
-    { id: "4", date: "2024-12-17", description: "Service AC Ruang Meeting", category: "maintenance", amount: 150000, staff: "David Chen", type: "expense" },
-    { id: "5", date: "2024-12-15", description: "Beli Tinta Printer", category: "supplies", amount: 180000, staff: "Citra Lestari", type: "expense" },
-    { id: "6", date: "2024-12-15", description: "Parkir - Visit Client", category: "transport", amount: 25000, staff: "Andi Pratama", type: "expense" },
-    { id: "7", date: "2024-12-14", description: "Snack Meeting Internal", category: "meals", amount: 85000, staff: "Eva Wijaya", type: "expense" },
-    { id: "8", date: "2024-12-13", description: "Beli Tisu & Sabun", category: "supplies", amount: 75000, staff: "Budi Santoso", type: "expense" },
-    { id: "9", date: "2024-12-12", description: "Bensin Motor Kurir", category: "transport", amount: 50000, staff: "David Chen", type: "expense" },
-    { id: "10", date: "2024-12-10", description: "Service Printer", category: "maintenance", amount: 200000, staff: "Citra Lestari", type: "expense" },
-    { id: "11", date: "2024-12-01", description: "Top Up Petty Cash", category: "topup", amount: 5000000, staff: "Admin", type: "topup" },
-];
-
-// Format currency
-const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat("id-ID", {
-        style: "currency",
-        currency: "IDR",
-        minimumFractionDigits: 0,
-    }).format(amount);
-};
-
 export default function PettyCashPage() {
-    const [showAddModal, setShowAddModal] = useState(false);
-    const [selectedCategory, setSelectedCategory] = useState("all");
+    const supabase = createClient();
+    const { profile, isLoading: authLoading } = useAuth();
+
+    // State
+    const [transactions, setTransactions] = useState<Transaction[]>([]);
+    const [isLoading, setIsLoading] = useState(true);
     const [searchQuery, setSearchQuery] = useState("");
-    const [newExpense, setNewExpense] = useState({
-        date: "",
+    const [filterCategory, setFilterCategory] = useState<string>("");
+    const [dateRange, setDateRange] = useState({
+        start: new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0], // Start of current month
+        end: new Date().toISOString().split('T')[0] // Today
+    });
+
+    // Modal
+    const [showAddModal, setShowAddModal] = useState(false);
+    const [editingId, setEditingId] = useState<string | null>(null);
+    const [formData, setFormData] = useState({
+        transaction_date: new Date().toISOString().split('T')[0],
         description: "",
-        category: "supplies",
-        amount: "",
+        category: "others",
+        amount: 0,
+        is_expense: true,
+        proof_link: ""
     });
 
-    // Calculate stats
-    const totalTopUp = mockTransactions.filter(t => t.type === "topup").reduce((sum, t) => sum + t.amount, 0);
-    const totalExpense = mockTransactions.filter(t => t.type === "expense").reduce((sum, t) => sum + t.amount, 0);
-    const currentBalance = totalTopUp - totalExpense;
+    // Access Control for Top Up
+    const canTopUp = useMemo(() => {
+        if (!profile) return false;
+        return ['super_admin', 'ceo'].includes(profile.role) ||
+            ['Office Manager', 'Head of Operations'].includes(profile.job_title || "") ||
+            profile.department === 'Finance';
+    }, [profile]);
 
-    // Filter transactions
-    const filteredTransactions = mockTransactions.filter((tx) => {
-        const matchCategory = selectedCategory === "all" || tx.category === selectedCategory || (selectedCategory === "topup" && tx.type === "topup");
-        const matchSearch = tx.description.toLowerCase().includes(searchQuery.toLowerCase()) || tx.staff.toLowerCase().includes(searchQuery.toLowerCase());
-        return matchCategory && matchSearch;
-    });
+    // --- FETCH DATA ---
 
-    const getCategoryConfig = (id: string) => EXPENSE_CATEGORIES.find(c => c.id === id);
+    useEffect(() => {
+        if (!authLoading) {
+            fetchTransactions();
+        }
+    }, [authLoading]);
 
-    const handleAddExpense = () => {
-        // In real app, save to database
-        setShowAddModal(false);
-        setNewExpense({ date: "", description: "", category: "supplies", amount: "" });
+    const fetchTransactions = async () => {
+        setIsLoading(true);
+        try {
+            const { data, error } = await supabase
+                .from("petty_cash_transactions")
+                .select("*")
+                .order("transaction_date", { ascending: false })
+                .order("created_at", { ascending: false });
+
+            if (error) throw error;
+            setTransactions(data || []);
+        } catch (error) {
+            console.error("Error fetching transactions:", error);
+        } finally {
+            setIsLoading(false);
+        }
     };
 
+    // --- HANDLERS ---
+
+    const handleSaveTransaction = async (e: React.FormEvent) => {
+        e.preventDefault();
+        if (!profile) return;
+
+        try {
+            // Force category to 'topup' if it's income
+            const category = !formData.is_expense ? 'topup' : formData.category;
+
+            const payload = {
+                transaction_date: formData.transaction_date,
+                description: formData.description,
+                category: category,
+                amount: formData.amount,
+                is_expense: formData.is_expense,
+                proof_link: formData.proof_link || null,
+            };
+
+            if (editingId) {
+                // Update existing
+                const { error } = await supabase
+                    .from("petty_cash_transactions")
+                    .update(payload)
+                    .eq("id", editingId);
+
+                if (error) throw error;
+            } else {
+                // Insert new
+                const { error } = await supabase
+                    .from("petty_cash_transactions")
+                    .insert({
+                        ...payload,
+                        created_by: profile.id
+                    });
+
+                if (error) throw error;
+            }
+
+            closeModal();
+            fetchTransactions();
+
+        } catch (error) {
+            console.error("Error saving transaction:", error);
+            alert("Failed to save transaction. Check your permissions.");
+        }
+    };
+
+    const handleEdit = (t: Transaction) => {
+        setEditingId(t.id);
+        setFormData({
+            transaction_date: t.transaction_date,
+            description: t.description,
+            category: t.category,
+            amount: t.amount,
+            is_expense: t.is_expense,
+            proof_link: t.proof_link || ""
+        });
+        setShowAddModal(true);
+    };
+
+    const closeModal = () => {
+        setShowAddModal(false);
+        setEditingId(null);
+        setFormData({
+            transaction_date: new Date().toISOString().split('T')[0],
+            description: "",
+            category: "others",
+            amount: 0,
+            is_expense: true,
+            proof_link: ""
+        });
+    };
+
+    const handleDelete = async (id: string) => {
+        if (!confirm("Are you sure you want to delete this transaction? This action cannot be undone.")) return;
+
+        try {
+            const { error } = await supabase
+                .from("petty_cash_transactions")
+                .delete()
+                .eq("id", id);
+
+            if (error) throw error;
+            fetchTransactions();
+        } catch (error) {
+            console.error("Error deleting transaction:", error);
+            alert("Failed to delete transaction. You may not have permission.");
+        }
+    };
+
+    const handleExport = () => {
+        const exportData = filteredTransactions.map(t => ({
+            "Date": t.transaction_date,
+            "Type": t.is_expense ? "Expense" : "Income",
+            "Category": CATEGORY_CONFIG[t.category]?.label || t.category,
+            "Description": t.description,
+            "Amount": t.amount,
+            "Proof Link": t.proof_link || "-"
+        }));
+
+        const workbook = XLSX.utils.book_new();
+        const worksheet = XLSX.utils.json_to_sheet(exportData);
+        XLSX.utils.book_append_sheet(workbook, worksheet, "Petty Cash");
+        const excelBuffer = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
+        const data = new Blob([excelBuffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;charset=UTF-8' });
+        saveAs(data, `petty_cash_${new Date().toISOString().split('T')[0]}.xlsx`);
+    };
+
+    // --- COMPUTED DATA ---
+
+    const filteredTransactions = useMemo(() => {
+        return transactions.filter(t => {
+            const matchSearch = t.description?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                t.category.toLowerCase().includes(searchQuery.toLowerCase());
+            const matchCategory = !filterCategory || t.category === filterCategory;
+
+            // Date Range Filter
+            const tDate = new Date(t.transaction_date);
+            const startDate = dateRange.start ? new Date(dateRange.start) : null;
+            const endDate = dateRange.end ? new Date(dateRange.end) : null;
+
+            let matchDate = true;
+            if (startDate) matchDate = matchDate && tDate >= startDate;
+            if (endDate) matchDate = matchDate && tDate <= endDate;
+
+            return matchSearch && matchCategory && matchDate;
+        });
+    }, [transactions, searchQuery, filterCategory, dateRange]);
+
+    const stats = useMemo(() => {
+        // Balance is calculating from ALL time, not just filtered view, to be accurate
+        const totalIncome = transactions
+            .filter(t => !t.is_expense)
+            .reduce((sum, t) => sum + t.amount, 0);
+
+        const totalExpense = transactions
+            .filter(t => t.is_expense)
+            .reduce((sum, t) => sum + t.amount, 0);
+
+        // Filtered stats for the current view (likely current month)
+        const viewIncome = filteredTransactions
+            .filter(t => !t.is_expense)
+            .reduce((sum, t) => sum + t.amount, 0);
+
+        const viewExpense = filteredTransactions
+            .filter(t => t.is_expense)
+            .reduce((sum, t) => sum + t.amount, 0);
+
+        return {
+            balance: totalIncome - totalExpense,
+            viewIncome,
+            viewExpense
+        };
+    }, [transactions, filteredTransactions]);
+
+    const chartData = useMemo(() => {
+        // Daily Expenses
+        const dailyMap = new Map<string, number>();
+        filteredTransactions.filter(t => t.is_expense).forEach(t => {
+            const date = t.transaction_date; // Assuming YYYY-MM-DD
+            dailyMap.set(date, (dailyMap.get(date) || 0) + t.amount);
+        });
+
+        // Convert to array and sort by date
+        const dailyData = Array.from(dailyMap.entries())
+            .map(([date, amount]) => ({ date, amount }))
+            .sort((a, b) => a.date.localeCompare(b.date));
+
+        // Category Composition
+        const catMap = new Map<string, number>();
+        filteredTransactions.filter(t => t.is_expense).forEach(t => {
+            catMap.set(t.category, (catMap.get(t.category) || 0) + t.amount);
+        });
+
+        const categoryData = Array.from(catMap.entries())
+            .map(([name, value]) => ({
+                name: CATEGORY_CONFIG[name]?.label || name,
+                value,
+                color: CATEGORY_CONFIG[name]?.color || "#6b7280"
+            }));
+
+        return { dailyData, categoryData };
+    }, [filteredTransactions]);
+
+    // Formatter
+    const formatCurrency = (val: number) => {
+        return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(val);
+    };
+
+    if (authLoading || isLoading) {
+        return (
+            <div className="flex items-center justify-center h-64">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#e8c559]"></div>
+            </div>
+        );
+    }
+
     return (
-        <div className="flex flex-col h-full overflow-auto">
-            {/* Page Header */}
-            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
-                <div>
-                    <div className="flex items-center gap-2 text-sm text-[var(--text-muted)] mb-1">
-                        <Link href="/dashboard/operational" className="hover:text-[#e8c559]">Operasional</Link>
-                        <span>/</span>
-                        <span className="text-[var(--text-primary)]">Petty Cash</span>
+        <div className="flex flex-col h-full space-y-6">
+
+            {/* --- HEADER --- */}
+            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                <div className="flex items-center gap-4">
+                    <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center shadow-lg shadow-emerald-500/20">
+                        <Wallet className="h-6 w-6 text-white" />
                     </div>
-                    <div className="flex items-center gap-3">
-                        <span className="text-3xl">💵</span>
-                        <h2 className="text-3xl font-bold tracking-tight text-[var(--text-primary)]">Petty Cash</h2>
+                    <div>
+                        <div className="flex items-center gap-2 mb-1 text-sm text-[var(--text-secondary)]">
+                            <Link href="/dashboard" className="hover:text-[var(--text-primary)]">Dashboard</Link>
+                            <ChevronRight className="h-4 w-4" />
+                            <Link href="/dashboard/operational" className="hover:text-[var(--text-primary)]">Operational</Link>
+                            <ChevronRight className="h-4 w-4" />
+                            <span className="text-[var(--text-primary)]">Petty Cash</span>
+                        </div>
+                        <h1 className="text-2xl font-bold text-[var(--text-primary)]">Petty Cash Management</h1>
                     </div>
-                    <p className="text-[var(--text-secondary)] text-sm mt-1">Kelola dan catat pengeluaran petty cash kantor.</p>
                 </div>
+
                 <div className="flex items-center gap-3">
                     <button
+                        onClick={handleExport}
+                        className="flex items-center gap-2 px-4 py-2 rounded-xl text-[var(--text-secondary)] hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
+                    >
+                        <FileDown className="h-4 w-4" />
+                        <span className="hidden sm:inline">Export</span>
+                    </button>
+                    <button
                         onClick={() => setShowAddModal(true)}
-                        className="h-10 px-5 rounded-lg bg-[#e8c559] hover:bg-[#dcb33e] text-[#171611] text-sm font-bold transition-colors flex items-center gap-2"
+                        className="flex items-center gap-2 px-4 py-2 rounded-xl bg-[#e8c559] text-[#171611] font-bold hover:bg-[#d4b44e] transition-colors shadow-lg shadow-amber-500/20"
                     >
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 24 24" fill="currentColor">
-                            <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z" />
-                        </svg>
-                        Catat Pengeluaran
+                        <Plus className="h-4 w-4" />
+                        Add Transaction
                     </button>
                 </div>
             </div>
 
-            {/* Balance Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-                <div className="glass-panel p-5 rounded-xl bg-gradient-to-br from-[#e8c559]/10 to-[#b89530]/10 border-[#e8c559]/30">
-                    <div className="flex items-center justify-between mb-2">
-                        <span className="text-xs text-[var(--text-muted)]">Saldo Saat Ini</span>
-                        <span className="text-lg">💰</span>
+            {/* --- STATS CARDS --- */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                {/* Balance */}
+                <div className="glass-panel p-6 rounded-2xl border border-blue-500/20 bg-blue-500/5 relative overflow-hidden shadow-sm">
+                    <div className="absolute top-0 right-0 p-4 opacity-10">
+                        <Wallet className="w-24 h-24 text-blue-500" />
                     </div>
-                    <p className="text-3xl font-bold text-[#e8c559]">{formatCurrency(currentBalance)}</p>
-                    <p className="text-xs text-[var(--text-muted)] mt-2">Last top-up: 1 Dec 2024</p>
+                    <div className="relative z-10">
+                        <p className="text-blue-600 dark:text-blue-400 text-sm font-bold uppercase tracking-wider mb-2">Current Balance</p>
+                        <div className="flex items-baseline gap-2">
+                            <span className="text-3xl font-black text-[var(--text-primary)]">{formatCurrency(stats.balance)}</span>
+                        </div>
+                        <p className="text-xs text-[var(--text-secondary)] mt-1">Lifetime calculation</p>
+                    </div>
                 </div>
 
-                <div className="glass-panel p-5 rounded-xl">
-                    <div className="flex items-center justify-between mb-2">
-                        <span className="text-xs text-[var(--text-muted)]">Total Modal (Dec)</span>
-                        <span className="text-lg">📥</span>
+                {/* Total Income (View) */}
+                <div className="glass-panel p-6 rounded-2xl border border-emerald-500/20 bg-emerald-500/5 relative overflow-hidden shadow-sm">
+                    <div className="absolute top-0 right-0 p-4 opacity-10">
+                        <ArrowDownCircle className="w-24 h-24 text-emerald-500" />
                     </div>
-                    <p className="text-3xl font-bold text-emerald-500">{formatCurrency(totalTopUp)}</p>
+                    <div className="relative z-10">
+                        <p className="text-emerald-600 dark:text-emerald-400 text-sm font-bold uppercase tracking-wider mb-2">Income (Period)</p>
+                        <div className="flex items-baseline gap-2">
+                            <span className="text-3xl font-black text-[var(--text-primary)]">{formatCurrency(stats.viewIncome)}</span>
+                        </div>
+                        <p className="text-xs text-[var(--text-secondary)] mt-1">Based on active filters</p>
+                    </div>
                 </div>
 
-                <div className="glass-panel p-5 rounded-xl">
-                    <div className="flex items-center justify-between mb-2">
-                        <span className="text-xs text-[var(--text-muted)]">Total Pengeluaran (Dec)</span>
-                        <span className="text-lg">📤</span>
+                {/* Total Expense (View) */}
+                <div className="glass-panel p-6 rounded-2xl border border-rose-500/20 bg-rose-500/5 relative overflow-hidden shadow-sm">
+                    <div className="absolute top-0 right-0 p-4 opacity-10">
+                        <ArrowUpCircle className="w-24 h-24 text-rose-500" />
                     </div>
-                    <p className="text-3xl font-bold text-rose-500">{formatCurrency(totalExpense)}</p>
+                    <div className="relative z-10">
+                        <p className="text-rose-600 dark:text-rose-400 text-sm font-bold uppercase tracking-wider mb-2">Expense (Period)</p>
+                        <div className="flex items-baseline gap-2">
+                            <span className="text-3xl font-black text-[var(--text-primary)]">{formatCurrency(stats.viewExpense)}</span>
+                        </div>
+                        <p className="text-xs text-[var(--text-secondary)] mt-1">Based on active filters</p>
+                    </div>
                 </div>
             </div>
 
-            {/* Filters */}
-            <div className="flex flex-wrap items-center gap-3 mb-6">
-                <div className="relative flex-1 max-w-xs">
-                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-[var(--text-muted)]" viewBox="0 0 24 24" fill="currentColor">
-                            <path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z" />
-                        </svg>
+            {/* --- CHARTS --- */}
+            {filteredTransactions.length > 0 && (
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    {/* Trend Chart */}
+                    <div className="bg-white dark:bg-[#1c2120] rounded-2xl p-6 border border-[var(--glass-border)] shadow-sm">
+                        <h3 className="text-lg font-bold text-[var(--text-primary)] mb-6">Expense Trend</h3>
+                        <div className="h-[300px] w-full">
+                            <ResponsiveContainer width="100%" height="100%">
+                                <BarChart data={chartData.dailyData}>
+                                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="var(--glass-border)" />
+                                    <XAxis
+                                        dataKey="date"
+                                        tick={{ fontSize: 12, fill: 'var(--text-secondary)' }}
+                                        tickLine={false}
+                                        axisLine={false}
+                                        tickFormatter={(val) => new Date(val).toLocaleDateString('id-ID', { day: '2-digit', month: 'short' })}
+                                    />
+                                    <YAxis
+                                        tick={{ fontSize: 12, fill: 'var(--text-secondary)' }}
+                                        tickLine={false}
+                                        axisLine={false}
+                                        tickFormatter={(val) => `Rp${val / 1000}k`}
+                                    />
+                                    <Tooltip
+                                        contentStyle={{ backgroundColor: 'var(--glass-bg)', borderRadius: '12px', border: '1px solid var(--glass-border)', color: 'var(--text-primary)' }}
+                                        formatter={(val: any) => [formatCurrency(Number(val || 0)), 'Amount'] as [string, string]}
+                                        labelFormatter={(label) => new Date(label).toLocaleDateString('id-ID', { dateStyle: 'full' })}
+                                    />
+                                    <Bar dataKey="amount" fill="#f97316" radius={[4, 4, 0, 0]} />
+                                </BarChart>
+                            </ResponsiveContainer>
+                        </div>
                     </div>
-                    <input
-                        type="text"
-                        placeholder="Cari transaksi..."
-                        value={searchQuery}
-                        onChange={(e) => setSearchQuery(e.target.value)}
-                        className="w-full pl-10 pr-4 py-2 rounded-lg border border-[var(--glass-border)] bg-[var(--card-bg)] text-sm text-[var(--text-primary)]"
-                    />
-                </div>
 
-                <div className="flex flex-wrap gap-2">
-                    <button
-                        onClick={() => setSelectedCategory("all")}
-                        className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all ${selectedCategory === "all"
-                                ? "bg-[#e8c559] text-[#171611]"
-                                : "bg-[var(--glass-bg)] text-[var(--text-secondary)] hover:bg-[var(--glass-border)]"
-                            }`}
+                    {/* Composition Chart */}
+                    <div className="bg-white dark:bg-[#1c2120] rounded-2xl p-6 border border-[var(--glass-border)] shadow-sm">
+                        <h3 className="text-lg font-bold text-[var(--text-primary)] mb-6">Expense By Category</h3>
+                        <div className="h-[300px] w-full flex items-center justify-center">
+                            <ResponsiveContainer width="100%" height="100%">
+                                <PieChart>
+                                    <Pie
+                                        data={chartData.categoryData}
+                                        innerRadius={60}
+                                        outerRadius={100}
+                                        paddingAngle={5}
+                                        dataKey="value"
+                                    >
+                                        {chartData.categoryData.map((entry, index) => (
+                                            <Cell key={`cell-${index}`} fill={entry.color} />
+                                        ))}
+                                    </Pie>
+                                    <Tooltip
+                                        contentStyle={{ backgroundColor: 'var(--glass-bg)', borderRadius: '12px', border: '1px solid var(--glass-border)', color: 'var(--text-primary)' }}
+                                        formatter={(val: any) => formatCurrency(Number(val || 0))}
+                                    />
+                                    <Legend
+                                        verticalAlign="bottom"
+                                        height={36}
+                                        iconType="circle"
+                                        formatter={(val) => <span style={{ color: 'var(--text-secondary)', fontSize: '12px' }}>{val}</span>}
+                                    />
+                                </PieChart>
+                            </ResponsiveContainer>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+
+            {/* --- CONTROLS --- */}
+            <div className="flex flex-col md:flex-row justify-between items-center gap-4 bg-white dark:bg-[#1c2120] p-4 rounded-2xl border border-[var(--glass-border)]">
+                <div className="flex flex-wrap flex-1 gap-3 w-full">
+                    {/* Search */}
+                    <div className="relative flex-1 min-w-[200px]">
+                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-[var(--text-muted)]" />
+                        <input
+                            type="text"
+                            placeholder="Search description..."
+                            value={searchQuery}
+                            onChange={(e) => setSearchQuery(e.target.value)}
+                            className="w-full pl-10 pr-4 py-2 rounded-xl border border-[var(--glass-border)] bg-[var(--glass-bg)] text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-[#e8c559]"
+                        />
+                    </div>
+
+                    {/* Category Filter */}
+                    <select
+                        value={filterCategory}
+                        onChange={(e) => setFilterCategory(e.target.value)}
+                        className="px-4 py-2 rounded-xl border border-[var(--glass-border)] bg-[var(--glass-bg)] text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-[#e8c559]"
                     >
-                        Semua
-                    </button>
-                    <button
-                        onClick={() => setSelectedCategory("topup")}
-                        className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all ${selectedCategory === "topup"
-                                ? "bg-emerald-500 text-white"
-                                : "bg-[var(--glass-bg)] text-[var(--text-secondary)] hover:bg-[var(--glass-border)]"
-                            }`}
-                    >
-                        📥 Top Up
-                    </button>
-                    {EXPENSE_CATEGORIES.map((cat) => (
-                        <button
-                            key={cat.id}
-                            onClick={() => setSelectedCategory(cat.id)}
-                            className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all ${selectedCategory === cat.id
-                                    ? `${cat.color} text-white`
-                                    : "bg-[var(--glass-bg)] text-[var(--text-secondary)] hover:bg-[var(--glass-border)]"
-                                }`}
-                        >
-                            {cat.icon} {cat.label}
-                        </button>
-                    ))}
+                        <option value="">All Categories</option>
+                        {Object.entries(CATEGORY_CONFIG).map(([key, config]) => (
+                            <option key={key} value={key}>{config.label}</option>
+                        ))}
+                    </select>
+
+                    {/* Date Range */}
+                    <div className="flex items-center gap-2">
+                        <input
+                            type="date"
+                            value={dateRange.start}
+                            onChange={(e) => setDateRange({ ...dateRange, start: e.target.value })}
+                            className="px-4 py-2 rounded-xl border border-[var(--glass-border)] bg-[var(--glass-bg)] text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-[#e8c559]"
+                        />
+                        <span className="text-[var(--text-secondary)]">-</span>
+                        <input
+                            type="date"
+                            value={dateRange.end}
+                            onChange={(e) => setDateRange({ ...dateRange, end: e.target.value })}
+                            className="px-4 py-2 rounded-xl border border-[var(--glass-border)] bg-[var(--glass-bg)] text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-[#e8c559]"
+                        />
+                    </div>
                 </div>
             </div>
 
-            {/* Transaction List */}
-            <div className="glass-panel rounded-xl overflow-hidden flex-1">
+            {/* --- TABLE --- */}
+
+            <div className="bg-white dark:bg-[#1c2120] rounded-2xl border border-[var(--glass-border)] overflow-hidden">
                 <div className="overflow-x-auto">
-                    <table className="w-full text-sm">
-                        <thead>
-                            <tr className="text-left text-[var(--text-muted)] border-b border-[var(--glass-border)] bg-[var(--glass-bg)]">
-                                <th className="p-4 font-medium">Tanggal</th>
-                                <th className="p-4 font-medium">Deskripsi</th>
-                                <th className="p-4 font-medium">Kategori</th>
-                                <th className="p-4 font-medium">Staff</th>
-                                <th className="p-4 font-medium text-right">Jumlah</th>
+                    <table className="w-full text-sm text-left">
+                        <thead className="bg-[var(--glass-bg)] border-b border-[var(--glass-border)] text-[var(--text-secondary)]">
+                            <tr>
+                                <th className="px-6 py-4 font-semibold">Date</th>
+                                <th className="px-6 py-4 font-semibold">Description</th>
+                                <th className="px-6 py-4 font-semibold">Category</th>
+                                <th className="px-6 py-4 font-semibold">Proof</th>
+                                <th className="px-6 py-4 font-semibold text-right">Amount</th>
+                                <th className="px-6 py-4 font-semibold text-right">Actions</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-[var(--glass-border)]">
-                            {filteredTransactions.map((tx) => {
-                                const config = getCategoryConfig(tx.category);
-                                const isTopUp = tx.type === "topup";
-                                return (
-                                    <tr key={tx.id} className="hover:bg-black/5 dark:hover:bg-white/5 transition-colors">
-                                        <td className="p-4 text-[var(--text-secondary)]">
-                                            {new Date(tx.date).toLocaleDateString("id-ID", { day: "numeric", month: "short", year: "numeric" })}
-                                        </td>
-                                        <td className="p-4 text-[var(--text-primary)] font-medium">{tx.description}</td>
-                                        <td className="p-4">
-                                            {isTopUp ? (
-                                                <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs bg-emerald-500/10 text-emerald-500">
-                                                    📥 Top Up
-                                                </span>
-                                            ) : (
-                                                <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs ${config?.color}/10`}>
-                                                    {config?.icon} {config?.label}
-                                                </span>
-                                            )}
-                                        </td>
-                                        <td className="p-4">
-                                            <div className="flex items-center gap-2">
-                                                <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold ${isTopUp ? "bg-emerald-500/20 text-emerald-500" : "bg-[#e8c559]/20 text-[#e8c559]"}`}>
-                                                    {tx.staff.split(" ").map(n => n[0]).join("")}
+                            {filteredTransactions.length === 0 ? (
+                                <tr>
+                                    <td colSpan={6} className="px-6 py-8 text-center text-[var(--text-secondary)]">
+                                        No transactions found.
+                                    </td>
+                                </tr>
+                            ) : (
+                                filteredTransactions.map(t => {
+                                    const CategoryIcon = CATEGORY_CONFIG[t.category]?.icon || Box;
+                                    return (
+                                        <tr key={t.id} className="hover:bg-[var(--glass-bg)] transition-colors">
+                                            <td className="px-6 py-4 text-[var(--text-secondary)] whitespace-nowrap">
+                                                {new Date(t.transaction_date).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })}
+                                            </td>
+                                            <td className="px-6 py-4 font-medium text-[var(--text-primary)]">
+                                                {t.description || "-"}
+                                            </td>
+                                            <td className="px-6 py-4">
+                                                <div className="flex items-center gap-2">
+                                                    <div className="p-1.5 rounded-lg" style={{ backgroundColor: `${CATEGORY_CONFIG[t.category]?.color}20` }}>
+                                                        <CategoryIcon className="h-4 w-4" style={{ color: CATEGORY_CONFIG[t.category]?.color }} />
+                                                    </div>
+                                                    <span>{CATEGORY_CONFIG[t.category]?.label}</span>
                                                 </div>
-                                                <span className="text-[var(--text-secondary)]">{tx.staff}</span>
-                                            </div>
-                                        </td>
-                                        <td className={`p-4 text-right font-bold ${isTopUp ? "text-emerald-500" : "text-rose-500"}`}>
-                                            {isTopUp ? "+" : "-"} {formatCurrency(tx.amount)}
-                                        </td>
-                                    </tr>
-                                );
-                            })}
+                                            </td>
+                                            <td className="px-6 py-4">
+                                                {t.proof_link ? (
+                                                    <a
+                                                        href={t.proof_link}
+                                                        target="_blank"
+                                                        rel="noopener noreferrer"
+                                                        className="inline-flex items-center gap-1 text-blue-500 hover:text-blue-600 hover:underline"
+                                                    >
+                                                        Link <ExternalLink className="h-3 w-3" />
+                                                    </a>
+                                                ) : (
+                                                    <span className="text-[var(--text-muted)]">-</span>
+                                                )}
+                                            </td>
+                                            <td className={`px-6 py-4 text-right font-bold ${t.is_expense ? 'text-red-500' : 'text-emerald-500'}`}>
+                                                {t.is_expense ? '-' : '+'}{formatCurrency(t.amount)}
+                                            </td>
+                                            <td className="px-6 py-4 text-right">
+
+                                                <div className="flex items-center justify-end gap-1">
+                                                    {/* Only Admin/CEO/Manager can edit/delete, OR created_by if we allowed it (but currrently RLS is restricted) */}
+                                                    {canTopUp && (
+                                                        <>
+                                                            <button
+                                                                onClick={() => handleEdit(t)}
+                                                                className="text-gray-400 hover:text-[#e8c559] transition-colors p-2 rounded-lg hover:bg-[#e8c559]/10"
+                                                            >
+                                                                <Pencil className="h-4 w-4" />
+                                                            </button>
+                                                            <button
+                                                                onClick={() => handleDelete(t.id)}
+                                                                className="text-gray-400 hover:text-red-500 transition-colors p-2 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/10"
+                                                            >
+                                                                <Trash2 className="h-4 w-4" />
+                                                            </button>
+                                                        </>
+                                                    )}
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    );
+                                })
+                            )}
                         </tbody>
                     </table>
                 </div>
             </div>
 
-            {/* Add Expense Modal */}
+            {/* --- ADD MODAL --- */}
             {showAddModal && (
-                <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-                    <div className="glass-panel w-full max-w-lg rounded-2xl p-6">
-                        <div className="flex justify-between items-center mb-6">
-                            <h2 className="text-xl font-bold text-[var(--text-primary)]">Catat Pengeluaran</h2>
-                            <button
-                                onClick={() => setShowAddModal(false)}
-                                className="p-2 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 text-[var(--text-muted)]"
-                            >
-                                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 24 24" fill="currentColor">
-                                    <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" />
-                                </svg>
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+                    <div className="w-full max-w-lg bg-white dark:bg-[#1c2120] rounded-2xl shadow-2xl max-h-[90vh] overflow-y-auto">
+                        <div className="flex items-center justify-between p-6 border-b border-[var(--glass-border)]">
+                            <h2 className="text-xl font-bold text-[var(--text-primary)]">{editingId ? 'Edit Transaction' : 'Add Transaction'}</h2>
+                            <button onClick={closeModal} className="p-2 rounded-lg hover:bg-black/10 dark:hover:bg-white/10">
+                                <Plus className="h-5 w-5 rotate-45" />
                             </button>
                         </div>
 
-                        <div className="space-y-4">
+                        <form onSubmit={handleSaveTransaction} className="p-6 space-y-4">
+
+                            {/* Type Toggle - Only visible if canTopUp */}
+                            {canTopUp && (
+                                <div className="flex p-1 bg-[var(--glass-bg)] border border-[var(--glass-border)] rounded-xl mb-4">
+                                    <button
+                                        type="button"
+                                        onClick={() => setFormData({ ...formData, is_expense: true })}
+                                        className={`flex-1 py-2 text-sm font-bold rounded-lg transition-all ${formData.is_expense
+                                            ? "bg-red-500 text-white shadow"
+                                            : "text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+                                            }`}
+                                    >
+                                        Expense
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => setFormData({ ...formData, is_expense: false, category: 'topup' })}
+                                        className={`flex-1 py-2 text-sm font-bold rounded-lg transition-all ${!formData.is_expense
+                                            ? "bg-emerald-500 text-white shadow"
+                                            : "text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+                                            }`}
+                                    >
+                                        Income / Top Up
+                                    </button>
+                                </div>
+                            )}
+
                             <div>
-                                <label className="block text-sm font-medium text-[var(--text-secondary)] mb-1">Tanggal</label>
+                                <label className="block text-sm font-bold text-[var(--text-primary)] mb-1">Date *</label>
                                 <input
                                     type="date"
-                                    value={newExpense.date}
-                                    onChange={(e) => setNewExpense({ ...newExpense, date: e.target.value })}
-                                    className="w-full p-3 rounded-lg border border-[var(--glass-border)] bg-[var(--card-bg)] text-[var(--text-primary)]"
+                                    required
+                                    value={formData.transaction_date}
+                                    onChange={e => setFormData({ ...formData, transaction_date: e.target.value })}
+                                    className="w-full px-4 py-2 rounded-xl border border-[var(--glass-border)] bg-[var(--glass-bg)] text-[var(--text-primary)]"
+                                />
+                            </div>
+
+                            {/* Category - Hidden if Income */}
+                            {formData.is_expense && (
+                                <div>
+                                    <label className="block text-sm font-bold text-[var(--text-primary)] mb-1">Category *</label>
+                                    <select
+                                        value={formData.category}
+                                        onChange={e => setFormData({ ...formData, category: e.target.value })}
+                                        className="w-full px-4 py-2 rounded-xl border border-[var(--glass-border)] bg-[var(--glass-bg)] text-[var(--text-primary)]"
+                                    >
+                                        {Object.entries(CATEGORY_CONFIG)
+                                            .filter(([key]) => key !== 'topup')
+                                            .map(([key, config]) => (
+                                                <option key={key} value={key}>{config.label}</option>
+                                            ))}
+                                    </select>
+                                </div>
+                            )}
+
+                            <div>
+                                <label className="block text-sm font-bold text-[var(--text-primary)] mb-1">Amount (IDR) *</label>
+                                <input
+                                    type="number"
+                                    required
+                                    min="1"
+                                    value={formData.amount || ""}
+                                    onChange={e => setFormData({ ...formData, amount: Number(e.target.value) })}
+                                    className="w-full px-4 py-2 rounded-xl border border-[var(--glass-border)] bg-[var(--glass-bg)] text-[var(--text-primary)]"
+                                />
+                                {formData.amount > 0 && (
+                                    <p className="text-xs text-[#e8c559] mt-1 font-mono">
+                                        {formatCurrency(formData.amount)}
+                                    </p>
+                                )}
+                            </div>
+
+                            <div>
+                                <label className="block text-sm font-bold text-[var(--text-primary)] mb-1">Description *</label>
+                                <textarea
+                                    required
+                                    rows={3}
+                                    value={formData.description}
+                                    onChange={e => setFormData({ ...formData, description: e.target.value })}
+                                    className="w-full px-4 py-2 rounded-xl border border-[var(--glass-border)] bg-[var(--glass-bg)] text-[var(--text-primary)] resize-none"
+                                    placeholder={formData.is_expense ? "e.g. Taxi to Client Meeting" : "e.g. Petty Cash Top Up"}
                                 />
                             </div>
 
                             <div>
-                                <label className="block text-sm font-medium text-[var(--text-secondary)] mb-1">Deskripsi</label>
-                                <input
-                                    type="text"
-                                    value={newExpense.description}
-                                    onChange={(e) => setNewExpense({ ...newExpense, description: e.target.value })}
-                                    className="w-full p-3 rounded-lg border border-[var(--glass-border)] bg-[var(--card-bg)] text-[var(--text-primary)]"
-                                    placeholder="Beli ATK - Kertas A4"
-                                />
-                            </div>
-
-                            <div className="grid grid-cols-2 gap-4">
-                                <div>
-                                    <label className="block text-sm font-medium text-[var(--text-secondary)] mb-1">Kategori</label>
-                                    <select
-                                        value={newExpense.category}
-                                        onChange={(e) => setNewExpense({ ...newExpense, category: e.target.value })}
-                                        className="w-full p-3 rounded-lg border border-[var(--glass-border)] bg-[var(--card-bg)] text-[var(--text-primary)]"
-                                    >
-                                        {EXPENSE_CATEGORIES.map((cat) => (
-                                            <option key={cat.id} value={cat.id}>{cat.icon} {cat.label}</option>
-                                        ))}
-                                    </select>
-                                </div>
-                                <div>
-                                    <label className="block text-sm font-medium text-[var(--text-secondary)] mb-1">Jumlah (Rp)</label>
+                                <label className="block text-sm font-bold text-[var(--text-primary)] mb-1">Google Drive Proof Link</label>
+                                <div className="flex items-center gap-2">
+                                    <Paperclip className="h-4 w-4 text-[var(--text-secondary)]" />
                                     <input
-                                        type="number"
-                                        value={newExpense.amount}
-                                        onChange={(e) => setNewExpense({ ...newExpense, amount: e.target.value })}
-                                        className="w-full p-3 rounded-lg border border-[var(--glass-border)] bg-[var(--card-bg)] text-[var(--text-primary)]"
-                                        placeholder="125000"
+                                        type="url"
+                                        value={formData.proof_link}
+                                        onChange={e => setFormData({ ...formData, proof_link: e.target.value })}
+                                        className="w-full px-4 py-2 rounded-xl border border-[var(--glass-border)] bg-[var(--glass-bg)] text-[var(--text-primary)]"
+                                        placeholder="https://drive.google.com/..."
                                     />
                                 </div>
                             </div>
 
-                            <div>
-                                <label className="block text-sm font-medium text-[var(--text-secondary)] mb-1">Upload Bukti (Opsional)</label>
-                                <div className="border-2 border-dashed border-[var(--glass-border)] rounded-lg p-4 text-center cursor-pointer hover:border-[#e8c559]/50 transition-colors">
-                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 mx-auto text-[var(--text-muted)] mb-2" viewBox="0 0 24 24" fill="currentColor">
-                                        <path d="M19.35 10.04C18.67 6.59 15.64 4 12 4 9.11 4 6.6 5.64 5.35 8.04 2.34 8.36 0 10.91 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96zM14 13v4h-4v-4H7l5-5 5 5h-3z" />
-                                    </svg>
-                                    <p className="text-xs text-[var(--text-muted)]">Klik atau drag foto struk/nota</p>
-                                </div>
-                            </div>
-
-                            {/* Preview */}
-                            {newExpense.amount && (
-                                <div className="p-4 rounded-lg bg-rose-500/10 border border-rose-500/20">
-                                    <p className="text-sm text-[var(--text-secondary)]">Pengeluaran:</p>
-                                    <p className="text-2xl font-bold text-rose-500">- {formatCurrency(parseFloat(newExpense.amount) || 0)}</p>
-                                    <p className="text-xs text-[var(--text-muted)] mt-1">
-                                        Saldo setelah transaksi: {formatCurrency(currentBalance - (parseFloat(newExpense.amount) || 0))}
-                                    </p>
-                                </div>
-                            )}
-
-                            <div className="flex gap-3 mt-6">
+                            <div className="flex justify-end gap-3 pt-4 border-t border-[var(--glass-border)]">
                                 <button
-                                    onClick={() => setShowAddModal(false)}
-                                    className="flex-1 px-4 py-3 rounded-lg border border-[var(--glass-border)] text-[var(--text-secondary)] font-medium"
+                                    type="button"
+                                    onClick={closeModal}
+                                    className="px-4 py-2 rounded-xl text-[var(--text-secondary)] hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
                                 >
-                                    Batal
+                                    Cancel
                                 </button>
                                 <button
-                                    onClick={handleAddExpense}
-                                    className="flex-1 px-4 py-3 rounded-lg bg-[#e8c559] hover:bg-[#dcb33e] text-[#171611] font-bold"
+                                    type="submit"
+                                    className="px-6 py-2 rounded-xl bg-[#e8c559] text-[#171611] font-bold hover:bg-[#d4b44e] transition-colors"
                                 >
-                                    Simpan
+                                    Save Transaction
                                 </button>
                             </div>
-                        </div>
+
+                        </form>
                     </div>
                 </div>
             )}
+
         </div>
     );
 }

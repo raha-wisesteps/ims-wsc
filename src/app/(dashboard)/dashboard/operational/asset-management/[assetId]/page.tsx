@@ -538,7 +538,7 @@ export default function AssetDetailPage() {
                                             <label className="text-[10px] uppercase text-[var(--text-secondary)] font-bold">Purchase Value</label>
                                             <input
                                                 type="number"
-                                                value={tempValues.purchase_value}
+                                                value={tempValues.purchase_value || ""}
                                                 onChange={(e) => setTempValues({ ...tempValues, purchase_value: Number(e.target.value) })}
                                                 className="w-full px-2 py-1 text-sm rounded-lg border border-[var(--glass-border)] bg-white dark:bg-[#1c2120] text-[var(--text-primary)]"
                                                 placeholder="Purchase Value"
@@ -553,7 +553,7 @@ export default function AssetDetailPage() {
                                             <label className="text-[10px] uppercase text-[var(--text-secondary)] font-bold">Existing Value</label>
                                             <input
                                                 type="number"
-                                                value={tempValues.existing_value}
+                                                value={tempValues.existing_value || ""}
                                                 onChange={(e) => setTempValues({ ...tempValues, existing_value: Number(e.target.value) })}
                                                 className="w-full px-2 py-1 text-sm rounded-lg border border-[var(--glass-border)] bg-white dark:bg-[#1c2120] text-[var(--text-primary)]"
                                                 placeholder="Existing Value"
@@ -763,7 +763,7 @@ export default function AssetDetailPage() {
                                 </div>
                                 <div>
                                     <label className="block text-sm font-bold mb-1">Purchase Value</label>
-                                    <input type="number" value={editForm.purchase_value || 0} onChange={e => setEditForm({ ...editForm, purchase_value: Number(e.target.value) })} className="w-full px-4 py-2 rounded-xl border border-[var(--glass-border)] bg-[var(--glass-bg)] text-[var(--text-primary)]" />
+                                    <input type="number" value={editForm.purchase_value || ""} onChange={e => setEditForm({ ...editForm, purchase_value: Number(e.target.value) })} className="w-full px-4 py-2 rounded-xl border border-[var(--glass-border)] bg-[var(--glass-bg)] text-[var(--text-primary)]" />
                                 </div>
                                 <div>
                                     <label className="block text-sm font-bold mb-1">Acquisition Date</label>

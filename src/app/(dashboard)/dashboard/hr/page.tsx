@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Users, UploadCloud, MessageSquare, LayoutDashboard, ArrowRight, Clock, ShieldAlert, Thermometer, History, Loader2, Calendar, MapPin } from "lucide-react";
+import { Users, UploadCloud, MessageSquare, LayoutDashboard, ArrowRight, Clock, ShieldAlert, Thermometer, History, Loader2, Calendar, MapPin, ChevronRight } from "lucide-react";
 import Link from "next/link";
 import { useAuth } from "@/contexts/AuthContext";
 import { createClient } from "@/lib/supabase/client";
@@ -150,9 +150,17 @@ export default function HRDashboardPage() {
             <header className="flex flex-col gap-4 md:flex-row md:items-end justify-between">
                 <div className="flex items-center gap-3">
                     <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-blue-600 to-blue-800 flex items-center justify-center shadow-lg shadow-blue-900/20">
-                        <LayoutDashboard className="w-6 h-6 text-white" />
+                        {/* Sidebar Icon match */}
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-white" viewBox="0 0 24 24" fill="currentColor">
+                            <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" />
+                        </svg>
                     </div>
                     <div>
+                        <div className="flex items-center gap-2 mb-1 text-sm text-[var(--text-secondary)]">
+                            <Link href="/dashboard" className="hover:text-[var(--text-primary)] transition-colors">Dashboard</Link>
+                            <ChevronRight className="h-4 w-4" />
+                            <span className="text-[var(--text-primary)]">Human Resource</span>
+                        </div>
                         <h1 className="text-2xl font-bold text-[var(--text-primary)]">Human Resource</h1>
                         <p className="text-sm text-[var(--text-secondary)]">
                             {isFullHR ? "Employee & Operations Management" : "Limited Access Mode"}

@@ -572,7 +572,7 @@ export default function AssetManagementPage() {
                                     <label className="block text-sm font-bold text-[var(--text-primary)] mb-1">Purchase Value</label>
                                     <input
                                         type="number"
-                                        value={formData.purchase_value}
+                                        value={formData.purchase_value || ""}
                                         onChange={e => setFormData({ ...formData, purchase_value: Number(e.target.value) })}
                                         className="w-full px-4 py-2 rounded-xl border border-[var(--glass-border)] bg-[var(--glass-bg)] text-[var(--text-primary)]"
                                         min="0"
@@ -588,7 +588,7 @@ export default function AssetManagementPage() {
                                     <label className="block text-sm font-bold text-[var(--text-primary)] mb-1">Existing Value</label>
                                     <input
                                         type="number"
-                                        value={formData.existing_value}
+                                        value={formData.existing_value || ""}
                                         onChange={e => setFormData({ ...formData, existing_value: Number(e.target.value) })}
                                         className="w-full px-4 py-2 rounded-xl border border-[var(--glass-border)] bg-[var(--glass-bg)] text-[var(--text-primary)]"
                                         min="0"
