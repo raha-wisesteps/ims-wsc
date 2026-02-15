@@ -3,48 +3,39 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ChevronLeft, FileSpreadsheet, Download, Calendar, Loader2, Trash2 } from "lucide-react";
+import { ChevronLeft, FileSpreadsheet, Download, Calendar, Loader2, Droplets, Trash2 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import * as XLSX from "xlsx";
 import { toast } from "sonner";
 
-// Types
-interface WeeklyReport {
+// Types matching DB
+interface WeeklyReportDB {
     id: string;
     week_start: string;
     week_end: string;
     submitted_at: string;
-    total_green_weight: number;
-    total_yellow_weight: number;
-    total_carbon: number;
-    // Configs
-    bin_capacity: number;
-    green_density: number;
-    yellow_density: number;
-    green_emission_factor: number;
-    yellow_emission_factor: number;
+    total_water_liters: number;
+    total_carbon_kg: number;
+    // Snapshot configs
+    hand_wash_freq: number;
+    hand_wash_vol: number;
+    toilet_flush_freq: number;
+    toilet_flush_vol: number;
+    emission_factor: number;
 }
 
-interface WasteLog {
+interface WaterLog {
     date: string;
-    green_status: string;
-    green_note: string | null;
-    yellow_status: string;
-    yellow_note: string | null;
+    employee_count: number;
+    is_holiday: boolean;
+    total_water_liters: number;
+    carbon_emission: number;
+    notes: string | null;
 }
 
-// Default Configuration (Fallback)
-const DEFAULT_CONFIG = {
-    binCapacity: 10,
-    greenDensity: 0.03,
-    yellowDensity: 0.05,
-    greenEmissionFactor: 0.5,
-    yellowEmissionFactor: 2.0
-};
-
-export default function WasteHistoryPage() {
+export default function WaterHistoryPage() {
     const supabase = createClient();
-    const [reports, setReports] = useState<WeeklyReport[]>([]);
+    const [reports, setReports] = useState<WeeklyReportDB[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [isExporting, setIsExporting] = useState(false);
 
@@ -55,49 +46,19 @@ export default function WasteHistoryPage() {
     const fetchReports = async () => {
         try {
             const { data, error } = await supabase
-                .from('waste_weekly_reports')
+                .from('water_weekly_reports')
                 .select('*')
-                .not('submitted_at', 'is', null)
-                .order('week_start', { ascending: false });
+                .not('submitted_at', 'is', null) // Only submitted
+                .order('submitted_at', { ascending: false });
 
             if (error) throw error;
             setReports((data as any[]) || []);
         } catch (error) {
             console.error("Error fetching reports:", error);
+            toast.error("Failed to load history");
         } finally {
             setIsLoading(false);
         }
-    };
-
-    const calculateDailyStats = (log: WasteLog, config: typeof DEFAULT_CONFIG) => {
-        const getFillMultiplier = (status: string) => {
-            if (status === 'full') return 1.0;
-            if (status === 'half') return 0.5;
-            return 0;
-        };
-
-        const calculateBin = (status: string, note: string | null, density: number, emissionFactor: number) => {
-            if (status === 'empty' || note === 'holiday' || note === 'leftover' || note === null) {
-                return { volume: 0, weight: 0, carbon: 0 };
-            }
-            const volume = config.binCapacity * getFillMultiplier(status);
-            const weight = volume * density;
-            const carbon = weight * emissionFactor;
-            return { volume, weight, carbon };
-        };
-
-        const green = calculateBin(log.green_status, log.green_note, config.greenDensity, config.greenEmissionFactor);
-        const yellow = calculateBin(log.yellow_status, log.yellow_note, config.yellowDensity, config.yellowEmissionFactor);
-
-        return {
-            greenVolume: green.volume,
-            greenWeight: green.weight,
-            greenCarbon: green.carbon,
-            yellowVolume: yellow.volume,
-            yellowWeight: yellow.weight,
-            yellowCarbon: yellow.carbon,
-            totalCarbon: green.carbon + yellow.carbon
-        };
     };
 
     const handleDownloadExcel = async () => {
@@ -105,78 +66,74 @@ export default function WasteHistoryPage() {
         try {
             // 1. Fetch ALL logs
             const { data: logs, error } = await supabase
-                .from('waste_logs')
+                .from('water_logs')
                 .select('*')
                 .order('date', { ascending: false });
 
             if (error) throw error;
 
             if (!logs || logs.length === 0) {
-                alert("No data available to export.");
+                toast.warning("No data available to export.");
                 return;
             }
 
-            // 2. Prepare Data for Excel
-            const excelData = (logs as WasteLog[]).map(log => {
-                // Find matching report to get the config used for that week
+            // 2. Prepare Data
+            const excelData = (logs as WaterLog[]).map(log => {
+                // Find matching report config if exists
                 const logDate = new Date(log.date);
                 const matchingReport = reports.find(r => {
                     const start = new Date(r.week_start);
                     const end = new Date(r.week_end);
-                    // Normalize times for comparison
+                    // Adjust time to safe overlap
                     start.setHours(0, 0, 0, 0);
                     end.setHours(23, 59, 59, 999);
-                    logDate.setHours(12, 0, 0, 0);
-                    return logDate >= start && logDate <= end;
+                    // Check date (logDate usually T00:00:00)
+                    const check = new Date(log.date);
+                    return check >= start && check <= end;
                 });
 
-                // Use Report Config or Defaults
-                const config = matchingReport ? {
-                    binCapacity: matchingReport.bin_capacity ?? DEFAULT_CONFIG.binCapacity,
-                    greenDensity: matchingReport.green_density ?? DEFAULT_CONFIG.greenDensity,
-                    yellowDensity: matchingReport.yellow_density ?? DEFAULT_CONFIG.yellowDensity,
-                    greenEmissionFactor: matchingReport.green_emission_factor ?? DEFAULT_CONFIG.greenEmissionFactor,
-                    yellowEmissionFactor: matchingReport.yellow_emission_factor ?? DEFAULT_CONFIG.yellowEmissionFactor
-                } : DEFAULT_CONFIG;
-
-                const stats = calculateDailyStats(log, config);
+                // Display whether calculation was based on custom weekly snapshot or likely global/daily
+                const configSource = matchingReport ? "Weekly Report Snapshot" : "Daily/Global Config";
 
                 return {
                     "Date": log.date,
-                    "Green Status": log.green_status,
-                    "Green Note": log.green_note || "-",
-                    "Green Volume (L)": stats.greenVolume.toFixed(2),
-                    "Green Weight (kg)": stats.greenWeight.toFixed(2),
-                    "Green Emission (kgCO2e)": stats.greenCarbon.toFixed(2),
-
-                    "Yellow Status": log.yellow_status,
-                    "Yellow Note": log.yellow_note || "-",
-                    "Yellow Volume (L)": stats.yellowVolume.toFixed(2),
-                    "Yellow Weight (kg)": stats.yellowWeight.toFixed(2),
-                    "Yellow Emission (kgCO2e)": stats.yellowCarbon.toFixed(2),
-
-                    "Total Emission (kgCO2e)": stats.totalCarbon.toFixed(2),
-                    "Config Used": matchingReport ? "Custom/Week" : "Default"
+                    "Day": new Date(log.date).toLocaleDateString('en-US', { weekday: 'long' }),
+                    "Employee Count": log.employee_count,
+                    "Status": log.is_holiday ? "Holiday" : "Work Day",
+                    "Water Usage (L)": parseFloat(log.total_water_liters?.toFixed(2) || "0"),
+                    "Carbon Emission (kgCO2e)": parseFloat(log.carbon_emission?.toFixed(3) || "0"),
+                    "Notes": log.notes || "-",
+                    "Config Source": configSource
                 };
             });
 
-            // 3. Generate Worksheet
+            // 3. Generate Sheet
             const ws = XLSX.utils.json_to_sheet(excelData);
 
-            // Auto-width columns roughly
-            const wscols = Object.keys(excelData[0]).map(() => ({ wch: 20 }));
+            // Col Widths
+            const wscols = [
+                { wch: 15 }, // Date
+                { wch: 10 }, // Day
+                { wch: 15 }, // Count
+                { wch: 12 }, // Status
+                { wch: 15 }, // Water
+                { wch: 20 }, // Carbon
+                { wch: 30 }, // Notes
+                { wch: 20 }  // Source
+            ];
             ws['!cols'] = wscols;
 
-            // 4. Generate Workbook
+            // 4. Generate Book
             const wb = XLSX.utils.book_new();
-            XLSX.utils.book_append_sheet(wb, ws, "Waste Logs");
+            XLSX.utils.book_append_sheet(wb, ws, "Water Logs");
 
-            // 5. Download File
-            XLSX.writeFile(wb, `waste-report-full-${new Date().toISOString().split('T')[0]}.xlsx`);
+            // 5. Save
+            XLSX.writeFile(wb, `water-sustainability-history-${new Date().toISOString().split('T')[0]}.xlsx`);
+            toast.success("Excel downloaded successfully");
 
         } catch (error) {
-            console.error("Error exporting excel:", error);
-            alert("Failed to export Excel.");
+            console.error("Export error:", error);
+            toast.error("Failed to export Excel");
         } finally {
             setIsExporting(false);
         }
@@ -190,19 +147,21 @@ export default function WasteHistoryPage() {
         try {
             // 1. Delete Daily Logs for this week
             const { error: logsError } = await supabase
-                .from('waste_logs')
+                .from('water_logs')
                 .delete()
                 .gte('date', weekStart)
                 .lte('date', weekEnd);
 
             if (logsError) {
                 console.error("Error deleting logs:", logsError);
+                // Continue? Or stop? If logs fail, report might differ. But usually dependent.
+                // Let's warn but try to delete report.
                 toast.error("Failed to delete some daily logs.");
             }
 
             // 2. Delete Weekly Report
             const { error } = await supabase
-                .from('waste_weekly_reports')
+                .from('water_weekly_reports')
                 .delete()
                 .eq('id', id);
 
@@ -210,7 +169,7 @@ export default function WasteHistoryPage() {
 
             toast.success("Report and logs deleted");
             setReports(reports.filter(r => r.id !== id));
-            router.refresh();
+            router.refresh(); // Refresh server data for other pages
         } catch (error) {
             console.error("Error deleting report:", error);
             toast.error("Failed to delete report. You may not have permission.");
@@ -222,8 +181,8 @@ export default function WasteHistoryPage() {
             {/* Header */}
             <div className="flex flex-col gap-4 md:flex-row md:items-end justify-between">
                 <div className="flex items-center gap-3">
-                    <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center shadow-lg shadow-emerald-500/20">
-                        <FileSpreadsheet className="w-6 h-6 text-white" />
+                    <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-blue-500 to-cyan-600 flex items-center justify-center shadow-lg shadow-blue-500/20">
+                        <Droplets className="w-6 h-6 text-white" />
                     </div>
                     <div>
                         <div className="flex items-center gap-2 mb-1 text-sm text-gray-500 dark:text-gray-400">
@@ -231,19 +190,19 @@ export default function WasteHistoryPage() {
                             <ChevronLeft className="h-4 w-4 rotate-180" />
                             <Link href="/dashboard/sustainability" className="hover:text-gray-900 dark:hover:text-white transition-colors">Sustainability</Link>
                             <ChevronLeft className="h-4 w-4 rotate-180" />
-                            <Link href="/dashboard/sustainability/waste" className="hover:text-gray-900 dark:hover:text-white transition-colors">Waste</Link>
+                            <Link href="/dashboard/sustainability/water" className="hover:text-gray-900 dark:hover:text-white transition-colors">Water</Link>
                             <ChevronLeft className="h-4 w-4 rotate-180" />
                             <span className="text-gray-900 dark:text-white font-medium">History</span>
                         </div>
-                        <h1 className="text-2xl font-bold tracking-tight text-gray-900 dark:text-white">Waste Report History</h1>
-                        <p className="text-sm text-gray-500 dark:text-gray-400">Archive of submitted weekly waste management reports.</p>
+                        <h1 className="text-2xl font-bold tracking-tight text-gray-900 dark:text-white">Water Report History</h1>
+                        <p className="text-sm text-gray-500 dark:text-gray-400">Archive of submitted weekly water consumption reports.</p>
                     </div>
                 </div>
 
                 <button
                     onClick={handleDownloadExcel}
                     disabled={isExporting}
-                    className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white dark:bg-[#1c2120] border border-gray-200 dark:border-white/10 text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white hover:border-emerald-500 transition-colors shadow-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white dark:bg-[#1c2120] border border-gray-200 dark:border-white/10 text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white hover:border-blue-500 transition-colors shadow-sm font-medium disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                     {isExporting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
                     {isExporting ? "Exporting..." : "Export"}
@@ -258,8 +217,7 @@ export default function WasteHistoryPage() {
                             <tr>
                                 <th scope="col" className="px-6 py-4">Week Range</th>
                                 <th scope="col" className="px-6 py-4">Submitted At</th>
-                                <th scope="col" className="px-6 py-4 text-center">Total Green (kg)</th>
-                                <th scope="col" className="px-6 py-4 text-center">Total Yellow (kg)</th>
+                                <th scope="col" className="px-6 py-4 text-center">Total Water (L)</th>
                                 <th scope="col" className="px-6 py-4 text-right">Total Carbon (kgCO2e)</th>
                                 <th scope="col" className="px-6 py-4 text-center">Action</th>
                             </tr>
@@ -267,14 +225,14 @@ export default function WasteHistoryPage() {
                         <tbody className="divide-y divide-white/5">
                             {isLoading ? (
                                 <tr>
-                                    <td colSpan={6} className="px-6 py-8 text-center text-gray-500">
+                                    <td colSpan={5} className="px-6 py-8 text-center text-gray-500">
                                         <Loader2 className="w-6 h-6 animate-spin mx-auto mb-2" />
                                         Loading history...
                                     </td>
                                 </tr>
                             ) : reports.length === 0 ? (
                                 <tr>
-                                    <td colSpan={6} className="px-6 py-8 text-center text-gray-500 italic">
+                                    <td colSpan={5} className="px-6 py-8 text-center text-gray-500 italic">
                                         No submitted reports found.
                                     </td>
                                 </tr>
@@ -282,22 +240,21 @@ export default function WasteHistoryPage() {
                                 reports.map((report) => (
                                     <tr key={report.id} className="bg-transparent hover:bg-white/[0.02] transition-colors">
                                         <td className="px-6 py-4 font-medium text-white flex items-center gap-2">
-                                            <Calendar className="w-4 h-4 text-emerald-500" />
+                                            <Calendar className="w-4 h-4 text-blue-500" />
                                             {new Date(report.week_start).toLocaleDateString()} - {new Date(report.week_end).toLocaleDateString()}
                                         </td>
                                         <td className="px-6 py-4">
                                             {new Date(report.submitted_at).toLocaleString()}
                                         </td>
-                                        <td className="px-6 py-4 text-center text-emerald-400 font-bold">
-                                            {report.total_green_weight.toFixed(2)}
-                                        </td>
-                                        <td className="px-6 py-4 text-center text-yellow-400 font-bold">
-                                            {report.total_yellow_weight.toFixed(2)}
+                                        <td className="px-6 py-4 text-center text-blue-400 font-bold">
+                                            {report.total_water_liters.toFixed(2)}
                                         </td>
                                         <td className="px-6 py-4 text-right text-white font-bold text-base">
-                                            {report.total_carbon.toFixed(3)}
+                                            {report.total_carbon_kg.toFixed(3)}
                                         </td>
                                         <td className="px-6 py-4 text-center">
+                                            {/* Delete Button (visible to all, but only works if permitted by RLS) */}
+                                            {/* Ideally we check permission, but RLS will block it if not owners/admin */}
                                             <button
                                                 onClick={() => handleDelete(report.id, report.week_start, report.week_end)}
                                                 className="p-2 rounded-lg text-gray-500 hover:text-red-500 hover:bg-white/5 transition-colors"

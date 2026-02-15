@@ -15,7 +15,9 @@ import {
     Save,
     BadgeCheck,
     Settings,
-    X
+    X,
+    Recycle,
+    Cloud
 } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { toast } from "sonner";
@@ -393,7 +395,9 @@ export default function WasteReportPage() {
 
     // --- Actions ---
 
-    // 1. Save Changes Only (Upsert Logs)
+    // --- Actions ---
+
+    // 1. Save Changes Only (Upsert Logs + Report)
     const handleSave = async () => {
         setIsSaving(true);
         try {
@@ -405,74 +409,52 @@ export default function WasteReportPage() {
                 yellow_note: log.yellowNote
             }));
 
-            const { error } = await supabase
+            const { error: logsError } = await supabase
                 .from('waste_logs')
                 .upsert(allUpsertData, { onConflict: 'date' });
 
-            if (error) throw error;
+            if (logsError) throw logsError;
 
-            setIsDirty(false);
-            alert("Daily logs saved successfully.");
-            fetchWeekData(selectedDate);
-
-        } catch (error) {
-            console.error("Error saving logs:", error);
-            alert("Failed to save changes.");
-        } finally {
-            setIsSaving(false);
-        }
-    };
-
-    // 2. Trigger Submit Logic (Opens Confirmation)
-    const onSubmitClick = () => {
-        // Validate / Check if any data?
-        setIsConfirmOpen(true);
-    };
-
-    // 3. Execute Submission
-    const executeSubmit = async () => {
-        setIsSaving(true);
-        setIsConfirmOpen(false); // Close modal
-        try {
-            await handleSave(); // Ensure logs are saved
-
+            // Upsert Weekly Report (Auto-update)
             const stats = calculateStats(weekLogs); // Uses current 'config' state
             const monday = weekLogs[0].fullDate;
             const friday = weekLogs[4].fullDate;
+
+            // Fetch user for created_by
+            const { data: { user } } = await supabase.auth.getUser();
+
+
 
             const reportData = {
                 week_start: monday,
                 week_end: friday,
                 total_green_weight: stats.totalGreenWeight,
                 total_yellow_weight: stats.totalYellowWeight,
-                total_carbon: stats.totalCarbon,
-                submitted_at: new Date().toISOString(),
-                // Save current config snapshot
-                bin_capacity: config.binCapacity,
-                green_density: config.greenDensity,
-                yellow_density: config.yellowDensity,
                 green_emission_factor: config.greenEmissionFactor,
-                yellow_emission_factor: config.yellowEmissionFactor
+                yellow_emission_factor: config.yellowEmissionFactor,
+                // created_by: user?.id // TODO: Uncomment after migration 127 is applied
             };
 
-            // Upsert based on week_start
-            const { error } = await supabase
+            const { error: reportError } = await supabase
                 .from('waste_weekly_reports')
                 .upsert(reportData, { onConflict: 'week_start' });
 
-            if (error) throw error;
+            if (reportError) throw reportError;
 
-            setIsSubmitted(true);
-            alert("Weekly report submitted successfully!");
+            setIsDirty(false);
+            toast.success("Changes saved & history updated.");
+            fetchWeekData(selectedDate);
             fetchRecentHistory();
 
         } catch (error) {
-            console.error("Error submitting report:", error);
-            alert("Failed to submit report.");
+            console.error("Error saving data:", error);
+            toast.error("Failed to save changes.");
         } finally {
             setIsSaving(false);
         }
     };
+
+    // Submit Logic Removed
 
     // Style Helpers
     const getStatusColor = (status: WasteStatus, type: "green" | "yellow") => {
@@ -501,232 +483,224 @@ export default function WasteReportPage() {
     return (
         <div className="space-y-8 pb-20 relative">
             {/* Header */}
-            <div className="flex flex-col gap-4">
-                <Link
-                    href="/dashboard/sustainability"
-                    className="inline-flex items-center gap-2 text-sm text-gray-400 hover:text-white transition-colors w-fit"
-                >
-                    <ChevronLeft className="w-4 h-4" /> Back to Sustainability
-                </Link>
-                <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
+            <div className="flex flex-col gap-4 md:flex-row md:items-end justify-between">
+                <div className="flex items-center gap-3">
+                    <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-emerald-500 to-green-600 dark:from-emerald-500 dark:to-green-600 flex items-center justify-center shadow-lg shadow-emerald-500/20">
+                        <Recycle className="w-6 h-6 text-white" />
+                    </div>
                     <div>
-                        <div className="flex items-center gap-3 mb-1">
-                            <span className="text-3xl">♻️</span>
-                            <h1 className="text-3xl font-black tracking-tight text-gray-900 dark:text-white">Weekly Waste Log</h1>
+                        <div className="flex items-center gap-2 mb-1 text-sm text-gray-400">
+                            <Link href="/dashboard" className="hover:text-white transition-colors">Dashboard</Link>
+                            <ChevronRight className="h-4 w-4" />
+                            <Link href="/dashboard/sustainability" className="hover:text-white transition-colors">Sustainability</Link>
+                            <ChevronRight className="h-4 w-4" />
+                            <span className="text-gray-900 dark:text-white">Waste Management</span>
                         </div>
-                        <p className="text-lg text-gray-500 dark:text-gray-400">Monitor Office Bin Capacity (Mon - Fri)</p>
+                        <h1 className="text-2xl font-bold tracking-tight text-gray-900 dark:text-white">Weekly Waste Log</h1>
+                        <p className="text-sm text-gray-500 dark:text-gray-400">Monitor Office Bin Capacity (Mon - Fri)</p>
                     </div>
+                </div>
 
-                    <div className="flex items-center gap-3">
-                        {/* Settings Trigger */}
-                        <button
-                            onClick={() => setIsSettingsOpen(true)}
-                            className="p-3 rounded-xl bg-yellow-400 text-black hover:bg-yellow-500 transition-all shadow-lg hover:shadow-yellow-400/20 border-none"
-                            title="Week Settings"
-                        >
-                            <Settings className="w-5 h-5" />
-                        </button>
+                <div className="flex items-center gap-3">
+                    {/* Settings Trigger */}
+                    <button
+                        onClick={() => setIsSettingsOpen(true)}
+                        className="p-3 rounded-xl bg-white dark:bg-[#1c2120] border border-gray-200 dark:border-white/10 text-gray-500 hover:text-gray-900 dark:hover:text-white hover:border-[#e8c559] transition-colors shadow-sm"
+                        title="Week Settings"
+                    >
+                        <Settings className="w-5 h-5" />
+                    </button>
 
-                        {/* Save Button */}
-                        <button
-                            onClick={handleSave}
-                            disabled={!isDirty || isSaving}
-                            className={`flex items-center gap-2 px-6 py-3 rounded-xl font-bold transition-all border
-                                ${isDirty
-                                    ? 'bg-blue-50 dark:bg-blue-600/20 text-blue-600 dark:text-blue-400 border-blue-200 dark:border-blue-500/30 hover:bg-blue-100 dark:hover:bg-blue-600/30'
-                                    : 'bg-gray-100 dark:bg-white/5 text-gray-400 dark:text-gray-500 border-transparent dark:border-white/10 opacity-50 cursor-not-allowed'}`}
-                        >
-                            <Save className="w-5 h-5" />
-                            Save Changes
-                        </button>
-
-                        {/* Submit Button */}
-                        <button
-                            onClick={onSubmitClick}
-                            disabled={isSaving}
-                            className={`flex items-center gap-2 px-6 py-3 rounded-xl font-bold transition-all
-                                ${isSubmitted
-                                    ? 'bg-emerald-50 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-500 border border-emerald-200 dark:border-emerald-500/30 cursor-default'
-                                    : 'bg-emerald-200 text-emerald-900 hover:bg-emerald-300 shadow-lg hover:shadow-emerald-500/20'}`}
-                        >
-                            {isSaving ? (
-                                <RotateCcw className="w-5 h-5 animate-spin" />
-                            ) : isSubmitted ? (
-                                <BadgeCheck className="w-5 h-5" />
-                            ) : (
-                                <FileText className="w-5 h-5" />
-                            )}
-                            {isSaving ? "Processing..." : isSubmitted ? "Report Submitted" : "Submit Report"}
-                        </button>
-                    </div>
+                    {/* Save Button */}
+                    <button
+                        onClick={handleSave}
+                        disabled={!isDirty || isSaving}
+                        className={cn(
+                            "flex items-center gap-2 px-6 py-3 rounded-xl font-bold transition-all border",
+                            isDirty
+                                ? "bg-[#e8c559] text-[#171611] hover:bg-[#d4b44e] shadow-lg hover:shadow-orange-500/10 border-transparent"
+                                : "bg-gray-100 dark:bg-white/5 text-gray-400 dark:text-gray-500 border-transparent dark:border-white/10 opacity-50 cursor-not-allowed"
+                        )}
+                    >
+                        <Save className="w-5 h-5" />
+                        Save Changes
+                    </button>
+                    {/* Submit Button Removed */}
                 </div>
             </div>
 
             {/* Settings Modal */}
-            {isSettingsOpen && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
-                    <div className="bg-white dark:bg-[#1a1c23] border border-gray-200 dark:border-white/10 rounded-2xl w-full max-w-md shadow-2xl overflow-hidden transition-colors">
-                        <div className="p-4 border-b border-gray-200 dark:border-white/10 flex items-center justify-between bg-gray-50 dark:bg-white/5">
-                            <h3 className="font-bold text-gray-900 dark:text-white flex items-center gap-2">
-                                <Settings className="w-4 h-4 text-blue-500 dark:text-blue-400" />
-                                Weekly Settings
-                            </h3>
-                            <button onClick={() => setIsSettingsOpen(false)} className="text-gray-400 hover:text-gray-900 dark:hover:text-white">
-                                <X className="w-5 h-5" />
-                            </button>
-                        </div>
-                        <div className="p-6 space-y-6">
-                            {/* Bin Capacity */}
-                            <div className="space-y-2">
-                                <label className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase">Bin Capacity (Liter)</label>
-                                <input
-                                    type="number"
-                                    value={tempConfig.binCapacity}
-                                    onChange={(e) => setTempConfig({ ...tempConfig, binCapacity: parseFloat(e.target.value) })}
-                                    className="w-full bg-gray-50 dark:bg-black/20 border border-gray-200 dark:border-white/10 rounded-lg px-4 py-2 text-gray-900 dark:text-white focus:outline-none focus:border-blue-500 transition-colors"
-                                />
+            {
+                isSettingsOpen && (
+                    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+                        <div className="bg-white dark:bg-[#1a1c23] border border-gray-200 dark:border-white/10 rounded-2xl w-full max-w-md shadow-2xl overflow-hidden transition-colors">
+                            <div className="p-4 border-b border-gray-200 dark:border-white/10 flex items-center justify-between bg-gray-50 dark:bg-white/5">
+                                <h3 className="font-bold text-gray-900 dark:text-white flex items-center gap-2">
+                                    <Settings className="w-4 h-4 text-blue-500 dark:text-blue-400" />
+                                    Weekly Settings
+                                </h3>
+                                <button onClick={() => setIsSettingsOpen(false)} className="text-gray-400 hover:text-gray-900 dark:hover:text-white">
+                                    <X className="w-5 h-5" />
+                                </button>
                             </div>
+                            <div className="p-6 space-y-6">
+                                {/* Bin Capacity */}
+                                <div className="space-y-2">
+                                    <label className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase">Bin Capacity (Liter)</label>
+                                    <input
+                                        type="number"
+                                        value={tempConfig.binCapacity}
+                                        onChange={(e) => setTempConfig({ ...tempConfig, binCapacity: parseFloat(e.target.value) })}
+                                        className="w-full bg-gray-50 dark:bg-black/20 border border-gray-200 dark:border-white/10 rounded-lg px-4 py-2 text-gray-900 dark:text-white focus:outline-none focus:border-blue-500 transition-colors"
+                                    />
+                                </div>
 
-                            <div className="grid grid-cols-2 gap-4">
-                                {/* Green Settings */}
-                                <div className="space-y-3">
-                                    <h4 className="text-sm font-bold text-emerald-600 dark:text-emerald-400 border-b border-emerald-500/20 pb-1">Green Waste</h4>
-                                    <div>
-                                        <label className="text-[10px] text-gray-500 block mb-1">Density (kg/L)</label>
-                                        <input
-                                            type="number"
-                                            step="0.01"
-                                            value={tempConfig.greenDensity}
-                                            onChange={(e) => setTempConfig({ ...tempConfig, greenDensity: parseFloat(e.target.value) })}
-                                            className="w-full bg-gray-50 dark:bg-black/20 border border-gray-200 dark:border-white/10 rounded-lg px-3 py-1.5 text-sm text-gray-900 dark:text-white focus:outline-none focus:border-emerald-500 transition-colors"
-                                        />
+                                <div className="grid grid-cols-2 gap-4">
+                                    {/* Green Settings */}
+                                    <div className="space-y-3">
+                                        <h4 className="text-sm font-bold text-emerald-600 dark:text-emerald-400 border-b border-emerald-500/20 pb-1">Green Waste</h4>
+                                        <div>
+                                            <label className="text-[10px] text-gray-500 block mb-1">Density (kg/L)</label>
+                                            <input
+                                                type="number"
+                                                step="0.01"
+                                                value={tempConfig.greenDensity}
+                                                onChange={(e) => setTempConfig({ ...tempConfig, greenDensity: parseFloat(e.target.value) })}
+                                                className="w-full bg-gray-50 dark:bg-black/20 border border-gray-200 dark:border-white/10 rounded-lg px-3 py-1.5 text-sm text-gray-900 dark:text-white focus:outline-none focus:border-emerald-500 transition-colors"
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="text-[10px] text-gray-500 block mb-1">Emission (kgCO2e/kg)</label>
+                                            <input
+                                                type="number"
+                                                step="0.01"
+                                                value={tempConfig.greenEmissionFactor}
+                                                onChange={(e) => setTempConfig({ ...tempConfig, greenEmissionFactor: parseFloat(e.target.value) })}
+                                                className="w-full bg-gray-50 dark:bg-black/20 border border-gray-200 dark:border-white/10 rounded-lg px-3 py-1.5 text-sm text-gray-900 dark:text-white focus:outline-none focus:border-emerald-500 transition-colors"
+                                            />
+                                        </div>
                                     </div>
-                                    <div>
-                                        <label className="text-[10px] text-gray-500 block mb-1">Emission (kgCO2e/kg)</label>
-                                        <input
-                                            type="number"
-                                            step="0.01"
-                                            value={tempConfig.greenEmissionFactor}
-                                            onChange={(e) => setTempConfig({ ...tempConfig, greenEmissionFactor: parseFloat(e.target.value) })}
-                                            className="w-full bg-gray-50 dark:bg-black/20 border border-gray-200 dark:border-white/10 rounded-lg px-3 py-1.5 text-sm text-gray-900 dark:text-white focus:outline-none focus:border-emerald-500 transition-colors"
-                                        />
+
+                                    {/* Yellow Settings */}
+                                    <div className="space-y-3">
+                                        <h4 className="text-sm font-bold text-yellow-600 dark:text-yellow-400 border-b border-yellow-500/20 pb-1">Yellow Waste</h4>
+                                        <div>
+                                            <label className="text-[10px] text-gray-500 block mb-1">Density (kg/L)</label>
+                                            <input
+                                                type="number"
+                                                step="0.01"
+                                                value={tempConfig.yellowDensity}
+                                                onChange={(e) => setTempConfig({ ...tempConfig, yellowDensity: parseFloat(e.target.value) })}
+                                                className="w-full bg-gray-50 dark:bg-black/20 border border-gray-200 dark:border-white/10 rounded-lg px-3 py-1.5 text-sm text-gray-900 dark:text-white focus:outline-none focus:border-yellow-500 transition-colors"
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="text-[10px] text-gray-500 block mb-1">Emission (kgCO2e/kg)</label>
+                                            <input
+                                                type="number"
+                                                step="0.01"
+                                                value={tempConfig.yellowEmissionFactor}
+                                                onChange={(e) => setTempConfig({ ...tempConfig, yellowEmissionFactor: parseFloat(e.target.value) })}
+                                                className="w-full bg-gray-50 dark:bg-black/20 border border-gray-200 dark:border-white/10 rounded-lg px-3 py-1.5 text-sm text-gray-900 dark:text-white focus:outline-none focus:border-yellow-500 transition-colors"
+                                            />
+                                        </div>
                                     </div>
                                 </div>
 
-                                {/* Yellow Settings */}
-                                <div className="space-y-3">
-                                    <h4 className="text-sm font-bold text-yellow-600 dark:text-yellow-400 border-b border-yellow-500/20 pb-1">Yellow Waste</h4>
-                                    <div>
-                                        <label className="text-[10px] text-gray-500 block mb-1">Density (kg/L)</label>
-                                        <input
-                                            type="number"
-                                            step="0.01"
-                                            value={tempConfig.yellowDensity}
-                                            onChange={(e) => setTempConfig({ ...tempConfig, yellowDensity: parseFloat(e.target.value) })}
-                                            className="w-full bg-gray-50 dark:bg-black/20 border border-gray-200 dark:border-white/10 rounded-lg px-3 py-1.5 text-sm text-gray-900 dark:text-white focus:outline-none focus:border-yellow-500 transition-colors"
-                                        />
-                                    </div>
-                                    <div>
-                                        <label className="text-[10px] text-gray-500 block mb-1">Emission (kgCO2e/kg)</label>
-                                        <input
-                                            type="number"
-                                            step="0.01"
-                                            value={tempConfig.yellowEmissionFactor}
-                                            onChange={(e) => setTempConfig({ ...tempConfig, yellowEmissionFactor: parseFloat(e.target.value) })}
-                                            className="w-full bg-gray-50 dark:bg-black/20 border border-gray-200 dark:border-white/10 rounded-lg px-3 py-1.5 text-sm text-gray-900 dark:text-white focus:outline-none focus:border-yellow-500 transition-colors"
-                                        />
-                                    </div>
-                                </div>
+                                <button
+                                    onClick={handleSaveSettings}
+                                    disabled={isSaving}
+                                    className="w-full py-3 bg-yellow-400 hover:bg-yellow-500 text-black rounded-xl font-bold transition-all shadow-lg hover:shadow-yellow-400/20"
+                                >
+                                    {isSaving ? "Saving..." : "Apply Settings"}
+                                </button>
                             </div>
-
-                            <button
-                                onClick={handleSaveSettings}
-                                disabled={isSaving}
-                                className="w-full py-3 bg-yellow-400 hover:bg-yellow-500 text-black rounded-xl font-bold transition-all shadow-lg hover:shadow-yellow-400/20"
-                            >
-                                {isSaving ? "Saving..." : "Apply Settings"}
-                            </button>
                         </div>
                     </div>
-                </div>
-            )}
+                )
+            }
 
             {/* Confirmation Modal */}
-            {isConfirmOpen && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
-                    <div className="bg-white dark:bg-[#1a1c23] border border-gray-200 dark:border-white/10 rounded-2xl w-full max-w-sm shadow-2xl overflow-hidden transition-colors">
-                        <div className="p-6 text-center space-y-4">
-                            <div className="w-12 h-12 rounded-full bg-blue-100 dark:bg-blue-500/20 flex items-center justify-center mx-auto text-blue-600 dark:text-blue-400">
-                                <FileText className="w-6 h-6" />
-                            </div>
-                            <div className="space-y-2">
-                                <h3 className="font-bold text-xl text-gray-900 dark:text-white">Submit Weekly Report?</h3>
-                                <p className="text-sm text-gray-500 dark:text-gray-400">
-                                    Are you sure you want to submit? <br />
-                                    <strong>Report cannot be edited after submission.</strong>
-                                </p>
-                            </div>
+            {
+                isConfirmOpen && (
+                    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+                        <div className="bg-white dark:bg-[#1a1c23] border border-gray-200 dark:border-white/10 rounded-2xl w-full max-w-sm shadow-2xl overflow-hidden transition-colors">
+                            <div className="p-6 text-center space-y-4">
+                                <div className="w-12 h-12 rounded-full bg-blue-100 dark:bg-blue-500/20 flex items-center justify-center mx-auto text-blue-600 dark:text-blue-400">
+                                    <FileText className="w-6 h-6" />
+                                </div>
+                                <div className="space-y-2">
+                                    <h3 className="font-bold text-xl text-gray-900 dark:text-white">Submit Weekly Report?</h3>
+                                    <p className="text-sm text-gray-500 dark:text-gray-400">
+                                        Are you sure you want to submit? <br />
+                                        <strong>Report cannot be edited after submission.</strong>
+                                    </p>
+                                </div>
 
-                            <div className="grid grid-cols-2 gap-3 pt-2">
-                                <button
-                                    onClick={() => setIsConfirmOpen(false)}
-                                    className="py-2.5 rounded-lg font-semibold text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-white/5 transition-colors"
-                                >
-                                    Cancel
-                                </button>
-                                <button
-                                    onClick={executeSubmit}
-                                    className="py-2.5 rounded-lg font-semibold bg-blue-600 hover:bg-blue-500 text-white transition-colors shadow-lg hover:shadow-blue-500/20"
-                                >
-                                    Confirm Submit
-                                </button>
+                                <div className="grid grid-cols-2 gap-3 pt-2">
+                                    <button
+                                        onClick={() => setIsConfirmOpen(false)}
+                                        className="py-2.5 rounded-lg font-semibold text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-white/5 transition-colors"
+                                    >
+                                        Cancel
+                                    </button>
+                                    <button
+
+                                        className="py-2.5 rounded-lg font-semibold bg-blue-600 hover:bg-blue-500 text-white transition-colors shadow-lg hover:shadow-blue-500/20"
+                                    >
+                                        Confirm Submit
+                                    </button>
+                                </div>
                             </div>
                         </div>
                     </div>
-                </div>
-            )}
+                )
+            }
 
             {/* Summary Cards */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 {/* Green Waste Stats */}
-                <div className="glass-panel p-6 rounded-xl border border-emerald-500/20 bg-emerald-500/5 relative overflow-hidden">
+                <div className="glass-panel p-6 rounded-2xl border border-emerald-500/20 bg-emerald-500/5 relative overflow-hidden shadow-sm">
                     <div className="absolute top-0 right-0 p-4 opacity-10">
                         <Leaf className="w-24 h-24 text-emerald-500" />
                     </div>
                     <div className="relative z-10">
-                        <p className="text-emerald-400 text-sm font-bold uppercase tracking-wider mb-2">Total Organik</p>
+                        <p className="text-emerald-600 dark:text-emerald-400 text-sm font-bold uppercase tracking-wider mb-2">Total Organik</p>
                         <div className="flex items-baseline gap-2">
-                            <span className="text-4xl font-black text-white">{currentStats.totalGreenWeight.toFixed(2)}</span>
-                            <span className="text-sm text-gray-400 font-medium">kg</span>
+                            <span className="text-4xl font-black text-gray-900 dark:text-white">{currentStats.totalGreenWeight.toFixed(2)}</span>
+                            <span className="text-sm text-gray-500 dark:text-gray-400 font-medium">kg</span>
                         </div>
-                        <p className="text-xs text-gray-500 mt-2">Factor: {config.greenEmissionFactor} kgCO2e/kg</p>
+                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">Factor: {config.greenEmissionFactor} kgCO2e/kg</p>
                     </div>
                 </div>
 
                 {/* Yellow Waste Stats */}
-                <div className="glass-panel p-6 rounded-xl border border-yellow-500/20 bg-yellow-500/5 relative overflow-hidden">
+                <div className="glass-panel p-6 rounded-2xl border border-yellow-500/20 bg-yellow-500/5 relative overflow-hidden shadow-sm">
                     <div className="absolute top-0 right-0 p-4 opacity-10">
                         <Trash2 className="w-24 h-24 text-yellow-500" />
                     </div>
                     <div className="relative z-10">
-                        <p className="text-yellow-400 text-sm font-bold uppercase tracking-wider mb-2">Total Anorganik</p>
+                        <p className="text-yellow-600 dark:text-yellow-400 text-sm font-bold uppercase tracking-wider mb-2">Total Anorganik</p>
                         <div className="flex items-baseline gap-2">
-                            <span className="text-4xl font-black text-white">{currentStats.totalYellowWeight.toFixed(2)}</span>
-                            <span className="text-sm text-gray-400 font-medium">kg</span>
+                            <span className="text-4xl font-black text-gray-900 dark:text-white">{currentStats.totalYellowWeight.toFixed(2)}</span>
+                            <span className="text-sm text-gray-500 dark:text-gray-400 font-medium">kg</span>
                         </div>
-                        <p className="text-xs text-gray-500 mt-2">Factor: {config.yellowEmissionFactor} kgCO2e/kg</p>
+                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">Factor: {config.yellowEmissionFactor} kgCO2e/kg</p>
                     </div>
                 </div>
 
                 {/* Carbon Emission Stats */}
-                <div className="glass-panel p-6 rounded-xl border border-white/10 bg-white/5 relative overflow-hidden">
+                <div className="glass-panel p-6 rounded-2xl border border-gray-500/20 bg-gray-500/5 relative overflow-hidden shadow-sm">
+                    <div className="absolute top-0 right-0 p-4 opacity-10">
+                        <Cloud className="w-24 h-24 text-gray-500" />
+                    </div>
                     <div className="relative z-10">
-                        <p className="text-gray-400 text-sm font-bold uppercase tracking-wider mb-2">Est. Jejak Karbon</p>
+                        <p className="text-gray-600 dark:text-gray-400 text-sm font-bold uppercase tracking-wider mb-2">Est. Jejak Karbon</p>
                         <div className="flex items-baseline gap-2">
-                            <span className="text-4xl font-black text-white">{currentStats.totalCarbon.toFixed(2)}</span>
-                            <span className="text-sm text-gray-400 font-medium">kg CO2e</span>
+                            <span className="text-4xl font-black text-gray-900 dark:text-white">{currentStats.totalCarbon.toFixed(2)}</span>
+                            <span className="text-sm text-gray-500 dark:text-gray-400 font-medium">kgCO2e</span>
                         </div>
-                        <p className="text-xs text-gray-500 mt-2">Total Estimated Emissions</p>
+                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">Total Estimated Emissions</p>
                     </div>
                 </div>
             </div>
@@ -760,11 +734,7 @@ export default function WasteReportPage() {
                                     </button>
                                 </div>
 
-                                {isSubmitted && (
-                                    <span className="bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-3 py-1 rounded-full text-xs font-medium flex items-center gap-1">
-                                        <BadgeCheck className="w-3 h-3" /> Submitted
-                                    </span>
-                                )}
+
                             </div>
                         </div>
 
@@ -946,6 +916,6 @@ export default function WasteReportPage() {
                     </div>
                 </div>
             </div>
-        </div>
+        </div >
     );
 }
