@@ -4,8 +4,6 @@
 
 This platform represents a paradigm shift in organizational management, unifying **Internal Management Systems (IMS)**, **Enterprise Resource Planning (ERP)**, and **Sustainability Information Systems (SIS)** into a single, cohesive ecosystem. By eliminating data silos, Wise Steps Consulting empowers decision-makers with real-time insights across every operational vertical.
 
-![Dashboard Preview](public\preview.png)
-
 ---
 
 ## 🌟 Why a "One-Stop Solution"?
