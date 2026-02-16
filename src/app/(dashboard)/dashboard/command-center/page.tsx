@@ -16,11 +16,13 @@ import {
     LayoutDashboard,
     FileText,
     ArrowLeftRight,
+    MessageSquare,
 } from "lucide-react";
 
 export default function CEODashboardPage() {
     const [selectedPeriod, setSelectedPeriod] = useState("2026-S1");
     const [pendingCount, setPendingCount] = useState(0);
+    const [pendingReportsCount, setPendingReportsCount] = useState(0);
     const [staffList, setStaffList] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
 
@@ -74,6 +76,13 @@ export default function CEODashboardPage() {
                 .eq('status', 'pending');
 
             setPendingCount((leaveCount || 0) + (otherCount || 0));
+
+            const { count: reportCount } = await supabase
+                .from('user_reports')
+                .select('*', { count: 'exact', head: true })
+                .eq('status', 'pending');
+            
+            setPendingReportsCount(reportCount || 0);
         };
 
         calculateStats();
@@ -83,6 +92,7 @@ export default function CEODashboardPage() {
         const channel = supabase.channel('cmd_center_updates')
             .on('postgres_changes', { event: '*', schema: 'public', table: 'leave_requests' }, fetchPending)
             .on('postgres_changes', { event: '*', schema: 'public', table: 'other_requests' }, fetchPending)
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'user_reports' }, fetchPending)
             .on('postgres_changes', { event: '*', schema: 'public', table: 'kpi_scores' }, calculateStats)
             .subscribe();
 
@@ -261,6 +271,31 @@ export default function CEODashboardPage() {
                             </div>
                         </Link>
 
+
+                        
+                        <Link
+                            href="/dashboard/command-center/report-management"
+                            className="glass-panel p-6 rounded-xl border border-white/10 hover:border-red-500 group transition-all relative"
+                        >
+                            {pendingReportsCount > 0 && (
+                                <div className="absolute top-4 right-4 flex items-center gap-1 bg-red-500/10 border border-red-500/20 text-red-400 px-2 py-1 rounded-full text-xs font-bold animate-pulse">
+                                    <span className="w-2 h-2 bg-red-500 rounded-full" />
+                                    {pendingReportsCount} Pending
+                                </div>
+                            )}
+                            <div className="flex items-center gap-4 mb-4">
+                                <div className="p-3 rounded-full bg-red-500/20 text-red-500">
+                                    <MessageSquare className="w-6 h-6" />
+                                </div>
+                                <div>
+                                    <h3 className="font-bold text-lg text-white group-hover:text-red-500 transition-colors">Report Management</h3>
+                                    <p className="text-sm text-gray-400">Handle User Reports</p>
+                                </div>
+                            </div>
+                            <div className="flex items-center gap-2 text-sm text-red-500 font-medium">
+                                View Reports <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+                            </div>
+                        </Link>
                     </div>
                 </div>
 

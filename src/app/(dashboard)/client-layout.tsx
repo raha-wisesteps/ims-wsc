@@ -48,7 +48,7 @@ export default function DashboardClientLayout({
 
                         {/* Footer */}
                         <footer className="p-8 pt-0 text-center">
-                            <p className="text-xs text-[var(--text-secondary)]">© 2025 Wise Steps Consulting Smart Tourism Team. All rights reserved.</p>
+                            <p className="text-xs text-[var(--text-secondary)]">© 2026 Wise Steps Consulting Smart Tourism Team. All rights reserved.</p>
                         </footer>
                     </div>
                 </main>

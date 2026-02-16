@@ -32,6 +32,7 @@ const DOCUMENT_SUBTYPES = [
     { id: "ebook", label: "E-Book", icon: "📖" },
     { id: "template", label: "Template & Guide", icon: "📑" },
     { id: "whitepaper", label: "Whitepaper & Research Paper", icon: "📄" },
+    { id: "ppt", label: "PPT/Slide Presentation", icon: "📊" },
     { id: "other", label: "Lainnya", icon: "📁" },
 ];
 
@@ -49,7 +50,7 @@ export interface KnowledgeResource {
     title: string;
     description: string;
     type: "document" | "video" | "link" | "mom";
-    document_subtype?: "sop" | "ebook" | "template" | "whitepaper" | "other" | null;
+    document_subtype?: "sop" | "ebook" | "template" | "whitepaper" | "ppt" | "other" | null;
     resource_url: string;
     thumbnail_url?: string | null;
     min_access_level: "intern" | "staff" | "senior" | "owner";
@@ -101,6 +102,7 @@ const getSubtypeBadgeClass = (subtype: string) => {
         case 'ebook': return "bg-indigo-100 text-indigo-700 border-indigo-200 dark:bg-indigo-500/20 dark:text-indigo-300 dark:border-indigo-500/30";
         case 'template': return "bg-emerald-100 text-emerald-700 border-emerald-200 dark:bg-emerald-500/20 dark:text-emerald-300 dark:border-emerald-500/30";
         case 'whitepaper': return "bg-cyan-100 text-cyan-700 border-cyan-200 dark:bg-cyan-500/20 dark:text-cyan-300 dark:border-cyan-500/30";
+        case 'ppt': return "bg-teal-100 text-teal-700 border-teal-200 dark:bg-teal-500/20 dark:text-teal-300 dark:border-teal-500/30";
         default: return "bg-gray-100 text-gray-700 border-gray-200 dark:bg-gray-500/20 dark:text-gray-300 dark:border-gray-500/30";
     }
 };
@@ -369,11 +371,12 @@ function DigitalDocCard({ resource, onViewDetail }: { resource: KnowledgeResourc
     const accessLevel = ACCESS_LEVELS.find(l => l.id === resource.min_access_level);
     const subtypeInfo = DOCUMENT_SUBTYPES.find(s => s.id === resource.document_subtype);
     const typeIcon = subtypeInfo?.icon || '📄';
+    const isPPT = resource.document_subtype === 'ppt';
 
     return (
-        <div className="flex-shrink-0 w-[160px] flex flex-col group h-full relative">
+        <div className={`flex-shrink-0 ${isPPT ? 'w-[320px]' : 'w-[160px]'} flex flex-col group h-full relative`}>
             {/* Cover Thumbnail */}
-            <div className="relative aspect-[2/3] rounded-lg overflow-hidden shadow-lg mb-3 bg-gray-100 dark:bg-black/40 border border-gray-200 dark:border-[var(--glass-border)] group-hover:border-[#e8c559]/50 transition-all group-hover:-translate-y-1">
+            <div className={`relative ${isPPT ? 'aspect-video' : 'aspect-[2/3]'} rounded-lg overflow-hidden shadow-lg mb-3 bg-gray-100 dark:bg-black/40 border border-gray-200 dark:border-[var(--glass-border)] group-hover:border-[#e8c559]/50 transition-all group-hover:-translate-y-1`}>
                 <Image
                     src={getThumbnail(resource.thumbnail_url)}
                     alt={resource.title}
@@ -1338,7 +1341,7 @@ export default function KnowledgeHubPage() {
                                     {/* Thumbnail Preview */}
                                     {(newResource.thumbnailUrl && !thumbnailError) && (
                                         <div className="mt-2 relative rounded-lg overflow-hidden border border-gray-200 dark:border-[var(--glass-border)] bg-gray-100 dark:bg-black/20">
-                                            <div className={`relative w-full ${newResource.type === 'video' ? 'aspect-video' : 'aspect-[3/4]'} mx-auto max-w-[200px]`}>
+                                            <div className={`relative w-full ${newResource.type === 'video' || newResource.documentSubtype === 'ppt' ? 'aspect-video' : 'aspect-[3/4]'} mx-auto max-w-[200px]`}>
                                                 {/* Use standard img for preview to handle arbitrary URLs better during input */}
                                                 <img
                                                     src={newResource.thumbnailUrl}
@@ -1347,7 +1350,7 @@ export default function KnowledgeHubPage() {
                                                     onError={() => setThumbnailError("Gagal memuat gambar dari URL ini")}
                                                 />
                                             </div>
-                                            <p className="text-center text-[10px] text-[var(--text-muted)] py-1">Preview ({newResource.type === 'video' ? 'Landscape' : 'Portrait'})</p>
+                                            <p className="text-center text-[10px] text-[var(--text-muted)] py-1">Preview ({newResource.type === 'video' || newResource.documentSubtype === 'ppt' ? 'Landscape' : 'Portrait'})</p>
                                         </div>
                                     )}
                                 </div>

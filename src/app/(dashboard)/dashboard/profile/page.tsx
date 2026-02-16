@@ -1,7 +1,9 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { User, Mail, Lock, Camera, Save, Briefcase, Calendar, Shield, X, Check, ChevronDown } from "lucide-react";
+import { User, Mail, Lock, Camera, Save, Briefcase, Calendar, Shield, X, Check, ChevronDown, AlertCircle, Home, ChevronRight } from "lucide-react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useAuth } from "@/contexts/AuthContext";
 import { createClient } from "@/lib/supabase/client";
 import Cropper from "react-easy-crop";
@@ -14,6 +16,7 @@ const MONTHS = [
 
 export default function ProfilePage() {
     const { profile, session, user, isLoading: authLoading, refreshProfile } = useAuth();
+    const router = useRouter();
     const supabase = createClient();
     const [isSaving, setIsSaving] = useState(false);
     const [isChangingPassword, setIsChangingPassword] = useState(false);
@@ -418,9 +421,27 @@ export default function ProfilePage() {
 
     return (
         <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
-            <div>
-                <h1 className="text-3xl font-black tracking-tight text-foreground">My Profile</h1>
-                <p className="text-muted-foreground mt-1">Manage your account settings and preferences.</p>
+            {/* Standard Header */}
+            <div className="flex flex-col gap-4 md:flex-row md:items-end justify-between">
+                <div>
+                    <div className="flex items-center gap-2 mb-1 text-sm text-[var(--text-secondary)]">
+                        <Link href="/dashboard" className="flex items-center gap-1 hover:text-[var(--text-primary)] transition-colors">
+                            <Home className="w-4 h-4" />
+                            <span>Home</span>
+                        </Link>
+                        <ChevronRight className="h-4 w-4" />
+                        <span className="text-[var(--text-primary)]">My Profile</span>
+                    </div>
+                    <div className="flex items-center gap-3">
+                        <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-blue-600 to-blue-800 flex items-center justify-center shadow-lg shadow-blue-900/20">
+                            <User className="h-6 w-6 text-white" />
+                        </div>
+                        <div>
+                            <h1 className="text-3xl font-black tracking-tight text-[var(--text-primary)]">My Profile</h1>
+                            <p className="text-[var(--text-secondary)]">Manage your account settings and preferences.</p>
+                        </div>
+                    </div>
+                </div>
             </div>
 
             {message && (
@@ -515,7 +536,85 @@ export default function ProfilePage() {
                             </div>
                         </div>
                     </div>
+
+
+                    {/* Hero Image Section */}
+                    <div className="glass-panel p-6 rounded-2xl border border-[var(--glass-border)] mb-6">
+                        <div className="flex items-center gap-3 mb-4">
+                            <div className="p-2 bg-indigo-500/10 rounded-lg">
+                                <div className="w-5 h-5 flex items-center justify-center text-indigo-500 font-bold">H</div>
+                            </div>
+                            <h3 className="text-lg font-bold text-[var(--text-primary)]">Hero Image</h3>
+                        </div>
+
+                        <div className="space-y-4">
+                            <p className="text-xs text-[var(--text-secondary)]">
+                                Customize the background image of your dashboard's first slide.
+                            </p>
+
+                            <div className="relative group w-full h-32 rounded-xl overflow-hidden border border-[var(--glass-border)] bg-black/20">
+                                <div
+                                    className="absolute inset-0 bg-cover bg-center"
+                                    style={{
+                                        backgroundImage: `url('${profile.url_hero || '/pukpik-aB46yUmsMp0-unsplash.jpg'}')`,
+                                    }}
+                                />
+                                <div className="absolute inset-0 bg-black/40 group-hover:bg-black/20 transition-colors" />
+
+                                <div className="absolute inset-0 flex items-center justify-center gap-3">
+                                    <label
+                                        htmlFor="hero-upload"
+                                        className="cursor-pointer px-3 py-1.5 rounded-lg bg-white hover:bg-gray-100 shadow-md border border-gray-200 text-black font-bold text-xs transition-all flex items-center gap-1"
+                                    >
+                                        <Camera className="w-3 h-3" />
+                                        Change
+                                    </label>
+                                    <input
+                                        type="file"
+                                        id="hero-upload"
+                                        accept="image/*"
+                                        onChange={handleHeroFileSelect}
+                                        className="hidden"
+                                        disabled={isHeroUploading}
+                                    />
+
+                                    {profile.url_hero && (
+                                        <button
+                                            onClick={handleResetHero}
+                                            disabled={isHeroUploading}
+                                            className="px-3 py-1.5 rounded-lg bg-rose-500/80 hover:bg-rose-600/80 backdrop-blur-md text-white font-medium text-xs transition-all"
+                                        >
+                                            Reset
+                                        </button>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                {/* Layanan Pengaduan Section - Moved directly below Profile Card */}
+                <div className="glass-panel p-6 rounded-2xl border border-[var(--glass-border)]">
+                    <div className="flex items-center gap-3 mb-4">
+                        <div className="p-2 bg-yellow-500/10 rounded-lg">
+                            <AlertCircle className="w-5 h-5 text-yellow-500" />
+                        </div>
+                        <h3 className="text-lg font-bold text-[var(--text-primary)]">Layanan Pengaduan</h3>
+                    </div>
+
+                    <p className="text-sm text-[var(--text-secondary)] mb-6">
+                        Jika Anda memiliki keluhan, kritik, saran, atau ingin melaporkan tindakan indikasi kecurangan/pelanggaran,
+                        silakan sampaikan melalui formulir pengaduan.
+                    </p>
+
+                    <button
+                        onClick={() => router.push('/dashboard/profile/report')}
+                        className="px-6 py-2.5 rounded-xl bg-[#e8c559] text-black font-bold hover:bg-[#d6b54e] shadow-lg shadow-[#e8c559]/20 flex items-center gap-2 transition-all w-full justify-center"
+                    >
+                        <AlertCircle className="w-4 h-4" />
+                        Buat Laporan
+                    </button>
                 </div>
+            </div>
 
                 {showCropper && imageSrc && (
                     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in duration-200">
@@ -814,59 +913,9 @@ export default function ProfilePage() {
                         )}
                     </div>
 
-                    {/* Hero Image Section */}
-                    <div className="glass-panel p-8 rounded-2xl border border-[var(--glass-border)]">
-                        <div className="flex items-center gap-3 mb-6">
-                            <div className="p-2 bg-indigo-500/10 rounded-lg">
-                                <div className="w-5 h-5 flex items-center justify-center text-indigo-500 font-bold">H</div>
-                            </div>
-                            <h3 className="text-lg font-bold text-[var(--text-primary)]">Hero Image (Dashboard)</h3>
-                        </div>
 
-                        <div className="space-y-4">
-                            <p className="text-sm text-[var(--text-secondary)]">
-                                Customize the background image of your dashboard's first slide. Recommended size: 1200x400px.
-                            </p>
 
-                            <div className="relative group w-full h-32 rounded-xl overflow-hidden border border-[var(--glass-border)] bg-black/20">
-                                <div
-                                    className="absolute inset-0 bg-cover bg-center"
-                                    style={{
-                                        backgroundImage: `url('${profile.url_hero || '/pukpik-aB46yUmsMp0-unsplash.jpg'}')`,
-                                    }}
-                                />
-                                <div className="absolute inset-0 bg-black/40 group-hover:bg-black/20 transition-colors" />
 
-                                <div className="absolute inset-0 flex items-center justify-center gap-3">
-                                    <label
-                                        htmlFor="hero-upload"
-                                        className="cursor-pointer px-4 py-2 rounded-lg bg-white/10 hover:bg-white/20 backdrop-blur-md border border-white/20 text-white font-medium text-sm transition-all flex items-center gap-2"
-                                    >
-                                        <Camera className="w-4 h-4" />
-                                        Change Image
-                                    </label>
-                                    <input
-                                        type="file"
-                                        id="hero-upload"
-                                        accept="image/*"
-                                        onChange={handleHeroFileSelect}
-                                        className="hidden"
-                                        disabled={isHeroUploading}
-                                    />
-
-                                    {profile.url_hero && (
-                                        <button
-                                            onClick={handleResetHero}
-                                            disabled={isHeroUploading}
-                                            className="px-4 py-2 rounded-lg bg-rose-500/80 hover:bg-rose-600/80 backdrop-blur-md text-white font-medium text-sm transition-all"
-                                        >
-                                            Reset
-                                        </button>
-                                    )}
-                                </div>
-                            </div>
-                        </div>
-                    </div>
 
                     <div className="flex justify-end gap-4 pt-4">
                         <button
