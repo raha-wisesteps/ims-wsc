@@ -1,252 +1,711 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useMemo } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { mockTalents, RATING_CONFIG, TalentRating } from "./data";
+import { createClient } from "@/lib/supabase/client";
+import { useAuth } from "@/contexts/AuthContext";
+import {
+    Users,
+    ChevronRight,
+    Plus,
+    Search,
+    LayoutGrid,
+    List,
+    Phone,
+    Mail,
+    FileText,
+    Calendar,
+    X,
+    Filter,
+    Edit3,
+    Trash2,
+    Briefcase,
+    MapPin,
+    Hash
+} from "lucide-react";
+import Image from "next/image";
+
+// Enums & Configs
+const CATEGORY_CONFIG = {
+    'Hospitality & Operations': { label: "Hospitality & Operations", color: "bg-blue-500" },
+    'Destination Management & Policy': { label: "Destination Mgmt & Policy", color: "bg-green-500" },
+    'Planning & Infrastructure': { label: "Planning & Infrastructure", color: "bg-purple-500" },
+    'Business & Investment': { label: "Business & Investment", color: "bg-amber-500" },
+    'Marketing & Sales': { label: "Marketing & Sales", color: "bg-cyan-500" },
+    'IT, Data & Smart Tourism': { label: "IT, Data & Smart Tourism", color: "bg-red-500" },
+    'Sustainability & Environment': { label: "Sustainability & Env", color: "bg-emerald-500" },
+    'Community, Culture & Heritage': { label: "Community, Culture & Heritage", color: "bg-indigo-500" },
+    'MICE & Events': { label: "MICE & Events", color: "bg-orange-500" },
+    'Etc.': { label: "Etc.", color: "bg-gray-500" },
+};
+
+const GROUP_CONFIG = {
+    'Proven & Trusted': { label: "Proven & Trusted", color: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300" },
+    'Warm Leads': { label: "Warm Leads", color: "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300" },
+    'Cold Leads': { label: "Cold Leads", color: "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300" },
+};
+
+const STATUS_CONFIG = {
+    'Recommended': { label: "Recommended", color: "text-green-500" },
+    'Not recommended': { label: "Not recommended", color: "text-red-500" },
+    'Potential': { label: "Potential", color: "text-blue-500" },
+};
+
+export interface TalentProfile {
+    id: string;
+    name: string;
+    email: string | null;
+    linkedin: string | null;
+    phone: string | null;
+    cv_link: string | null;
+    first_met_date: string | null;
+    category: string;
+    group_classification: string;
+    status: string;
+    tags: string[] | null;
+    created_at: string;
+}
 
 export default function TalentPoolPage() {
-    const router = useRouter();
+    const supabase = createClient();
+    const { profile } = useAuth(); // Assuming basic auth needed, specific role checks can be added if required
+    const [talents, setTalents] = useState<TalentProfile[]>([]);
+    const [isLoading, setIsLoading] = useState(true);
     const [searchQuery, setSearchQuery] = useState("");
-    const [filterRating, setFilterRating] = useState<"all" | TalentRating>("all");
     const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
 
-    const filteredTalents = mockTalents.filter((talent) => {
-        const matchesSearch = talent.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-            talent.role.toLowerCase().includes(searchQuery.toLowerCase()) ||
-            talent.expertise.some(e => e.toLowerCase().includes(searchQuery.toLowerCase()));
-        const matchesFilter = filterRating === "all" || talent.rating === filterRating;
-        return matchesSearch && matchesFilter;
+    // Filters
+    const [filterCategory, setFilterCategory] = useState("");
+    const [filterGroup, setFilterGroup] = useState("");
+    const [filterStatus, setFilterStatus] = useState("");
+
+    // Pagination
+    const [currentPage, setCurrentPage] = useState(1);
+    const itemsPerPage = 9;
+
+    // Modal State
+    const [showForm, setShowForm] = useState(false);
+    const [tagInput, setTagInput] = useState("");
+    const [formData, setFormData] = useState({
+        name: "",
+        email: "",
+        linkedin: "",
+        phone: "",
+        cv_link: "",
+        first_met_date: "",
+        category: "Hospitality & Operations",
+        group_classification: "Cold Leads",
+        status: "Potential",
+        tags: [] as string[]
     });
 
-    const handleTalentClick = (id: string) => {
-        router.push(`/dashboard/talent-pool/${id}`);
+    useEffect(() => {
+        fetchTalents();
+    }, []);
+
+    const fetchTalents = async () => {
+        try {
+            const { data, error } = await supabase
+                .from("talent_profiles")
+                .select("*")
+                .order("created_at", { ascending: false });
+
+            if (error) throw error;
+            setTalents(data || []);
+        } catch (error) {
+            console.error("Error fetching talents:", error);
+        } finally {
+            setIsLoading(false);
+        }
     };
 
-    // Stats
-    const totalTalents = mockTalents.length;
-    const recommendedTalents = mockTalents.filter(c => c.rating === "recommended").length;
-    const potentialTalents = mockTalents.filter(c => c.rating === "potential").length;
+    const handleAddTag = () => {
+        const cleaned = tagInput.replace(/^#/, '').trim();
+        if (cleaned && !formData.tags.includes(cleaned)) {
+            setFormData(prev => ({ ...prev, tags: [...prev.tags, cleaned] }));
+        }
+        setTagInput("");
+    };
+
+    const handleRemoveTag = (tagToRemove: string) => {
+        setFormData(prev => ({ ...prev, tags: prev.tags.filter(t => t !== tagToRemove) }));
+    };
+
+    const handleSubmit = async (e: React.FormEvent) => {
+        e.preventDefault();
+        try {
+            const { error } = await supabase.from("talent_profiles").insert({
+                name: formData.name,
+                email: formData.email || null,
+                linkedin: formData.linkedin || null,
+                phone: formData.phone || null,
+                cv_link: formData.cv_link || null,
+                first_met_date: formData.first_met_date || null,
+                category: formData.category,
+                group_classification: formData.group_classification,
+                status: formData.status,
+                tags: formData.tags,
+                created_by: profile?.id
+            });
+
+            if (error) throw error;
+
+            setShowForm(false);
+            resetForm();
+            fetchTalents();
+        } catch (error) {
+            console.error("Error creating talent:", error);
+            alert("Error creating talent");
+        }
+    };
+
+    const resetForm = () => {
+        setFormData({
+            name: "",
+            email: "",
+            linkedin: "",
+            phone: "",
+            cv_link: "",
+            first_met_date: "",
+            category: "Hospitality & Operations",
+            group_classification: "Cold Leads",
+            status: "Potential",
+            tags: []
+        });
+        setTagInput("");
+    };
+
+    const handleDelete = async (id: string) => {
+        if (!confirm("Are you sure you want to delete this talent profile?")) return;
+        try {
+            const { error } = await supabase.from("talent_profiles").delete().eq("id", id);
+            if (error) throw error;
+            fetchTalents();
+        } catch (error) {
+            console.error("Error deleting talent:", error);
+            alert("Error deleting talent");
+        }
+    };
+
+    // Filter Logic
+    const filteredTalents = useMemo(() => {
+        return talents.filter(talent => {
+            const matchesSearch = talent.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                talent.tags?.some(tag => tag.toLowerCase().includes(searchQuery.toLowerCase()));
+            const matchesCategory = !filterCategory || talent.category === filterCategory;
+            const matchesGroup = !filterGroup || talent.group_classification === filterGroup;
+            const matchesStatus = !filterStatus || talent.status === filterStatus;
+
+            return matchesSearch && matchesCategory && matchesGroup && matchesStatus;
+        });
+    }, [talents, searchQuery, filterCategory, filterGroup, filterStatus]);
+
+    // Pagination Logic
+    const totalPages = Math.max(1, Math.ceil(filteredTalents.length / itemsPerPage));
+    const paginatedTalents = useMemo(() => {
+        const start = (currentPage - 1) * itemsPerPage;
+        return filteredTalents.slice(start, start + itemsPerPage);
+    }, [filteredTalents, currentPage]);
+
+    // Reset pagination when filters change
+    useEffect(() => {
+        setCurrentPage(1);
+    }, [searchQuery, filterCategory, filterGroup, filterStatus]);
+
+    if (isLoading) {
+        return (
+            <div className="flex items-center justify-center h-64">
+                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[#e8c559]"></div>
+            </div>
+        );
+    }
 
     return (
-        <div className="flex flex-col gap-8 pb-10">
-            {/* Page Header */}
-            <header className="flex flex-col justify-between gap-6 md:flex-row md:items-end">
-                <div className="flex items-center gap-3">
-                    <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-[#3f545f] to-[#5f788e] dark:from-blue-500 dark:to-cyan-500 flex items-center justify-center">
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-white" viewBox="0 0 24 24" fill="currentColor">
-                            <path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z" />
-                        </svg>
+        <div className="flex flex-col h-full">
+            {/* Header */}
+            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
+                <div className="flex items-center gap-4">
+                    <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center shadow-lg shadow-blue-500/20">
+                        <Users className="h-6 w-6 text-white" />
                     </div>
                     <div>
+                        <div className="flex items-center gap-2 mb-1 text-sm text-[var(--text-secondary)]">
+                            <Link href="/dashboard" className="hover:text-[var(--text-primary)]">Dashboard</Link>
+                            <ChevronRight className="h-4 w-4" />
+                            <span className="text-[var(--text-primary)]">Talent Pool</span>
+                        </div>
                         <h1 className="text-2xl font-bold text-[var(--text-primary)]">Talent Pool</h1>
-                        <p className="text-sm text-[var(--text-secondary)]">Directory of consultants, history, and performance ratings</p>
+                        <p className="text-sm text-[var(--text-secondary)]">
+                            {filteredTalents.length} talents found
+                        </p>
                     </div>
                 </div>
                 <button
-                    className="group relative flex items-center justify-center gap-2 rounded-xl bg-blue-500 px-6 py-3 text-sm font-bold text-white shadow-[0_0_20px_rgba(59,130,246,0.3)] transition-all hover:bg-blue-600 hover:shadow-[0_0_30px_rgba(59,130,246,0.5)] active:scale-95"
+                    onClick={() => setShowForm(true)}
+                    className="flex items-center gap-2 px-4 py-2 rounded-xl bg-[#e8c559] text-[#171611] font-bold hover:bg-[#d4b44e] transition-colors"
                 >
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 24 24" fill="currentColor">
-                        <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z" />
-                    </svg>
+                    <Plus className="h-4 w-4" />
                     Add Talent
                 </button>
-            </header>
-
-            {/* Summary Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div className="glass-panel p-5 rounded-2xl border border-border bg-card shadow-sm">
-                    <p className="text-xs text-muted-foreground uppercase tracking-wider mb-1">Total Talents</p>
-                    <p className="text-2xl font-bold text-foreground">{totalTalents}</p>
-                </div>
-                <div className="glass-panel p-5 rounded-2xl border border-border bg-card shadow-sm">
-                    <p className="text-xs text-muted-foreground uppercase tracking-wider mb-1">Highly Recommended</p>
-                    <p className="text-2xl font-bold text-emerald-500">{recommendedTalents}</p>
-                </div>
-                <div className="glass-panel p-5 rounded-2xl border border-border bg-card shadow-sm">
-                    <p className="text-xs text-muted-foreground uppercase tracking-wider mb-1">Potential Candidates</p>
-                    <p className="text-2xl font-bold text-blue-500">{potentialTalents}</p>
-                </div>
             </div>
 
             {/* Controls */}
-            <div className="flex flex-col md:flex-row items-center justify-between gap-4">
-                {/* Search & Filter */}
-                <div className="flex flex-1 items-center gap-3 w-full">
+            <div className="flex flex-col md:flex-row justify-between items-center gap-4 mb-6">
+                <div className="flex flex-wrap gap-3 w-full md:w-auto">
                     <div className="relative flex-1 min-w-[200px]">
-                        <svg xmlns="http://www.w3.org/2000/svg" className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" viewBox="0 0 24 24" fill="currentColor">
-                            <path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z" />
-                        </svg>
+                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-[var(--text-muted)]" />
                         <input
                             type="text"
-                            placeholder="Search by name, role, or skill..."
+                            placeholder="Search talents or tags..."
                             value={searchQuery}
                             onChange={(e) => setSearchQuery(e.target.value)}
-                            className="h-11 w-full rounded-xl border border-border bg-card/50 pl-10 pr-4 text-sm focus:ring-2 focus:ring-blue-500/50 outline-none transition-all"
+                            className="w-full pl-10 pr-4 py-2 rounded-xl border border-[var(--glass-border)] bg-white dark:bg-[#1c2120] text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-[#e8c559]"
                         />
                     </div>
-                    <div className="flex items-center gap-1 bg-card/50 border border-border rounded-xl p-1">
-                        {(["all", "recommended", "potential", "avoid"] as const).map((rating) => (
-                            <button
-                                key={rating}
-                                onClick={() => setFilterRating(rating)}
-                                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all capitalize ${filterRating === rating
-                                    ? "bg-blue-500 text-white shadow-sm"
-                                    : "text-muted-foreground hover:bg-muted hover:text-foreground"
-                                    }`}
-                            >
-                                {rating === "all" ? "All" : rating.replace("avoid", "Avoid")}
-                            </button>
+                    <select
+                        value={filterCategory}
+                        onChange={(e) => setFilterCategory(e.target.value)}
+                        className="px-4 py-2 rounded-xl border border-[var(--glass-border)] bg-white dark:bg-[#1c2120] text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-[#e8c559]"
+                    >
+                        <option value="">All Categories</option>
+                        {Object.keys(CATEGORY_CONFIG).map(cat => (
+                            <option key={cat} value={cat}>{cat}</option>
                         ))}
-                    </div>
+                    </select>
+                    <select
+                        value={filterGroup}
+                        onChange={(e) => setFilterGroup(e.target.value)}
+                        className="px-4 py-2 rounded-xl border border-[var(--glass-border)] bg-white dark:bg-[#1c2120] text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-[#e8c559]"
+                    >
+                        <option value="">All Groups</option>
+                        {Object.keys(GROUP_CONFIG).map(grp => (
+                            <option key={grp} value={grp}>{grp}</option>
+                        ))}
+                    </select>
                 </div>
 
                 {/* View Toggle */}
-                <div className="flex items-center gap-1 bg-card/50 border border-border rounded-xl p-1 shrink-0">
+                <div className="flex items-center gap-1 bg-white dark:bg-[#1c2120] border border-[var(--glass-border)] p-1 rounded-lg">
                     <button
                         onClick={() => setViewMode("grid")}
-                        className={`p-2 rounded-lg transition-all ${viewMode === "grid" ? "bg-muted text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
-                            }`}
-                        title="Grid View"
+                        className={`p-2 rounded-md transition-colors ${viewMode === "grid" ? "bg-[#e8c559] text-[#171611]" : "text-[var(--text-secondary)] hover:bg-black/5 dark:hover:bg-white/5"}`}
                     >
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 24 24" fill="currentColor">
-                            <path d="M4 11h5V5H4v6zm0 7h5v-6H4v6zm6 0h5v-6h-5v6zm6 0h5v-6h-5v6zm-6-7h5V5h-5v6zm6-6v6h5V5h-5z" />
-                        </svg>
+                        <LayoutGrid className="w-4 h-4" />
                     </button>
                     <button
                         onClick={() => setViewMode("list")}
-                        className={`p-2 rounded-lg transition-all ${viewMode === "list" ? "bg-muted text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
-                            }`}
-                        title="List View"
+                        className={`p-2 rounded-md transition-colors ${viewMode === "list" ? "bg-[#e8c559] text-[#171611]" : "text-[var(--text-secondary)] hover:bg-black/5 dark:hover:bg-white/5"}`}
                     >
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 24 24" fill="currentColor">
-                            <path d="M3 13h2v-2H3v2zm0 4h2v-2H3v2zm0-8h2V7H3v2zm4 4h14v-2H7v2zm0 4h14v-2H7v2zM7 7v2h14V7H7z" />
-                        </svg>
+                        <List className="w-4 h-4" />
                     </button>
                 </div>
             </div>
 
             {/* Content */}
-            {viewMode === "list" ? (
-                <div className="glass-panel rounded-2xl overflow-hidden border border-border bg-card shadow-sm">
-                    <div className="overflow-x-auto">
-                        <table className="w-full text-left">
-                            <thead className="bg-muted/50 border-b border-white/5">
-                                <tr className="text-xs text-muted-foreground uppercase tracking-wider">
-                                    <th className="p-4 font-semibold">Talent</th>
-                                    <th className="p-4 font-semibold">Role & Expertise</th>
-                                    <th className="p-4 font-semibold">Rating</th>
-                                    <th className="p-4 font-semibold">Previous Projects</th>
-                                    <th className="p-4 font-semibold">Notes</th>
-                                </tr>
-                            </thead>
-                            <tbody className="divide-y divide-border">
-                                {filteredTalents.map((talent) => (
-                                    <tr
-                                        key={talent.id}
-                                        className="hover:bg-muted/50 transition-colors cursor-pointer group"
-                                        onClick={() => handleTalentClick(talent.id)}
-                                    >
-                                        <td className="p-4">
-                                            <div className="flex items-center gap-3">
-                                                <div className="w-8 h-8 rounded-full bg-blue-500/20 text-blue-500 flex items-center justify-center text-xs font-bold">
-                                                    {talent.avatarInitials}
-                                                </div>
-                                                <div>
-                                                    <div className="font-bold text-foreground group-hover:text-blue-500 transition-colors">{talent.name}</div>
-                                                    <div className="text-xs text-muted-foreground">{talent.email}</div>
-                                                </div>
-                                            </div>
-                                        </td>
-                                        <td className="p-4">
-                                            <div className="text-sm font-medium text-foreground">{talent.role}</div>
-                                            <div className="flex flex-wrap gap-1 mt-1">
-                                                {talent.expertise.map((skill, i) => (
-                                                    <span key={i} className="text-[10px] bg-white/10 px-1.5 py-0.5 rounded text-muted-foreground">
-                                                        {skill}
-                                                    </span>
-                                                ))}
-                                            </div>
-                                        </td>
-                                        <td className="p-4">
-                                            <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold border ${RATING_CONFIG[talent.rating].bgClass} ${RATING_CONFIG[talent.rating].textClass} ${RATING_CONFIG[talent.rating].borderClass}`}>
-                                                {RATING_CONFIG[talent.rating].label}
-                                            </span>
-                                        </td>
-                                        <td className="p-4 text-xs text-muted-foreground max-w-xs">
-                                            {talent.projects.join(", ")}
-                                        </td>
-                                        <td className="p-4 text-xs italic text-muted-foreground max-w-xs">
-                                            "{talent.notes}"
-                                        </td>
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </table>
-                    </div>
+            {filteredTalents.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-16 text-center">
+                    <Users className="h-12 w-12 text-[var(--text-muted)] mb-4" />
+                    <h3 className="text-lg font-bold text-[var(--text-primary)] mb-2">No talents found</h3>
+                    <p className="text-[var(--text-secondary)]">Add your first talent profile to get started</p>
                 </div>
             ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                    {filteredTalents.map((talent) => (
-                        <div
-                            key={talent.id}
-                            onClick={() => handleTalentClick(talent.id)}
-                            className="group relative bg-card hover:bg-muted/30 border border-border hover:border-blue-500/50 rounded-2xl p-6 transition-all cursor-pointer shadow-sm hover:shadow-lg hover:-translate-y-1 block"
-                        >
-                            <div className="flex justify-between items-start mb-4">
-                                <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-cyan-500/20 to-blue-500/20 border border-blue-500/30 flex items-center justify-center text-xl font-bold text-foreground group-hover:text-blue-500 transition-colors">
-                                    {talent.avatarInitials}
-                                </div>
-                                <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold border ${RATING_CONFIG[talent.rating].bgClass} ${RATING_CONFIG[talent.rating].textClass} ${RATING_CONFIG[talent.rating].borderClass}`}>
-                                    {RATING_CONFIG[talent.rating].label}
-                                </span>
-                            </div>
+                <>
+                    {viewMode === "grid" ? (
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                            {paginatedTalents.map((talent) => (
+                                <div
+                                    key={talent.id}
+                                    className="group relative flex flex-col p-5 rounded-2xl bg-white dark:bg-[#1c2120] border border-[var(--glass-border)] hover:border-[#e8c559]/50 hover:shadow-xl transition-all duration-300"
+                                >
+                                    <div className="flex justify-between items-start mb-4">
+                                        <div className="flex-1">
+                                            <div className="flex flex-wrap items-center gap-2 mb-2">
+                                                <span className={`px-2.5 py-1 rounded-full text-[10px] uppercase tracking-wider font-bold text-white ${CATEGORY_CONFIG[talent.category as keyof typeof CATEGORY_CONFIG]?.color || "bg-gray-500"}`}>
+                                                    {CATEGORY_CONFIG[talent.category as keyof typeof CATEGORY_CONFIG]?.label || talent.category}
+                                                </span>
+                                                <span className={`px-2.5 py-1 rounded-full text-[10px] uppercase tracking-wider font-bold ${GROUP_CONFIG[talent.group_classification as keyof typeof GROUP_CONFIG]?.color || "bg-gray-100 text-gray-700"}`}>
+                                                    {talent.group_classification}
+                                                </span>
+                                            </div>
+                                            <Link href={`/dashboard/talent-pool/${talent.id}`} className="block">
+                                                <h3 className="text-lg font-bold text-[var(--text-primary)] group-hover:text-[#e8c559] transition-colors line-clamp-1 mb-1">
+                                                    {talent.name}
+                                                </h3>
+                                            </Link>
+                                            <p className={`text-xs font-medium ${STATUS_CONFIG[talent.status as keyof typeof STATUS_CONFIG]?.color || "text-gray-500"}`}>
+                                                {talent.status}
+                                            </p>
+                                        </div>
+                                    </div>
 
-                            <h3 className="text-lg font-bold text-foreground mb-1 group-hover:text-blue-500 transition-colors line-clamp-1">{talent.name}</h3>
-                            <p className="text-sm text-muted-foreground mb-4 font-medium">{talent.role}</p>
+                                    {/* Contact & Links */}
+                                    <div className="flex flex-col gap-2 mb-4">
+                                        {talent.email && (
+                                            <div className="flex items-center gap-2 text-sm text-[var(--text-secondary)]">
+                                                <Mail className="w-4 h-4 shrink-0" />
+                                                <span className="truncate">{talent.email}</span>
+                                            </div>
+                                        )}
+                                        {talent.phone && (
+                                            <div className="flex items-center gap-2 text-sm text-[var(--text-secondary)]">
+                                                <Phone className="w-4 h-4 shrink-0" />
+                                                <span className="truncate">{talent.phone}</span>
+                                            </div>
+                                        )}
+                                    </div>
 
-                            <div className="space-y-4">
-                                {/* Skills */}
-                                <div className="flex flex-wrap gap-1.5">
-                                    {talent.expertise.slice(0, 3).map((skill, i) => (
-                                        <span key={i} className="text-xs px-2 py-1 rounded-md bg-muted/50 text-muted-foreground border border-border">
-                                            {skill}
-                                        </span>
-                                    ))}
-                                    {talent.expertise.length > 3 && (
-                                        <span className="text-xs px-2 py-1 rounded-md bg-muted/50 text-muted-foreground border border-border">
-                                            +{talent.expertise.length - 3}
-                                        </span>
+                                    {/* Links Row */}
+                                    <div className="flex items-center gap-3 mb-4">
+                                        {talent.linkedin && (
+                                            <a
+                                                href={talent.linkedin}
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                                className="hover:opacity-80 transition-opacity"
+                                                title="LinkedIn Profile"
+                                            >
+                                                <Image src="/LinkedIn_Logo.svg" alt="LinkedIn" width={20} height={20} className="w-5 h-5" />
+                                            </a>
+                                        )}
+                                        {talent.cv_link && (
+                                            <a
+                                                href={talent.cv_link}
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                                className="flex items-center gap-1 text-xs font-medium text-blue-500 hover:text-blue-600 dark:text-blue-400 dark:hover:text-blue-300 bg-blue-50 dark:bg-blue-900/20 px-2 py-1 rounded-lg"
+                                            >
+                                                <FileText className="w-3 h-3" /> CV
+                                            </a>
+                                        )}
+                                    </div>
+
+                                    {/* Tags */}
+                                    {talent.tags && talent.tags.length > 0 && (
+                                        <div className="flex flex-wrap gap-1 mb-4">
+                                            {talent.tags.slice(0, 3).map((tag, i) => (
+                                                <span key={i} className="px-2 py-0.5 rounded text-[10px] bg-gray-100 dark:bg-gray-800 text-[var(--text-secondary)]">
+                                                    #{tag}
+                                                </span>
+                                            ))}
+                                            {talent.tags.length > 3 && (
+                                                <span className="px-2 py-0.5 rounded text-[10px] bg-gray-100 dark:bg-gray-800 text-[var(--text-secondary)]">
+                                                    +{talent.tags.length - 3}
+                                                </span>
+                                            )}
+                                        </div>
                                     )}
+
+                                    {/* Footer */}
+                                    <div className="mt-auto pt-4 border-t border-[var(--glass-border)] flex items-center justify-between">
+                                        <div className="text-xs text-[var(--text-secondary)] flex items-center gap-1">
+                                            <Calendar className="w-3 h-3" />
+                                            {talent.first_met_date ? new Date(talent.first_met_date).toLocaleDateString() : 'No Date'}
+                                        </div>
+                                        <Link href={`/dashboard/talent-pool/${talent.id}`} className="flex items-center gap-1 text-xs font-medium hover:text-[#e8c559] transition-colors ml-2">
+                                            Details <ChevronRight className="w-3 h-3" />
+                                        </Link>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    ) : (
+                        /* List View */
+                        <div className="bg-white dark:bg-[#1c2120] rounded-2xl border border-[var(--glass-border)] overflow-hidden">
+                            <div className="overflow-x-auto">
+                                <table className="w-full text-sm text-left">
+                                    <thead className="bg-[var(--glass-bg)] border-b border-[var(--glass-border)]">
+                                        <tr>
+                                            <th className="px-6 py-4 font-semibold text-[var(--text-primary)]">Name</th>
+                                            <th className="px-6 py-4 font-semibold text-[var(--text-primary)]">Category</th>
+                                            <th className="px-6 py-4 font-semibold text-[var(--text-primary)]">Group</th>
+                                            <th className="px-6 py-4 font-semibold text-[var(--text-primary)]">Status</th>
+                                            <th className="px-6 py-4 font-semibold text-[var(--text-primary)]">Contact</th>
+                                            <th className="px-6 py-4 font-semibold text-[var(--text-primary)]">Tags</th>
+                                            <th className="px-6 py-4 font-semibold text-[var(--text-primary)] text-right">Actions</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-[var(--glass-border)]">
+                                        {paginatedTalents.map((talent) => (
+                                            <tr key={talent.id} className="hover:bg-[var(--glass-bg)] transition-colors">
+                                                <td className="px-6 py-4">
+                                                    <Link href={`/dashboard/talent-pool/${talent.id}`} className="font-semibold text-[var(--text-primary)] hover:text-[#e8c559]">
+                                                        {talent.name}
+                                                    </Link>
+                                                </td>
+                                                <td className="px-6 py-4">
+                                                    <span className={`px-2 py-1 rounded-full text-xs font-medium text-white ${CATEGORY_CONFIG[talent.category as keyof typeof CATEGORY_CONFIG]?.color || "bg-gray-500"}`}>
+                                                        {CATEGORY_CONFIG[talent.category as keyof typeof CATEGORY_CONFIG]?.label || talent.category}
+                                                    </span>
+                                                </td>
+                                                <td className="px-6 py-4">
+                                                    <span className={`text-xs ${GROUP_CONFIG[talent.group_classification as keyof typeof GROUP_CONFIG]?.color.replace('bg-', 'text-')}`}>
+                                                        {talent.group_classification}
+                                                    </span>
+                                                </td>
+                                                <td className="px-6 py-4">
+                                                    <span className={`text-xs font-medium ${STATUS_CONFIG[talent.status as keyof typeof STATUS_CONFIG]?.color}`}>
+                                                        {talent.status}
+                                                    </span>
+                                                </td>
+                                                <td className="px-6 py-4">
+                                                    <div className="flex gap-2">
+                                                        {talent.email && (
+                                                            <a href={`mailto:${talent.email}`} title={talent.email} className="hover:opacity-80">
+                                                                <Mail className="w-4 h-4 text-[var(--text-secondary)]" />
+                                                            </a>
+                                                        )}
+                                                        {talent.linkedin && (
+                                                            <a href={talent.linkedin} target="_blank" rel="noopener noreferrer" title="LinkedIn" className="hover:opacity-80">
+                                                                <Image src="/LinkedIn_Logo.svg" alt="LinkedIn" width={16} height={16} className="w-4 h-4 opacity-70" />
+                                                            </a>
+                                                        )}
+                                                        {talent.cv_link && (
+                                                            <a href={talent.cv_link} target="_blank" rel="noopener noreferrer" title="View CV" className="hover:opacity-80">
+                                                                <FileText className="w-4 h-4 text-blue-500" />
+                                                            </a>
+                                                        )}
+                                                    </div>
+                                                </td>
+                                                <td className="px-6 py-4">
+                                                    <div className="flex flex-wrap gap-1 max-w-[200px]">
+                                                        {talent.tags && talent.tags.slice(0, 2).map((tag, i) => (
+                                                            <span key={i} className="text-xs text-[var(--text-secondary)] bg-gray-100 dark:bg-zinc-800 px-1 rounded">#{tag}</span>
+                                                        ))}
+                                                        {talent.tags && talent.tags.length > 2 && (
+                                                            <span className="text-xs text-[var(--text-muted)]">+{talent.tags.length - 2}</span>
+                                                        )}
+                                                    </div>
+                                                </td>
+                                                <td className="px-6 py-4 text-right">
+                                                    <div className="flex items-center justify-end gap-2">
+                                                        <button
+                                                            onClick={() => handleDelete(talent.id)}
+                                                            className="p-2 text-[var(--text-secondary)] hover:text-red-500 hover:bg-red-500/10 rounded-lg transition-colors"
+                                                        >
+                                                            <Trash2 className="w-4 h-4" />
+                                                        </button>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Pagination */}
+                    {filteredTalents.length > 0 && (
+                        <div className="flex items-center justify-between mt-6 border-t border-[var(--glass-border)] pt-4">
+                            <p className="text-sm text-[var(--text-secondary)]">
+                                Showing {((currentPage - 1) * itemsPerPage) + 1} to {Math.min(currentPage * itemsPerPage, filteredTalents.length)} of {filteredTalents.length} talents
+                            </p>
+                            <div className="flex items-center gap-2">
+                                <button
+                                    onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                                    disabled={currentPage === 1}
+                                    className="px-3 py-1 rounded-lg border border-[var(--glass-border)] text-[var(--text-secondary)] hover:bg-black/5 dark:hover:bg-white/5 disabled:opacity-50 disabled:cursor-not-allowed"
+                                >
+                                    Previous
+                                </button>
+                                <div className="flex items-center gap-1">
+                                    {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => (
+                                        <button
+                                            key={page}
+                                            onClick={() => setCurrentPage(page)}
+                                            className={`w-8 h-8 rounded-lg flex items-center justify-center text-sm font-medium transition-colors ${currentPage === page
+                                                ? 'bg-[#e8c559] text-[#171611]'
+                                                : 'text-[var(--text-secondary)] hover:bg-black/5 dark:hover:bg-white/5'
+                                                }`}
+                                        >
+                                            {page}
+                                        </button>
+                                    ))}
+                                </div>
+                                <button
+                                    onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                                    disabled={currentPage === totalPages}
+                                    className="px-3 py-1 rounded-lg border border-[var(--glass-border)] text-[var(--text-secondary)] hover:bg-black/5 dark:hover:bg-white/5 disabled:opacity-50 disabled:cursor-not-allowed"
+                                >
+                                    Next
+                                </button>
+                            </div>
+                        </div>
+                    )}
+                </>
+            )}
+
+            {/* Modal */}
+            {showForm && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+                    <div className="w-full max-w-2xl bg-white dark:bg-[#1c2120] rounded-2xl shadow-2xl max-h-[90vh] overflow-y-auto">
+                        <div className="flex items-center justify-between p-6 border-b border-[var(--glass-border)]">
+                            <h2 className="text-xl font-bold text-[var(--text-primary)]">Add New Talent</h2>
+                            <button onClick={() => setShowForm(false)} className="p-2 rounded-lg hover:bg-black/10">
+                                <X className="h-5 w-5" />
+                            </button>
+                        </div>
+
+                        <form onSubmit={handleSubmit} className="p-6 space-y-6">
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                {/* Name */}
+                                <div className="md:col-span-2">
+                                    <label className="block text-sm font-bold text-[var(--text-primary)] mb-1">Full Name *</label>
+                                    <input
+                                        type="text"
+                                        required
+                                        value={formData.name}
+                                        onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                                        className="w-full px-4 py-2 rounded-xl border border-[var(--glass-border)] bg-white dark:bg-[#232b2a] text-[var(--text-primary)]"
+                                        placeholder="e.g. John Doe"
+                                    />
                                 </div>
 
                                 {/* Contact Info */}
-                                <div className="flex items-center gap-3 text-sm p-3 rounded-lg bg-black/5 dark:bg-white/5 border border-transparent group-hover:border-blue-500/20 transition-all">
-                                    <span className="text-lg">📧</span>
-                                    <div className="flex-1 min-w-0">
-                                        <p className="font-medium text-foreground truncate">{talent.email}</p>
-                                        <p className="text-xs text-muted-foreground truncate">{talent.projects.length} Projects Completed</p>
+                                <div>
+                                    <label className="block text-sm font-bold text-[var(--text-primary)] mb-1">Email</label>
+                                    <input
+                                        type="email"
+                                        value={formData.email}
+                                        onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                                        className="w-full px-4 py-2 rounded-xl border border-[var(--glass-border)] bg-white dark:bg-[#232b2a] text-[var(--text-primary)]"
+                                        placeholder="john@example.com"
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-bold text-[var(--text-primary)] mb-1">Phone</label>
+                                    <input
+                                        type="tel"
+                                        value={formData.phone}
+                                        onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                                        className="w-full px-4 py-2 rounded-xl border border-[var(--glass-border)] bg-white dark:bg-[#232b2a] text-[var(--text-primary)]"
+                                        placeholder="+62..."
+                                    />
+                                </div>
+
+                                {/* Links */}
+                                <div>
+                                    <label className="block text-sm font-bold text-[var(--text-primary)] mb-1">LinkedIn URL</label>
+                                    <input
+                                        type="url"
+                                        value={formData.linkedin}
+                                        onChange={(e) => setFormData({ ...formData, linkedin: e.target.value })}
+                                        className="w-full px-4 py-2 rounded-xl border border-[var(--glass-border)] bg-white dark:bg-[#232b2a] text-[var(--text-primary)]"
+                                        placeholder="https://linkedin.com/in/..."
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-bold text-[var(--text-primary)] mb-1">CV Link</label>
+                                    <input
+                                        type="url"
+                                        value={formData.cv_link}
+                                        onChange={(e) => setFormData({ ...formData, cv_link: e.target.value })}
+                                        className="w-full px-4 py-2 rounded-xl border border-[var(--glass-border)] bg-white dark:bg-[#232b2a] text-[var(--text-primary)]"
+                                        placeholder="https://drive.google.com/..."
+                                    />
+                                </div>
+
+                                {/* Classification */}
+                                <div>
+                                    <label className="block text-sm font-bold text-[var(--text-primary)] mb-1">Category</label>
+                                    <select
+                                        value={formData.category}
+                                        onChange={(e) => setFormData({ ...formData, category: e.target.value })}
+                                        className="w-full px-4 py-2 rounded-xl border border-[var(--glass-border)] bg-white dark:bg-[#232b2a] text-[var(--text-primary)]"
+                                    >
+                                        {Object.keys(CATEGORY_CONFIG).map(cat => (
+                                            <option key={cat} value={cat}>{cat}</option>
+                                        ))}
+                                    </select>
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-bold text-[var(--text-primary)] mb-1">Group</label>
+                                    <select
+                                        value={formData.group_classification}
+                                        onChange={(e) => setFormData({ ...formData, group_classification: e.target.value })}
+                                        className="w-full px-4 py-2 rounded-xl border border-[var(--glass-border)] bg-white dark:bg-[#232b2a] text-[var(--text-primary)]"
+                                    >
+                                        {Object.keys(GROUP_CONFIG).map(grp => (
+                                            <option key={grp} value={grp}>{grp}</option>
+                                        ))}
+                                    </select>
+                                </div>
+
+                                <div>
+                                    <label className="block text-sm font-bold text-[var(--text-primary)] mb-1">Status</label>
+                                    <select
+                                        value={formData.status}
+                                        onChange={(e) => setFormData({ ...formData, status: e.target.value })}
+                                        className="w-full px-4 py-2 rounded-xl border border-[var(--glass-border)] bg-white dark:bg-[#232b2a] text-[var(--text-primary)]"
+                                    >
+                                        {Object.keys(STATUS_CONFIG).map(stat => (
+                                            <option key={stat} value={stat}>{stat}</option>
+                                        ))}
+                                    </select>
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-bold text-[var(--text-primary)] mb-1">First Met Date</label>
+                                    <input
+                                        type="date"
+                                        value={formData.first_met_date}
+                                        onChange={(e) => setFormData({ ...formData, first_met_date: e.target.value })}
+                                        className="w-full px-4 py-2 rounded-xl border border-[var(--glass-border)] bg-white dark:bg-[#232b2a] text-[var(--text-primary)]"
+                                    />
+                                </div>
+
+                                {/* Tags */}
+                                <div className="md:col-span-2">
+                                    <label className="block text-sm font-bold text-[var(--text-primary)] mb-1">Skills / Tags</label>
+                                    <div className="flex gap-2 mb-2">
+                                        <input
+                                            type="text"
+                                            value={tagInput}
+                                            onChange={(e) => setTagInput(e.target.value)}
+                                            onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), handleAddTag())}
+                                            className="flex-1 px-4 py-2 rounded-xl border border-[var(--glass-border)] bg-white dark:bg-[#232b2a] text-[var(--text-primary)]"
+                                            placeholder="Type tag and press Enter"
+                                        />
+                                        <button
+                                            type="button"
+                                            onClick={handleAddTag}
+                                            className="px-4 py-2 rounded-xl bg-gray-100 dark:bg-zinc-800 text-[var(--text-primary)] hover:bg-gray-200 dark:hover:bg-zinc-700"
+                                        >
+                                            Add
+                                        </button>
+                                    </div>
+                                    <div className="flex flex-wrap gap-2">
+                                        {formData.tags.map((tag, i) => (
+                                            <span key={i} className="flex items-center gap-1 px-3 py-1 rounded-full bg-[#e8c559]/10 text-[#e8c559] border border-[#e8c559]/20 text-sm">
+                                                #{tag}
+                                                <button type="button" onClick={() => handleRemoveTag(tag)} className="hover:text-red-500">
+                                                    <X className="w-3 h-3" />
+                                                </button>
+                                            </span>
+                                        ))}
                                     </div>
                                 </div>
-
-                                {/* Notes Preview */}
-                                <div className="text-xs text-muted-foreground italic border-t border-border pt-3 mt-2 line-clamp-2">
-                                    "{talent.notes}"
-                                </div>
                             </div>
 
-                            <div className="absolute top-4 right-4 opacity-0 group-hover:opacity-100 transition-opacity">
-                                <div className="p-2 rounded-full bg-blue-500 text-white">
-                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                                        <path d="M5 12h14"></path>
-                                        <path d="M12 5l7 7-7 7"></path>
-                                    </svg>
-                                </div>
+                            <div className="flex justify-end gap-3 pt-6 border-t border-[var(--glass-border)]">
+                                <button
+                                    type="button"
+                                    onClick={() => setShowForm(false)}
+                                    className="px-6 py-2 rounded-xl border border-[var(--glass-border)] text-[var(--text-primary)] hover:bg-black/5 dark:hover:bg-white/5"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    type="submit"
+                                    className="px-6 py-2 rounded-xl bg-[#e8c559] text-[#171611] font-bold hover:bg-[#d4b44e]"
+                                >
+                                    Save Talent
+                                </button>
                             </div>
-                        </div>
-                    ))}
+                        </form>
+                    </div>
                 </div>
             )}
         </div>
     );
 }
+
