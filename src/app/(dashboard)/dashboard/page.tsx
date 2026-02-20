@@ -1689,7 +1689,7 @@ export default function DashboardPage() {
     const workloadPercentage = maxCapacity > 0 ? Math.round((totalWorkload / maxCapacity) * 100) : 0;
 
     return (
-        <div className="flex flex-col gap-6">
+        <div className="flex flex-col gap-4 xl:gap-6">
             {/* Row 1: Hero Status Card with Integrated Dynamic Messages */}
             {/* Note: Using dedicated styling instead of glass-panel for consistent dark theme */}
             {/* Row 1: Hero Carousel - Swipeable */}
@@ -1710,7 +1710,7 @@ export default function DashboardPage() {
                     style={{ transform: `translateX(-${activeSlide * 100}%)` }}
                 >
                     {/* ==================== SLIDE 1: Original Hero Content ==================== */}
-                    <div className="w-full flex-shrink-0 relative group min-h-[320px]">
+                    <div className="w-full flex-shrink-0 relative group min-h-[240px] xl:min-h-[320px]">
                         {/* Background Image with Gradient */}
                         <div
                             className="absolute inset-0 bg-cover bg-center z-0 transition-transform duration-700 group-hover:scale-105"
@@ -1730,7 +1730,7 @@ export default function DashboardPage() {
                             </>
                         )}
 
-                        <div className="relative z-20 p-6 sm:p-8 flex flex-col h-full justify-between min-h-[320px]">
+                        <div className="relative z-20 p-4 sm:p-5 xl:p-8 flex flex-col h-full justify-between min-h-[240px] xl:min-h-[320px]">
                             {/* Top Row: Status Badge + Time */}
                             <div className="flex justify-between items-start">
                                 <div className="flex items-center gap-2 relative">
@@ -2197,7 +2197,7 @@ export default function DashboardPage() {
 
                     {/* ==================== SLIDE 2: Profile + Workload Preview ==================== */}
                     {/* ==================== SLIDE 2: Profile + Workload Preview ==================== */}
-                    <div className="w-full flex-shrink-0 relative min-h-[360px] group">
+                    <div className="w-full flex-shrink-0 relative min-h-[280px] xl:min-h-[360px] group">
                         {/* Background Image */}
                         <div
                             className="absolute inset-0 bg-cover bg-center z-0 transition-transform duration-700 group-hover:scale-105"
@@ -2457,7 +2457,7 @@ export default function DashboardPage() {
                                 <div className="absolute inset-0 bg-[#0f0f0d]/90 z-10" />
 
                                 {/* Content Container - Unified Single View */}
-                                <div className="relative z-20 p-8 h-full flex flex-col min-h-[400px]">
+                                <div className="relative z-20 p-4 xl:p-8 h-full flex flex-col min-h-[320px] xl:min-h-[400px]">
 
                                     {/* 1. Header: Profile & Career Level */}
                                     <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-8 border-b border-[#e8c559]/20 pb-6">
@@ -2687,12 +2687,12 @@ export default function DashboardPage() {
 
 
             {/* Row 2: Today's Team (LEFT) + Announcement (RIGHT) */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 xl:gap-6">
                 {/* Today's Team Status - Names with Status */}
                 {/* Team Activity */}
                 {/* Today's Team Status - Names with Status */}
                 {/* Team Activity */}
-                <Card className="rounded-3xl flex flex-col h-[600px] overflow-hidden bg-card border-border backdrop-blur-md shadow-xl">
+                <Card className="rounded-3xl flex flex-col h-[440px] xl:h-[600px] overflow-hidden bg-card border-border backdrop-blur-md shadow-xl">
                     <CardHeader className="p-5 border-b border-border flex flex-row items-center justify-between space-y-0 bg-inherit backdrop-blur-xl">
                         <div>
                             <CardTitle className="text-lg font-bold flex items-center gap-2">
@@ -2867,7 +2867,7 @@ export default function DashboardPage() {
                 </Card>
 
                 {/* Announcements Section */}
-                <Card className="rounded-3xl flex flex-col h-[600px] overflow-hidden bg-card border-border backdrop-blur-md shadow-xl">
+                <Card className="rounded-3xl flex flex-col h-[440px] xl:h-[600px] overflow-hidden bg-card border-border backdrop-blur-md shadow-xl">
                     <CardHeader className="p-5 border-b border-border flex flex-row items-center justify-between sticky top-0 bg-inherit backdrop-blur-xl z-20 space-y-0">
                         <div>
                             <CardTitle className="text-lg font-bold flex items-center gap-2">

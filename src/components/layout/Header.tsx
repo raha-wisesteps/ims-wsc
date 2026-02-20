@@ -131,7 +131,7 @@ export default function Header({
     };
 
     return (
-        <header className="flex flex-wrap justify-between items-center gap-4 p-8 pb-6">
+        <header className="flex flex-wrap justify-between items-center gap-4 p-4 pb-3 xl:p-8 xl:pb-6">
             <div className="flex items-center gap-4">
                 {/* Sidebar Toggle Button */}
                 <button

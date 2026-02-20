@@ -173,6 +173,11 @@
 /* Base Styles */
 html {
   scroll-behavior: smooth;
+  /* Fluid font scaling for responsive layouts:
+     - At 1366px (14" laptop): ~14.6px base → everything shrinks proportionally
+     - At 1920px+ (desktop): 16px base → original design preserved
+     This one line makes all rem-based sizing scale with viewport */
+  font-size: clamp(14px, 0.55vw + 6.5px, 16px);
 }
 
 body {

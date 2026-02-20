@@ -42,12 +42,12 @@ export default function DashboardClientLayout({
                         />
 
                         {/* Page Content */}
-                        <div className="flex-1 p-8 pt-0">
+                        <div className="flex-1 p-4 pt-0 xl:p-8 xl:pt-0">
                             {children}
                         </div>
 
                         {/* Footer */}
-                        <footer className="p-8 pt-0 text-center">
+                        <footer className="p-4 pt-0 xl:p-8 xl:pt-0 text-center">
                             <p className="text-xs text-[var(--text-secondary)]">© 2026 Wise Steps Consulting Smart Tourism Team. All rights reserved.</p>
                         </footer>
                     </div>
