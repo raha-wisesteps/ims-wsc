@@ -6,6 +6,7 @@ import Link from "next/link";
 import { Home, MapPin, ArrowLeft, Calendar, Send, Loader2, CheckCircle, XCircle, AlertCircle, ChevronRight } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
+import { sendEmailNotification } from "@/lib/email-notification";
 
 // Work type options
 const WORK_TYPES = [
@@ -148,6 +149,18 @@ export default function FlexibleWorkPage() {
                 setError("Gagal mengajukan: " + insertError.message);
                 return;
             }
+
+            // Send email notification to CEO (await to prevent abort on redirect)
+            await sendEmailNotification({
+                type: "new_request",
+                request_id: "",
+                profile_id: user.id,
+                leave_type: workType,
+                requester_name: profile.full_name || "Karyawan",
+                start_date: startDate,
+                end_date: endDate || startDate,
+                reason: reason.trim(),
+            });
 
             router.push("/dashboard/my-request");
         } catch (err) {

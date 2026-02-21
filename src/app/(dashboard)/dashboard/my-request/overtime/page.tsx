@@ -6,6 +6,7 @@ import Link from "next/link";
 import { Clock, ArrowLeft, Send, Loader2, Calendar, CheckCircle, XCircle, AlertCircle, ChevronRight } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
+import { sendEmailNotification } from "@/lib/email-notification";
 
 export default function OvertimeRequestPage() {
     const router = useRouter();
@@ -101,6 +102,18 @@ export default function OvertimeRequestPage() {
                 setError("Gagal mengajukan lembur: " + insertError.message);
                 return;
             }
+
+            // Send email notification to CEO (await to prevent abort on redirect)
+            await sendEmailNotification({
+                type: "new_request",
+                request_id: "",
+                profile_id: user.id,
+                leave_type: "overtime",
+                requester_name: profile.full_name || "Karyawan",
+                start_date: date,
+                end_date: date,
+                reason: reason.trim(),
+            });
 
             // Success - redirect back to my-request
             router.push("/dashboard/my-request");

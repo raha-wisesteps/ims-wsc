@@ -6,6 +6,7 @@ import Link from "next/link";
 import { Calendar, ArrowLeft, Send, Loader2, ChevronDown, CheckCircle, XCircle, AlertCircle, Download, ChevronRight } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
+import { sendEmailNotification } from "@/lib/email-notification";
 
 // Type definitions
 interface LeaveTypeItem {
@@ -271,6 +272,18 @@ export default function IzinCutiPage() {
                 setError("Gagal mengajukan: " + insertError.message);
                 return;
             }
+
+            // Send email notification to CEO (await to prevent abort on redirect)
+            await sendEmailNotification({
+                type: "new_request",
+                request_id: "",
+                profile_id: user.id,
+                leave_type: leaveType,
+                requester_name: profile.full_name || "Karyawan",
+                start_date: startDate,
+                end_date: endDate || startDate,
+                reason: reason.trim(),
+            });
 
             router.push("/dashboard/my-request");
         } catch (err) {

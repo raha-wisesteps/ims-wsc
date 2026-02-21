@@ -5,6 +5,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { CheckCircle, XCircle, Loader2, RefreshCw, ClipboardCheck, ChevronRight } from "lucide-react";
+import { sendEmailNotification } from "@/lib/email-notification";
 
 // Request type config for display - aligned with my-request page
 const REQUEST_TYPE_CONFIG: Record<string, { label: string; icon: string; color: string }> = {
@@ -280,6 +281,38 @@ export default function RequestApprovalPage() {
                     related_request_type: request.leave_type,
                 });
 
+            // Send approval confirmation email to the requester (all request types)
+            await sendEmailNotification({
+                type: "request_approved_user",
+                request_id: request.id,
+                profile_id: request.profile.id,
+                leave_type: request.leave_type,
+                requester_name: request.profile.full_name || "Karyawan",
+                start_date: request.start_date,
+                end_date: request.end_date,
+                reason: request.reason || "",
+            });
+
+            // Send email notification to HR for izin/sakit types
+            const HR_NOTIFY_TYPES = [
+                "sick_leave", "self_marriage", "child_marriage", "paternity",
+                "wife_miscarriage", "child_event", "family_death", "household_death",
+                "sibling_death", "hajj", "government", "disaster", "other_permission",
+                "menstrual_leave", "maternity", "miscarriage",
+            ];
+            if (HR_NOTIFY_TYPES.includes(request.leave_type)) {
+                sendEmailNotification({
+                    type: "approved_leave",
+                    request_id: request.id,
+                    profile_id: request.profile.id,
+                    leave_type: request.leave_type,
+                    requester_name: request.profile.full_name || "Karyawan",
+                    start_date: request.start_date,
+                    end_date: request.end_date,
+                    reason: request.reason || "",
+                });
+            }
+
             // Remove from list
             setRequests(prev => prev.filter(r => r.id !== requestId));
 
@@ -342,6 +375,19 @@ export default function RequestApprovalPage() {
                     related_request_id: request.id,
                     related_request_type: request.leave_type,
                 });
+
+            // Send rejection email to the requester
+            await sendEmailNotification({
+                type: "request_rejected_user",
+                request_id: request.id,
+                profile_id: request.profile.id,
+                leave_type: request.leave_type,
+                requester_name: request.profile.full_name || "Karyawan",
+                start_date: request.start_date,
+                end_date: request.end_date,
+                reason: request.reason || "",
+                reject_reason: note || "",
+            });
 
             // Remove from list
             setRequests(prev => prev.filter(r => r.id !== requestId));

@@ -6,6 +6,7 @@ import Link from "next/link";
 import { Briefcase, ArrowLeft, Calendar, MapPin, Send, Loader2, FileText, CheckCircle, XCircle, AlertCircle, ChevronRight } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
+import { sendEmailNotification } from "@/lib/email-notification";
 
 export default function BusinessTripPage() {
     const router = useRouter();
@@ -108,6 +109,18 @@ export default function BusinessTripPage() {
                 setError("Gagal melaporkan: " + insertError.message);
                 return;
             }
+
+            // Send email notification to CEO (await to ensure delivery)
+            await sendEmailNotification({
+                type: "new_request",
+                request_id: "",
+                profile_id: user.id,
+                leave_type: "business_trip",
+                requester_name: profile.full_name || "Karyawan",
+                start_date: startDate,
+                end_date: endDate,
+                reason: `Destination: ${destination.trim()}\n\n${purpose.trim()}`,
+            });
 
             // Success handling
             setSuccess(true);
