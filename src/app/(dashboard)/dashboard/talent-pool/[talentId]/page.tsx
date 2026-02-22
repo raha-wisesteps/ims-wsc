@@ -374,7 +374,7 @@ export default function TalentDetailPage() {
                                     </div>
                                     {talent.linkedin && (
                                         <div className="flex items-center gap-3 text-sm">
-                                            <Image src="/LinkedIn_Logo.svg" alt="LinkedIn" width={16} height={16} className="w-4 h-4 opacity-70" />
+                                            <Image src="/LinkedIn_icon.svg.png" alt="LinkedIn" width={16} height={16} className="w-4 h-4 opacity-70" />
                                             <a href={talent.linkedin} target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline truncate">
                                                 LinkedIn Profile
                                             </a>
@@ -507,8 +507,8 @@ export default function TalentDetailPage() {
                                             type="button"
                                             onClick={() => setLogForm({ ...logForm, performance_rating: rating })}
                                             className={`w-10 h-10 rounded-full flex items-center justify-center transition-all ${logForm.performance_rating === rating
-                                                    ? "bg-[#e8c559] text-[#171611] font-bold shadow-lg scale-110"
-                                                    : "bg-gray-100 dark:bg-zinc-800 text-[var(--text-secondary)] hover:bg-gray-200"
+                                                ? "bg-[#e8c559] text-[#171611] font-bold shadow-lg scale-110"
+                                                : "bg-gray-100 dark:bg-zinc-800 text-[var(--text-secondary)] hover:bg-gray-200"
                                                 }`}
                                         >
                                             {rating}

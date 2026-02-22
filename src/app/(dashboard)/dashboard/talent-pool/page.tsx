@@ -21,9 +21,12 @@ import {
     Trash2,
     Briefcase,
     MapPin,
-    Hash
+    Hash,
+    FileDown
 } from "lucide-react";
 import Image from "next/image";
+import * as XLSX from 'xlsx';
+import { saveAs } from 'file-saver';
 
 // Enums & Configs
 const CATEGORY_CONFIG = {
@@ -220,6 +223,31 @@ export default function TalentPoolPage() {
         );
     }
 
+    const handleExport = () => {
+        const exportData = filteredTalents.map(talent => ({
+            "Name": talent.name,
+            "Category": CATEGORY_CONFIG[talent.category as keyof typeof CATEGORY_CONFIG]?.label || talent.category,
+            "Group": talent.group_classification,
+            "Status": talent.status,
+            "Email": talent.email || "-",
+            "Phone": talent.phone || "-",
+            "LinkedIn URL": talent.linkedin || "-",
+            "CV Link": talent.cv_link || "-",
+            "First Met Date": talent.first_met_date ? new Date(talent.first_met_date).toLocaleDateString() : "-",
+            "Tags": talent.tags?.join(", ") || "-",
+            "Added On": new Date(talent.created_at).toLocaleDateString()
+        }));
+
+        const workbook = XLSX.utils.book_new();
+        const worksheet = XLSX.utils.json_to_sheet(exportData);
+        XLSX.utils.book_append_sheet(workbook, worksheet, "Talents");
+
+        const excelBuffer = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
+        const data = new Blob([excelBuffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;charset=UTF-8' });
+
+        saveAs(data, `talent_pool_${new Date().toISOString().split('T')[0]}.xlsx`);
+    };
+
     return (
         <div className="flex flex-col h-full">
             {/* Header */}
@@ -240,13 +268,23 @@ export default function TalentPoolPage() {
                         </p>
                     </div>
                 </div>
-                <button
-                    onClick={() => setShowForm(true)}
-                    className="flex items-center gap-2 px-4 py-2 rounded-xl bg-[#e8c559] text-[#171611] font-bold hover:bg-[#d4b44e] transition-colors"
-                >
-                    <Plus className="h-4 w-4" />
-                    Add Talent
-                </button>
+                <div className="flex items-center gap-2">
+                    <button
+                        onClick={handleExport}
+                        className="flex items-center gap-2 px-4 py-2 rounded-xl bg-white dark:bg-[#1c2120] border border-[var(--glass-border)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:border-[#e8c559] transition-colors"
+                        title="Export to Excel"
+                    >
+                        <FileDown className="h-4 w-4" />
+                        <span className="hidden sm:inline">Export</span>
+                    </button>
+                    <button
+                        onClick={() => setShowForm(true)}
+                        className="flex items-center gap-2 px-4 py-2 rounded-xl bg-[#e8c559] text-[#171611] font-bold hover:bg-[#d4b44e] transition-colors"
+                    >
+                        <Plus className="h-4 w-4" />
+                        Add Talent
+                    </button>
+                </div>
             </div>
 
             {/* Controls */}
@@ -364,7 +402,7 @@ export default function TalentPoolPage() {
                                                 className="hover:opacity-80 transition-opacity"
                                                 title="LinkedIn Profile"
                                             >
-                                                <Image src="/LinkedIn_Logo.svg" alt="LinkedIn" width={20} height={20} className="w-5 h-5" />
+                                                <Image src="/LinkedIn_icon.svg.png" alt="LinkedIn" width={20} height={20} className="w-5 h-5" />
                                             </a>
                                         )}
                                         {talent.cv_link && (
@@ -456,7 +494,7 @@ export default function TalentPoolPage() {
                                                         )}
                                                         {talent.linkedin && (
                                                             <a href={talent.linkedin} target="_blank" rel="noopener noreferrer" title="LinkedIn" className="hover:opacity-80">
-                                                                <Image src="/LinkedIn_Logo.svg" alt="LinkedIn" width={16} height={16} className="w-4 h-4 opacity-70" />
+                                                                <Image src="/LinkedIn_icon.svg.png" alt="LinkedIn" width={16} height={16} className="w-4 h-4 opacity-70" />
                                                             </a>
                                                         )}
                                                         {talent.cv_link && (
