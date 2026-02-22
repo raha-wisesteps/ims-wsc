@@ -39,7 +39,7 @@ const HR_NOTIFY_TYPES = [
   "sick_leave", "self_marriage", "child_marriage", "paternity",
   "wife_miscarriage", "child_event", "family_death", "household_death",
   "sibling_death", "hajj", "government", "disaster", "other_permission",
-  "menstrual_leave", "maternity", "miscarriage",
+  "menstrual_leave", "maternity", "miscarriage", "overtime",
 ];
 
 // ============================================
@@ -203,6 +203,36 @@ function buildUserRejectionEmailHtml(
 </body></html>`;
 }
 
+function buildCompanyNewsEmailHtml(
+  authorName: string, subject: string, content: string
+): string {
+  return `
+<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"></head>
+<body style="margin:0;padding:0;background-color:#f4f4f7;font-family:'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background-color:#f4f4f7;padding:32px 16px;"><tr><td align="center">
+    <table width="560" cellpadding="0" cellspacing="0" style="background-color:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,0.08);">
+      <tr><td style="background:linear-gradient(135deg,#7c3aed 0%,#6d28d9 100%);padding:28px 32px;text-align:center;">
+        <h1 style="color:#ffffff;margin:0;font-size:22px;font-weight:700;">📢 Company News</h1>
+        <p style="color:#ffffffcc;margin:8px 0 0;font-size:14px;">IMS WiseSteps Consulting</p>
+      </td></tr>
+      <tr><td style="padding:32px;">
+        <h2 style="color:#333;font-size:18px;font-weight:700;margin:0 0 16px;">${subject}</h2>
+        <div style="color:#444;font-size:14px;line-height:1.7;margin:0 0 24px;white-space:pre-wrap;">${content}</div>
+        <div style="padding:12px;background:#f8f9fb;border-radius:6px;border:1px solid #e8eaed;margin-bottom:24px;">
+          <p style="color:#666;font-size:12px;margin:0;">Dikirim oleh: <strong>${authorName}</strong></p>
+        </div>
+        <table width="100%" cellpadding="0" cellspacing="0"><tr><td align="center">
+          <a href="https://ims.wisestepsconsulting.web.id/dashboard" style="display:inline-block;background:linear-gradient(135deg,#7c3aed 0%,#6d28d9 100%);color:#ffffff;padding:14px 32px;border-radius:8px;text-decoration:none;font-size:15px;font-weight:700;">Buka IMS →</a>
+        </td></tr></table>
+      </td></tr>
+      <tr><td style="background-color:#f8f9fb;padding:20px 32px;border-top:1px solid #e8eaed;text-align:center;">
+        <p style="color:#999;font-size:12px;margin:0;">Email ini dikirim otomatis oleh sistem IMS WiseSteps Consulting.</p>
+      </td></tr>
+    </table>
+  </td></tr></table>
+</body></html>`;
+}
+
 // ============================================
 // RESEND EMAIL SENDER
 // ============================================
@@ -309,6 +339,46 @@ export async function POST(req: NextRequest) {
           `[IMS] Permintaan ${typeLabel} Ditolak`,
           buildUserRejectionEmailHtml(requester_name, leave_type, start_date, end_date, reject_reason || "")
         );
+      }
+    } else if (type === "company_news") {
+      // Send company news email
+      const { subject: newsSubject, content, audience_type, target_departments, target_users, author_name } = payload;
+
+      const newsHtml = buildCompanyNewsEmailHtml(author_name || "Admin", newsSubject || "Company News", content || "");
+      const emailSubject = `[IMS] ${newsSubject || "Company News"}`;
+
+      if (audience_type === "individual" && target_users?.length) {
+        // Private: send only to targeted user(s)
+        for (const userId of target_users) {
+          const { data: { user } } = await supabase.auth.admin.getUserById(userId);
+          if (user?.email) {
+            await sendEmail(user.email, emailSubject, newsHtml);
+          }
+        }
+      } else if (audience_type === "department" && target_departments?.length) {
+        // Department: send to all users in that department
+        const { data: deptProfiles } = await supabase
+          .from("profiles").select("id").in("department", target_departments);
+        if (deptProfiles?.length) {
+          for (const p of deptProfiles) {
+            const { data: { user } } = await supabase.auth.admin.getUserById(p.id);
+            if (user?.email) {
+              await sendEmail(user.email, emailSubject, newsHtml);
+            }
+          }
+        }
+      } else {
+        // Broadcast: send to ALL active users
+        const { data: allProfiles } = await supabase
+          .from("profiles").select("id");
+        if (allProfiles?.length) {
+          for (const p of allProfiles) {
+            const { data: { user } } = await supabase.auth.admin.getUserById(p.id);
+            if (user?.email) {
+              await sendEmail(user.email, emailSubject, newsHtml);
+            }
+          }
+        }
       }
     } else {
       return NextResponse.json({ error: `Unknown type: ${type}` }, { status: 400 });

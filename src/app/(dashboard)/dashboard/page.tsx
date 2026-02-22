@@ -24,272 +24,21 @@ import { announcementService } from "@/services/announcement";
 import { Announcement } from "@/types/announcement";
 import { HERO_MESSAGES, HeroMessage } from "./_constants/hero-messages";
 
-// ============================================
-// DYNAMIC GREETING & MOTIVATIONAL MESSAGES
-// ============================================
+// Extracted modules
+import type { BirthdayPerson, Task, TeamMember, AttendanceStatus, TaskPriority, StatusConfigItem, CeoStatusOption } from "./_types/dashboard.types";
+import {
+    STATUS_CONFIG, statusOptions, taskPriorityColors, WORKLOAD_CONFIG,
+    initialCheckinState, FEEDBACK_MESSAGES, ceoStatusOptions,
+} from "./_constants/dashboard-config";
+import {
+    getDailyMotivationalMessage, getGreetingByTime, getDaysUntilBirthday,
+    calculateWfaExpiryDays, getFeedbackMessage, getWeatherLabel,
+    getPriorityColor, getPriorityLabel,
+} from "./_utils/dashboard-utils";
 
-const getGreetingByTime = () => {
-    const hour = new Date().getHours();
-    if (hour >= 5 && hour < 12) return { text: "Good Morning", emoji: "☀️", period: "morning" };
-    if (hour >= 12 && hour < 17) return { text: "Good Afternoon", emoji: "🌤️", period: "afternoon" };
-    if (hour >= 17 && hour < 21) return { text: "Good Evening", emoji: "🌅", period: "evening" };
-    return { text: "Good Night", emoji: "🌙", period: "night" };
-};
-
-// Motivational messages - changes daily based on date
-const motivationalMessages = [
-    { message: "Setiap langkah kecil hari ini adalah kemajuan besar untuk masa depan. Keep going! 💪", emoji: "🚀" },
-    { message: "Hari ini adalah kesempatan baru untuk membuat perbedaan. You got this! ✨", emoji: "🌟" },
-    { message: "Kerja keras hari ini adalah investasi untuk kesuksesan esok. Stay focused! 🎯", emoji: "💎" },
-    { message: "Jangan lupa istirahat sejenak, kesehatan adalah aset terpenting! Take care! 💚", emoji: "🌿" },
-    { message: "Kolaborasi tim yang solid adalah kunci keberhasilan. Together we achieve more! 🤝", emoji: "👥" },
-    { message: "Tantangan hari ini adalah pelajaran untuk hari esok. Embrace it! 📚", emoji: "💡" },
-    { message: "Produktivitas bukan tentang bekerja keras, tapi bekerja cerdas. Work smart! 🧠", emoji: "⚡" },
-    { message: "Apresiasi kecil bisa memberikan dampak besar. Spread positivity! 🌈", emoji: "💝" },
-    { message: "Fokus pada progress, bukan perfection. Every step counts! 👣", emoji: "🎯" },
-    { message: "Hari Senin adalah awal yang segar untuk minggu produktif! Let's go! 🔥", emoji: "📅" },
-    { message: "Sudah minum air putih hari ini? Stay hydrated, stay sharp! 💧", emoji: "🥤" },
-    { message: "Senyum dan sapaan hangat bisa mencerahkan hari rekan kerja. Be kind! 😊", emoji: "✨" },
-];
-
-// Get motivational message based on day of year (consistent per day)
-const getDailyMotivationalMessage = () => {
-    const now = new Date();
-    const startOfYear = new Date(now.getFullYear(), 0, 0);
-    const diff = now.getTime() - startOfYear.getTime();
-    const dayOfYear = Math.floor(diff / (1000 * 60 * 60 * 24));
-    return motivationalMessages[dayOfYear % motivationalMessages.length];
-};
-
-// ============================================
-// DATA INTERFACES
-// ============================================
-
-export interface BirthdayPerson {
-    full_name: string;
-    avatar_url: string | null;
-    birth_date: string;
-    daysUntil: number; // 0 for today
-}
-
-export interface Task {
-    id: number | string; // Allow UUID
-    text: string;
-    project: string;
-    priority: "high" | "medium" | "low";
-    completed: boolean;
-    position?: number;
-}
-
-export interface TeamMember {
-    id: string;
-    name: string;
-    role: string;
-    avatar: string; // initial
-    avatarUrl?: string | null; // real image
-    status: string; // 'wfh', 'wfa', 'on_site', 'sick', 'leave', 'offline'
-    personalNote: string;
-    tasks?: { name: string; priority: string }[];
-    job_type?: string;
-}
-
-// Helper to calculate days until birthday
-const getDaysUntilBirthday = (birthDateStr: string) => {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-
-    const birthDate = new Date(birthDateStr);
-    const currentYear = today.getFullYear();
-
-    // Create birth date object for this year
-    const nextBirthday = new Date(currentYear, birthDate.getMonth(), birthDate.getDate());
-
-    // If birthday has passed this year, look at next year
-    if (nextBirthday < today) {
-        nextBirthday.setFullYear(currentYear + 1);
-    }
-
-    const diffTime = nextBirthday.getTime() - today.getTime();
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-    return diffDays;
-};
-
-// ============================================
-// LEAVE QUOTA & CALCULATIONS
-// ============================================
-
-// Calculate days until WFA expires (March 1st)
-const calculateWfaExpiryDays = () => {
-    const today = new Date();
-    let expiryYear = today.getFullYear();
-
-    // If we're past March 1st, expiry is next year
-    const march1ThisYear = new Date(today.getFullYear(), 2, 1); // Month is 0-indexed
-    if (today >= march1ThisYear) {
-        expiryYear = today.getFullYear() + 1;
-    }
-
-    const expiryDate = new Date(expiryYear, 2, 1);
-    const diffTime = expiryDate.getTime() - today.getTime();
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-    return { expiryDate, daysRemaining: diffDays };
-};
-
-
-// Types - Clock-in is only for: WFH/WFA attendance, or H/H-1 sick/leave permissions
-type AttendanceStatus = "office" | "remote" | "wfh" | "wfa" | "sick" | "leave" | "field" | "cuti" | "izin" | "sakit" | "dinas" | "lembur" | "away";
-type TaskPriority = "high" | "medium" | "low";
-
-// Task Interface is defined above
-
-
-// Status config - WHITE color for ALL modes since hero section has dark background
-// Clock-in is only for: WFH/WFA attendance, or H/H-1 sick/leave permissions
-const STATUS_CONFIG: Record<string, { label: string; bgClass: string; textClass: string; description: string }> = {
-    office: { label: "Office", bgClass: "bg-emerald-500/20", textClass: "text-white", description: "Bekerja di kantor" },
-    remote: { label: "Remote", bgClass: "bg-indigo-500/20", textClass: "text-white", description: "Bekerja remote (Full Remote)" },
-    wfh: { label: "WFH", bgClass: "bg-purple-500/20", textClass: "text-white", description: "Absensi WFH - kerja dari rumah" },
-    wfa: { label: "WFA", bgClass: "bg-sky-500/20", textClass: "text-white", description: "Absensi WFA - kerja dari lokasi lain" },
-    sick: { label: "Sakit", bgClass: "bg-rose-500/20", textClass: "text-white", description: "Perizinan sakit (H/H-1)" },
-    sakit: { label: "Sakit", bgClass: "bg-rose-500/20", textClass: "text-white", description: "Sedang sakit" },
-    leave: { label: "Izin", bgClass: "bg-amber-500/20", textClass: "text-white", description: "Perizinan izin (H/H-1)" },
-    izin: { label: "Izin", bgClass: "bg-amber-500/20", textClass: "text-white", description: "Izin tidak masuk kerja" },
-    dinas: { label: "Dinas Luar", bgClass: "bg-blue-500/20", textClass: "text-white", description: "Bekerja di lapangan/client" },
-    cuti: { label: "Cuti", bgClass: "bg-pink-500/20", textClass: "text-white", description: "Cuti tahunan/besar" },
-    field: { label: "Dinas Luar", bgClass: "bg-blue-500/20", textClass: "text-white", description: "Bekerja di lapangan/client" },
-    lembur: { label: "Lembur", bgClass: "bg-orange-500/20", textClass: "text-white", description: "Sedang lembur" },
-    away: { label: "Away", bgClass: "bg-gray-500/20", textClass: "text-white", description: "Diluar jam kerja" },
-};
-
-// Team Activity Config - Using Lucide icons instead of emoji for cleaner UI
-const statusOptions: { id: string; label: string; Icon: LucideIcon; color: string; gradient: string }[] = [
-    { id: "office", label: "OFFICE", Icon: Building2, color: "bg-emerald-500", gradient: "from-emerald-400 to-emerald-600" },
-    { id: "remote", label: "REMOTE", Icon: Globe, color: "bg-indigo-500", gradient: "from-indigo-400 to-indigo-600" },
-    { id: "wfh", label: "WFH", Icon: Home, color: "bg-purple-500", gradient: "from-purple-400 to-purple-600" },
-    { id: "wfa", label: "WFA", Icon: MapPin, color: "bg-sky-500", gradient: "from-sky-400 to-sky-600" }, // Changed Icon to MapPin for WFA
-    { id: "cuti", label: "CUTI", Icon: Umbrella, color: "bg-amber-500", gradient: "from-amber-400 to-amber-600" },
-    { id: "izin", label: "IZIN", Icon: ClipboardList, color: "bg-rose-500", gradient: "from-rose-400 to-rose-600" },
-    { id: "dinas", label: "DINAS", Icon: Briefcase, color: "bg-blue-500", gradient: "from-blue-400 to-blue-600" },
-    { id: "lembur", label: "LEMBUR", Icon: Clock, color: "bg-orange-500", gradient: "from-orange-400 to-orange-600" },
-    { id: "sakit", label: "SAKIT", Icon: Stethoscope, color: "bg-pink-500", gradient: "from-pink-400 to-pink-600" },
-    { id: "away", label: "AWAY", Icon: Moon, color: "bg-gray-500", gradient: "from-gray-400 to-gray-600" },
-];
-
-
-const taskPriorityColors = {
-    high: "bg-pink-500/20 text-pink-600 dark:text-pink-400 border border-pink-500/30",
-    medium: "bg-orange-500/20 text-orange-600 dark:text-orange-400 border border-orange-500/30",
-    low: "bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30",
-};
-
-// Workload weighting config
-const WORKLOAD_CONFIG = {
-    maxCapacity: {
-        "Intern": 8,
-        "Analyst L1": 10,
-        "Analyst L2": 10,
-        "Senior Analyst": 12, // Analyst L3+
-        "Consultant": 12,
-    } as Record<string, number>,
-    typeLabels: {
-        project: { label: "Project", weight: 4 },
-        proposal: { label: "Proposal", weight: 2 },
-        presentation: { label: "Presentation", weight: 2 },
-        support: { label: "Support", weight: 2 },
-        etc: { label: "Etc", weight: 1 },
-    },
-};
-
-// Initial check-in state - will be converted to useState in component
-const initialCheckinState = {
-    isClockedIn: false,
-    isClockedOut: false,
-    status: null as AttendanceStatus | null,
-    clockInTime: null as string | null,
-    clockOutTime: null as string | null,
-    isLate: false,
-    hasApprovedRequest: false,
-    approvedRequestType: null as AttendanceStatus | null,
-    isForceMajeure: false,
-};
-
-// Dynamic feedback messages based on context
-const FEEDBACK_MESSAGES = {
-    office_ontime: [
-        { message: "Mantap! Kamu datang tepat waktu hari ini! 🎯", emoji: "🏢" },
-        { message: "Good job! Semangat kerja hari ini! 💪", emoji: "✨" },
-        { message: "Pagi yang produktif dimulai dari tepat waktu! ☀️", emoji: "🌟" },
-    ],
-    office_late: [
-        { message: "Oops, telat ya hari ini. Yuk besok lebih pagi! 😅", emoji: "⚠️" },
-        { message: "Tidak apa-apa, yang penting sekarang sudah hadir! 💪", emoji: "👍" },
-        { message: "Semoga macetnya tidak terlalu menyebalkan 🚗", emoji: "🚓" },
-    ],
-    wfh_ontime: [
-        { message: "Nice! WFH tapi tetap on-time, mantap! 🏠✨", emoji: "🏠" },
-        { message: "Sudah siap kerja dari rumah! Jangan lupa bisa dihubungi ya! 📱", emoji: "💻" },
-        { message: "WFH mode ON! Pastikan tetap produktif ya! 🎯", emoji: "💡" },
-    ],
-    wfh_late: [
-        { message: "Hayo ngaku, tadi snooze alarm berapa kali? 😴💤", emoji: "⏰" },
-        { message: "Jangan tidur lagi ya! Kasurnya menggoda memang 🛏️", emoji: "😄" },
-        { message: "Oke sudah clock in, sekarang jangan hibernasi lagi 😄", emoji: "☕" },
-    ],
-    sick_preapproved: [
-        { message: "Eh, ngapain buka ini? 😅 Tenang, ga perlu absen kok. Istirahatlah! Get well soon! 💚🩹", emoji: "🏥" },
-    ],
-    sick_forcemajeure: [
-        { message: "Waduh, sakit ya? 😢 Semoga lekas pulih! Get well soon! 💪🩹", emoji: "🏥" },
-    ],
-    leave_preapproved: [
-        { message: "Kamu lagi izin/cuti loh! 🏖️ Ga perlu absen, santai aja. Semoga urusannya cepat selesai! 🙌", emoji: "📅" },
-    ],
-    leave_forcemajeure: [
-        { message: "Izin mendadak ya? Tidak apa-apa! 🙏 Semoga urusannya cepat selesai. Take care!", emoji: "📅" },
-    ],
-    field: [
-        { message: "Semangat di lapangan! 💼🚗 Hati-hati di jalan dan sukses dengan tugasnya ya!", emoji: "🚗" },
-    ],
-    clockout: [
-        { message: "Kerja keras hari ini! Selamat istirahat dan sampai jumpa besok! 👋", emoji: "🌙" },
-        { message: "Great work today! Jangan lupa istirahat yang cukup ya! 💚", emoji: "🌟" },
-    ],
-};
-
-// Get random feedback message based on context
-const getFeedbackMessage = (status: AttendanceStatus, isLate: boolean, isForceMajeure: boolean, isClockedOut: boolean = false) => {
-    if (isClockedOut) {
-        const pool = FEEDBACK_MESSAGES.clockout;
-        return pool[Math.floor(Math.random() * pool.length)];
-    }
-
-    let key: keyof typeof FEEDBACK_MESSAGES;
-    switch (status) {
-        case 'office':
-            key = isLate ? 'office_late' : 'office_ontime';
-            break;
-        case 'wfh':
-        case 'wfa':
-            key = isLate ? 'wfh_late' : 'wfh_ontime';
-            break;
-        case 'sick':
-        case 'sakit':
-            key = isForceMajeure ? 'sick_forcemajeure' : 'sick_preapproved';
-            break;
-        case 'leave':
-            key = isForceMajeure ? 'leave_forcemajeure' : 'leave_preapproved';
-            break;
-        case 'field':
-            key = 'field';
-            break;
-        default:
-            key = 'office_ontime';
-    }
-    const pool = FEEDBACK_MESSAGES[key];
-    return pool[Math.floor(Math.random() * pool.length)];
-};
-
-
+// Extracted components
+import TeamActivityCard from "./_components/TeamActivityCard";
+import CompanyNewsCard from "./_components/CompanyNewsCard";
 
 const LoadingDots = () => {
     const [dots, setDots] = useState("");
@@ -492,7 +241,7 @@ export default function DashboardPage() {
     }, []);
 
     // Personal Status Message State
-    const [statusMessage, setStatusMessage] = useState("Building the future of IMS! 💻");
+    const [statusMessage, setStatusMessage] = useState("Set Your Status Message");
 
     const [dailyPlan, setDailyPlan] = useState<Task[]>([]);
 
@@ -565,18 +314,22 @@ export default function DashboardPage() {
                 // but we should probably use a real state or 'profile' from useAuth
                 // For now, keeping the logic simplified
 
-                // Set Capacity based on level
+                // Set Capacity based on level (Matching Team Workload Page logic)
                 const level = profile.job_level || "Analyst L1";
-                const capConfig: Record<string, number> = {
-                    "Intern": 8,
-                    "Analyst L1": 10,
-                    "Analyst L2": 10,
-                    "Senior Analyst": 12,
-                    "Consultant": 12,
-                    "Manager": 12,
+
+                const getCapacity = (lvl: string): number => {
+                    if (lvl.toUpperCase().includes("CEO")) return 14;
+                    if (lvl.includes("Intern") || profile.job_type === 'intern') return 8;
+                    if (lvl.includes("Analyst")) return 10;
+                    if (lvl.includes("Consultant")) return 12;
+                    if (lvl.includes("Manager") && !lvl.includes("Business")) return 14;
+                    if (lvl.includes("Sales Executive")) return 10;
+                    if (lvl.includes("Business Dev")) return 12;
+                    if (lvl.includes("Business Manager")) return 14;
+                    return 10;
                 };
-                if (profile.job_type === 'intern') setMaxCapacity(8);
-                else setMaxCapacity(capConfig[level] || 10);
+
+                setMaxCapacity(getCapacity(level));
 
                 // Fetch Workload Items
                 const { data: items } = await supabase
@@ -1027,6 +780,16 @@ export default function DashboardPage() {
             console.error('Clock in error:', err);
         }
 
+        // Also update profiles.status for team data consistency (mirrors CEO handler)
+        try {
+            await supabase
+                .from('profiles')
+                .update({ status: status })
+                .eq('id', profile.id);
+        } catch (err) {
+            console.error('Failed to update profiles.status:', err);
+        }
+
         // Update local state
         setCheckinState({
             ...checkinState,
@@ -1037,6 +800,14 @@ export default function DashboardPage() {
             isForceMajeure: false,
         });
         setCurrentStatus(status);
+
+        // Also update teamStatuses so Team Activity & carousel badge stay in sync
+        setTeamStatuses(prev => prev.map(member =>
+            member.id === profile.id
+                ? { ...member, status: status }
+                : member
+        ));
+
         setShowClockInFeedback(true);
     };
 
@@ -1100,16 +871,7 @@ export default function DashboardPage() {
     const [showCeoStatusDropdown, setShowCeoStatusDropdown] = useState(false);
     const [isUpdatingCeoStatus, setIsUpdatingCeoStatus] = useState(false);
 
-    // CEO-only status options (excluding office since they can just clock in for that)
-    const ceoStatusOptions = [
-        { id: 'office', label: 'Office', Icon: Building2, color: 'bg-emerald-500' },
-        { id: 'wfh', label: 'WFH', Icon: Home, color: 'bg-purple-500' },
-        { id: 'wfa', label: 'WFA', Icon: MapPin, color: 'bg-sky-500' },
-        { id: 'dinas', label: 'Dinas', Icon: Briefcase, color: 'bg-blue-500' },
-        { id: 'cuti', label: 'Cuti', Icon: Umbrella, color: 'bg-amber-500' },
-        { id: 'izin', label: 'Izin', Icon: ClipboardList, color: 'bg-rose-500' },
-        { id: 'sakit', label: 'Sakit', Icon: Stethoscope, color: 'bg-pink-500' },
-    ];
+    // CEO status options — imported from dashboard-config.ts (includes lembur)
 
     const handleCEOStatusChange = async (newStatus: string) => {
         if (!profile || isUpdatingCeoStatus) return;
@@ -1249,6 +1011,9 @@ export default function DashboardPage() {
 
             // Update CEO status override for immediate UI update
             setCeoStatusOverride(newStatus);
+
+            // Sync currentStatus so carousel header accent also updates
+            setCurrentStatus(newStatus as AttendanceStatus);
 
             // Also update teamStatuses so Team Activity reflects the change
             setTeamStatuses(prev => prev.map(member =>
@@ -1666,22 +1431,9 @@ export default function DashboardPage() {
 
     const statusInfo = STATUS_CONFIG[currentStatus as AttendanceStatus];
 
-    // Priority colors
-    const getPriorityColor = (priority: TaskPriority) => {
-        switch (priority) {
-            case "high": return "text-rose-500 bg-rose-500/10";
-            case "medium": return "text-amber-500 bg-amber-500/10";
-            case "low": return "text-emerald-500 bg-emerald-500/10";
-        }
-    };
+    // getPriorityColor imported from dashboard-utils.ts
 
-    const getPriorityLabel = (priority: TaskPriority) => {
-        switch (priority) {
-            case "high": return "High";
-            case "medium": return "Medium";
-            case "low": return "Low";
-        }
-    };
+    // getPriorityLabel imported from dashboard-utils.ts
 
     // Workload calculations
     const totalWorkload = workloadItems.reduce((sum, item) => sum + item.slots, 0);
@@ -1895,7 +1647,7 @@ export default function DashboardPage() {
                                                     <span className="text-xs font-medium uppercase text-[#f4d875]">Cuti Tahunan</span>
                                                 </div>
                                                 <p className="text-xl font-bold text-white !text-white">
-                                                    {leaveQuota?.annual_leave_used || 0}/{leaveQuota?.annual_leave_total || 18}
+                                                    {leaveQuota?.annual_leave_used || 0}/{leaveQuota?.annual_leave_total || 15}
                                                 </p>
                                             </CardContent>
                                         </Card>
@@ -2011,11 +1763,11 @@ export default function DashboardPage() {
                                                 <span className="text-[10px] font-bold text-white uppercase tracking-wider text-center">Assignments</span>
                                             </Link>
 
-                                            <Link href="/dashboard/board" className="group flex flex-col items-center justify-center gap-2 p-2 rounded-xl backdrop-blur-md transition-all hover:scale-105 active:scale-95 border bg-amber-500/10 border-amber-500/20 hover:bg-amber-500/20 dark:bg-white/5 dark:border-white/10 dark:hover:bg-white/10">
+                                            <Link href="/dashboard/sharing-session" className="group flex flex-col items-center justify-center gap-2 p-2 rounded-xl backdrop-blur-md transition-all hover:scale-105 active:scale-95 border bg-amber-500/10 border-amber-500/20 hover:bg-amber-500/20 dark:bg-white/5 dark:border-white/10 dark:hover:bg-white/10">
                                                 <div className="w-8 h-8 rounded-lg bg-amber-500/20 flex items-center justify-center group-hover:bg-amber-500/30 transition-colors">
-                                                    <Calendar className="h-4 w-4 text-amber-300" />
+                                                    <BookOpen className="h-4 w-4 text-amber-300" />
                                                 </div>
-                                                <span className="text-[10px] font-bold text-white uppercase tracking-wider text-center">Team Schedule</span>
+                                                <span className="text-[10px] font-bold text-white uppercase tracking-wider text-center">Sharing Session</span>
                                             </Link>
                                         </div>
 
@@ -2688,239 +2440,14 @@ export default function DashboardPage() {
 
             {/* Row 2: Today's Team (LEFT) + Announcement (RIGHT) */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 xl:gap-6">
-                {/* Today's Team Status - Names with Status */}
-                {/* Team Activity */}
-                {/* Today's Team Status - Names with Status */}
-                {/* Team Activity */}
-                <Card className="rounded-3xl flex flex-col h-[440px] xl:h-[600px] overflow-hidden bg-card border-border backdrop-blur-md shadow-xl">
-                    <CardHeader className="p-5 border-b border-border flex flex-row items-center justify-between space-y-0 bg-inherit backdrop-blur-xl">
-                        <div>
-                            <CardTitle className="text-lg font-bold flex items-center gap-2">
-                                Team Activity
-                                <Badge variant="secondary" className="text-xs font-normal px-2 py-0.5 rounded-full bg-primary/10 text-primary hover:bg-primary/20">
-                                    {teamStatuses.length} Active
-                                </Badge>
-                            </CardTitle>
-                            <CardDescription className="text-xs mt-0.5">Real-time team status updates</CardDescription>
-                        </div>
-                        <div className="flex gap-2">
-                            {/* Filter buttons could go here if needed */}
-                        </div>
-                    </CardHeader>
-
-                    <div className="flex-1 overflow-hidden flex flex-col">
-                        {/* Fixed User Section - Always Visible */}
-                        <div className="p-4 pb-0">
-                            {(() => {
-                                const user = teamStatuses.find(m => m.id === profile?.id);
-                                if (!user) return null;
-
-                                const userWithTasks = {
-                                    ...user,
-                                    tasks: dailyPlan.filter(t => !t.completed).map(t => ({ name: t.text, priority: t.priority }))
-                                };
-                                const memberStatusInfo = statusOptions.find(s => s.id === userWithTasks.status);
-
-                                const StatusIcon = memberStatusInfo?.Icon;
-                                return (
-                                    <div className="p-4 rounded-2xl bg-[var(--glass-bg)] border-2 border-[var(--primary)]/20 hover:border-[var(--primary)]/40 transition-all cursor-pointer group mb-3 shadow-md">
-                                        <div className="flex items-center gap-4 mb-3">
-                                            <div className="relative flex-shrink-0">
-                                                {userWithTasks.avatarUrl ? (
-                                                    <div className="w-14 h-14 rounded-full overflow-hidden ring-2 ring-[var(--primary)]/30">
-                                                        <Image
-                                                            src={userWithTasks.avatarUrl}
-                                                            alt={userWithTasks.name}
-                                                            width={56}
-                                                            height={56}
-                                                            className="w-full h-full object-cover"
-                                                        />
-                                                    </div>
-                                                ) : (
-                                                    <div className="w-14 h-14 rounded-full bg-gradient-to-br from-[var(--primary)] to-[var(--primary)]/70 flex items-center justify-center text-base text-[var(--primary-foreground)] font-bold ring-2 ring-[var(--primary)]/30">
-                                                        {userWithTasks.avatar}
-                                                    </div>
-                                                )}
-                                                {/* Online indicator */}
-                                                <div className={`absolute -bottom-0.5 -right-0.5 w-4 h-4 rounded-full border-2 border-white dark:border-[var(--glass-bg)] ${memberStatusInfo?.color || 'bg-emerald-500'}`} />
-                                            </div>
-                                            <div className="flex-1 min-w-0 flex items-start gap-3">
-                                                <div className="flex flex-col min-w-[120px] max-w-[200px]">
-                                                    <div className="flex items-center gap-2">
-                                                        <span className="font-bold text-sm truncate text-[var(--text-primary)]">
-                                                            {userWithTasks.name}
-                                                        </span>
-                                                        <span className="text-xs text-[var(--primary)] font-medium">(You)</span>
-                                                        <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-bold ${memberStatusInfo?.color} text-white shadow-sm`}>
-                                                            {StatusIcon && <StatusIcon className="w-3 h-3" />}
-                                                            {memberStatusInfo?.label}
-                                                        </span>
-                                                    </div>
-                                                    <p className="text-xs text-[var(--text-muted)] mt-0.5 truncate">{userWithTasks.role}</p>
-                                                </div>
-
-                                                {userWithTasks.personalNote && (
-                                                    <div className="flex-1 min-w-0">
-                                                        <div className="relative w-fit max-w-full bg-gray-100 dark:bg-white/10 px-3 py-2 rounded-2xl rounded-tl-none text-xs text-[var(--text-primary)] leading-snug break-words">
-                                                            {userWithTasks.personalNote}
-                                                        </div>
-                                                    </div>
-                                                )}
-                                            </div>
-                                        </div>
-
-                                        {userWithTasks.tasks && userWithTasks.tasks.length > 0 && (
-                                            <div className="pl-[72px] flex flex-wrap gap-2">
-                                                {userWithTasks.tasks.slice(0, 3).map((task, idx) => (
-                                                    <span key={idx} className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[10px] font-medium ${taskPriorityColors[task.priority as keyof typeof taskPriorityColors] || taskPriorityColors.medium}`}>
-                                                        {task.name}
-                                                    </span>
-                                                ))}
-                                                {userWithTasks.tasks.length > 3 && (
-                                                    <span className="inline-flex items-center px-2 py-1 rounded-lg text-[10px] font-medium bg-[var(--glass-border)] text-[var(--text-muted)]">
-                                                        +{userWithTasks.tasks.length - 3} more
-                                                    </span>
-                                                )}
-                                            </div>
-                                        )}
-                                    </div>
-                                );
-                            })()}
-                            <div className="h-px bg-[var(--glass-border)] w-full mb-2"></div>
-                        </div>
-
-                        {/* Scrollable Other Members */}
-                        <div className="flex-1 overflow-y-auto px-4 pb-4 space-y-3 custom-scrollbar">
-                            {teamStatuses
-                                .filter(m => m.id !== profile?.id && m.job_type !== 'hr' && m.role?.toLowerCase() !== 'hr' && !m.role?.toLowerCase().includes('human resource'))
-                                .map(member => {
-                                    const memberStatusInfo = statusOptions.find(s => s.id === member.status);
-                                    const StatusIcon = memberStatusInfo?.Icon;
-                                    return (
-                                        <div key={member.id} className="p-4 rounded-2xl bg-[var(--glass-bg)] border border-[var(--glass-border)] hover:border-[var(--primary)]/30 transition-all cursor-pointer group">
-                                            <div className="flex items-center gap-4 mb-3">
-                                                <div className="relative flex-shrink-0">
-                                                    {member.avatarUrl ? (
-                                                        <div className="w-12 h-12 rounded-full overflow-hidden ring-2 ring-[var(--glass-border)]">
-                                                            <Image
-                                                                src={member.avatarUrl}
-                                                                alt={member.name}
-                                                                width={48}
-                                                                height={48}
-                                                                className="w-full h-full object-cover"
-                                                            />
-                                                        </div>
-                                                    ) : (
-                                                        <div className="w-12 h-12 rounded-full bg-gradient-to-br from-[var(--primary)] to-[var(--primary)]/70 flex items-center justify-center text-sm text-[var(--primary-foreground)] font-bold ring-2 ring-[var(--glass-border)]">
-                                                            {member.avatar}
-                                                        </div>
-                                                    )}
-                                                    {/* Online indicator */}
-                                                    <div className={`absolute -bottom-0.5 -right-0.5 w-4 h-4 rounded-full border-2 border-white dark:border-[var(--glass-bg)] ${memberStatusInfo?.color.replace('bg-', 'bg-') || 'bg-gray-400'}`} />
-                                                </div>
-                                                <div className="flex-1 min-w-0 flex items-start gap-3">
-                                                    <div className="flex flex-col min-w-[120px] max-w-[200px]">
-                                                        <div className="flex items-center gap-2">
-                                                            <span className="font-semibold text-sm text-[var(--text-primary)] truncate">{member.name}</span>
-                                                            <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[9px] font-bold ${memberStatusInfo?.color} text-white`}>
-                                                                {StatusIcon && <StatusIcon className="w-2.5 h-2.5" />}
-                                                                {memberStatusInfo?.label}
-                                                            </span>
-                                                        </div>
-                                                        <p className="text-xs text-[var(--text-muted)] mt-0.5 truncate">{member.role}</p>
-                                                    </div>
-
-                                                    {member.personalNote && (
-                                                        <div className="flex-1 min-w-0">
-                                                            <div className="relative w-fit max-w-full bg-gray-100 dark:bg-white/10 px-3 py-2 rounded-2xl rounded-tl-none text-xs text-[var(--text-primary)] leading-snug break-words">
-                                                                {member.personalNote}
-                                                            </div>
-                                                        </div>
-                                                    )}
-                                                </div>
-                                            </div>
-
-                                            {
-                                                member.tasks && member.tasks.length > 0 && (
-                                                    <div className="pl-[64px] flex flex-wrap gap-1.5">
-                                                        {member.tasks.map((task, idx) => (
-                                                            <span key={idx} className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[9px] font-medium ${taskPriorityColors[task.priority as keyof typeof taskPriorityColors] || taskPriorityColors.medium}`}>
-                                                                {task.name}
-                                                            </span>
-                                                        ))}
-                                                    </div>
-                                                )
-                                            }
-                                        </div>
-                                    );
-                                })}
-                        </div>
-                    </div>
-
-                    {/* Bottom spacer for aesthetics */}
-                    <div className="p-3 border-t border-[var(--glass-border)] bg-black/5 dark:bg-white/5 backdrop-blur-sm">
-                        <div className="flex items-center justify-center gap-2 text-xs font-bold text-transparent select-none py-1.5 pointer-events-none">
-                            Spacer Content
-                            <ChevronRight className="h-3 w-3 opacity-0" />
-                        </div>
-                    </div>
-                </Card>
-
-                {/* Announcements Section */}
-                <Card className="rounded-3xl flex flex-col h-[440px] xl:h-[600px] overflow-hidden bg-card border-border backdrop-blur-md shadow-xl">
-                    <CardHeader className="p-5 border-b border-border flex flex-row items-center justify-between sticky top-0 bg-inherit backdrop-blur-xl z-20 space-y-0">
-                        <div>
-                            <CardTitle className="text-lg font-bold flex items-center gap-2">
-                                Company News
-                                <Badge variant="secondary" className="text-xs font-normal px-2 py-0.5 rounded-full bg-primary/10 text-primary hover:bg-primary/20">
-                                    Latest
-                                </Badge>
-                            </CardTitle>
-                            <CardDescription className="text-xs mt-0.5">Official updates from Management</CardDescription>
-                        </div>
-                        <div className="h-9 w-9 rounded-full bg-primary/10 flex items-center justify-center text-primary ring-4 ring-primary/5">
-                            <Megaphone className="h-4 w-4" />
-                        </div>
-                    </CardHeader>
-
-                    <div className="flex-1 overflow-y-auto p-4 space-y-4 custom-scrollbar">
-                        {announcements.length === 0 ? (
-                            <div className="text-center py-10 text-muted-foreground">
-                                <p className="text-sm">No new announcements</p>
-                            </div>
-                        ) : (
-                            announcements.slice(0, 5).map((announcement) => (
-                                <div key={announcement.id} className="group flex gap-3 p-3 rounded-xl hover:bg-black/5 dark:hover:bg-white/5 transition-colors border border-transparent hover:border-border/50">
-                                    <div className={`w-10 h-10 rounded-full flex items-center justify-center text-xs font-bold shrink-0 shadow-sm bg-[var(--primary)] text-[var(--primary-foreground)]`}>
-                                        {announcement.author?.full_name ? announcement.author.full_name[0].toUpperCase() : "A"}
-                                    </div>
-
-                                    <div className="flex-1 min-w-0 space-y-1">
-                                        <div className="flex justify-between items-start">
-                                            <div>
-                                                <h4 className="text-sm font-bold text-[var(--text-primary)] group-hover:text-primary transition-colors">{announcement.title}</h4>
-                                                <p className="text-[10px] text-muted-foreground uppercase font-bold tracking-wide">{announcement.author?.role || "Management"}</p>
-                                            </div>
-                                            <span className="text-[10px] text-[var(--text-muted)] font-mono whitespace-nowrap ml-2 bg-secondary/50 px-1.5 py-0.5 rounded">
-                                                {new Date(announcement.created_at).toLocaleDateString('id-ID', { day: 'numeric', month: 'short' })}
-                                            </span>
-                                        </div>
-                                        <p className="text-xs text-[var(--text-secondary)] leading-relaxed line-clamp-2 group-hover:line-clamp-none transition-all">
-                                            {announcement.content}
-                                        </p>
-                                    </div>
-                                </div>
-                            ))
-                        )}
-                    </div>
-
-                    <div className="p-3 border-t border-[var(--glass-border)] bg-black/5 dark:bg-white/5 backdrop-blur-sm">
-                        <Link href="/dashboard/announcements" className="flex items-center justify-center gap-2 text-xs font-bold text-muted-foreground hover:text-primary transition-colors py-1.5">
-                            View Announcement Archive
-                            <ChevronRight className="h-3 w-3" />
-                        </Link>
-                    </div>
-                </Card>
+                <TeamActivityCard
+                    teamStatuses={teamStatuses}
+                    currentUserId={profile?.id}
+                    dailyPlan={dailyPlan}
+                    statusOptions={statusOptions}
+                    taskPriorityColors={taskPriorityColors}
+                />
+                <CompanyNewsCard announcements={announcements} />
             </div >
 
             {/* Update Plan Modal */}

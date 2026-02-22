@@ -34,7 +34,17 @@ interface RequestApprovedUserPayload {
   reason: string;
 }
 
-type EmailNotificationPayload = NewRequestPayload | ApprovedLeavePayload | RequestApprovedUserPayload | RequestRejectedUserPayload;
+type EmailNotificationPayload = NewRequestPayload | ApprovedLeavePayload | RequestApprovedUserPayload | RequestRejectedUserPayload | CompanyNewsPayload;
+
+interface CompanyNewsPayload {
+  type: "company_news";
+  subject: string;
+  content: string;
+  audience_type: "broadcast" | "department" | "individual";
+  target_departments?: string[];
+  target_users?: string[];
+  author_name: string;
+}
 
 interface RequestRejectedUserPayload {
   type: "request_rejected_user";

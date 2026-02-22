@@ -298,7 +298,7 @@ export default function RequestApprovalPage() {
                 "sick_leave", "self_marriage", "child_marriage", "paternity",
                 "wife_miscarriage", "child_event", "family_death", "household_death",
                 "sibling_death", "hajj", "government", "disaster", "other_permission",
-                "menstrual_leave", "maternity", "miscarriage",
+                "menstrual_leave", "maternity", "miscarriage", "overtime",
             ];
             if (HR_NOTIFY_TYPES.includes(request.leave_type)) {
                 sendEmailNotification({

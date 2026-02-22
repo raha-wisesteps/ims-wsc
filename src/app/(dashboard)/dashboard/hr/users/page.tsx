@@ -5,8 +5,9 @@ import Link from "next/link";
 import { ChevronRight, Loader2, Users } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
+import { toast } from "react-hot-toast";
 
-type UserRole = "owner" | "super_admin" | "ceo" | "hr" | "employee";
+type UserRole = "owner" | "super_admin" | "ceo" | "hr" | "employee" | "intern";
 type Department = "analyst" | "bisdev" | "sales" | "intern" | "hr";
 type EmployeeType = "employee" | "remote_employee";
 
@@ -32,6 +33,7 @@ const ROLE_CONFIG: Record<string, { label: string; bgClass: string; textClass: s
     ceo: { label: "CEO", bgClass: "bg-amber-500/10", textClass: "text-amber-400" },
     hr: { label: "HR Admin", bgClass: "bg-purple-500/10", textClass: "text-purple-400" },
     employee: { label: "Employee", bgClass: "bg-blue-500/10", textClass: "text-blue-400" },
+    intern: { label: "Intern", bgClass: "bg-sky-500/10", textClass: "text-sky-400" },
 };
 
 const DEPT_CONFIG: Record<string, { label: string; bgClass: string; textClass: string }> = {
@@ -70,9 +72,14 @@ export default function UserManagementPage() {
     const [searchQuery, setSearchQuery] = useState("");
     const [filterRole, setFilterRole] = useState<"all" | UserRole>("all");
     const [selectedUser, setSelectedUser] = useState<User | null>(null);
+    const [isAddMode, setIsAddMode] = useState(false);
 
-    // Form state for editing
+    // Form state for editing/adding
     const [formData, setFormData] = useState({
+        full_name: "",
+        email: "",
+        password: "",
+        role: "employee" as UserRole,
         job_type: "analyst" as Department,
         job_level: "",
         employee_type: "employee" as EmployeeType,
@@ -106,7 +113,12 @@ export default function UserManagementPage() {
 
     const handleEdit = (user: User) => {
         setSelectedUser(user);
+        setIsAddMode(false);
         setFormData({
+            full_name: user.full_name || "",
+            email: user.email || "",
+            password: "",
+            role: user.role || "employee",
             job_type: user.job_type || "analyst",
             job_level: user.job_level || "",
             employee_type: user.employee_type || "employee",
@@ -117,13 +129,58 @@ export default function UserManagementPage() {
         });
     };
 
+    const handleAdd = () => {
+        setSelectedUser({} as User); // Dummy user to open modal
+        setIsAddMode(true);
+        setFormData({
+            full_name: "",
+            email: "",
+            password: "",
+            role: "employee",
+            job_type: "analyst",
+            job_level: "Intern",
+            employee_type: "employee",
+            is_office_manager: false,
+            is_busdev: false,
+            is_hr: false,
+            is_female: false,
+        });
+    }
+
     const handleSave = async () => {
         if (!selectedUser) return;
-
         setSaving(true);
+
+        if (isAddMode) {
+            try {
+                const response = await fetch('/api/create-user', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(formData)
+                });
+
+                const result = await response.json();
+
+                if (!response.ok) {
+                    throw new Error(result.error || 'Failed to create user');
+                }
+
+                toast.success("User successfully created!");
+                await fetchUsers();
+                setSelectedUser(null);
+                setIsAddMode(false);
+            } catch (error: any) {
+                console.error("Error creating user:", error);
+                toast.error(error.message || "Failed to create user");
+            } finally {
+                setSaving(false);
+            }
+            return;
+        }
         const { error } = await supabase
             .from('profiles')
             .update({
+                role: formData.role,
                 job_type: formData.job_type,
                 job_level: formData.job_level,
                 employee_type: formData.employee_type,
@@ -138,11 +195,16 @@ export default function UserManagementPage() {
             console.error("Error updating user:", error);
             alert("Gagal menyimpan perubahan");
         } else {
+            toast.success("User updated successfully!");
             await fetchUsers();
             setSelectedUser(null);
         }
         setSaving(false);
     };
+
+    // Derived state for lock status
+    const isDeptLocked = formData.role === 'hr' || formData.role === 'intern';
+    const isLevelLocked = formData.role === 'hr' || formData.role === 'intern';
 
     const filteredUsers = users.filter((user) => {
         const matchesSearch = user.full_name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -180,6 +242,17 @@ export default function UserManagementPage() {
                         <p className="text-sm text-[var(--text-secondary)]">Manage employee accounts, roles, and access permissions.</p>
                     </div>
                 </div>
+                {canManage && (
+                    <button
+                        onClick={handleAdd}
+                        className="px-4 py-2.5 rounded-xl bg-[#e8c559] hover:bg-[#ebd07a] text-[#171611] font-bold transition-colors flex items-center gap-2"
+                    >
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                            <path fillRule="evenodd" d="M10 5a1 1 0 011 1v3h3a1 1 0 110 2h-3v3a1 1 0 11-2 0v-3H6a1 1 0 110-2h3V6a1 1 0 011-1z" clipRule="evenodd" />
+                        </svg>
+                        Add User
+                    </button>
+                )}
             </div>
 
             {/* Summary Cards */}
@@ -331,11 +404,13 @@ export default function UserManagementPage() {
             {
                 selectedUser && (
                     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-                        <div className="glass-panel rounded-2xl p-6 w-full max-w-md">
+                        <div className="glass-panel rounded-2xl p-6 w-full max-w-md max-h-[90vh] overflow-y-auto">
                             <div className="flex items-center justify-between mb-6">
-                                <h2 className="text-xl font-bold text-[var(--text-primary)]">Edit Access: {selectedUser.full_name}</h2>
+                                <h2 className="text-xl font-bold text-[var(--text-primary)]">
+                                    {isAddMode ? 'Add New User' : `Edit Access: ${selectedUser.full_name}`}
+                                </h2>
                                 <button
-                                    onClick={() => setSelectedUser(null)}
+                                    onClick={() => { setSelectedUser(null); setIsAddMode(false); }}
                                     className="p-2 hover:bg-white/10 rounded-lg transition-colors"
                                 >
                                     <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-gray-400" viewBox="0 0 24 24" fill="currentColor">
@@ -345,11 +420,88 @@ export default function UserManagementPage() {
                             </div>
 
                             <div className="space-y-4">
-                                {/* Department / Role (Job Type) - MOVED UP TO BE PROMINENT */}
+                                {isAddMode && (
+                                    <>
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-400 mb-2">Full Name *</label>
+                                            <input
+                                                type="text"
+                                                value={formData.full_name}
+                                                onChange={(e) => setFormData({ ...formData, full_name: e.target.value })}
+                                                placeholder="Enter full name..."
+                                                className="w-full p-3 rounded-lg bg-black/30 border border-white/10 text-white focus:border-[#e8c559] focus:ring-1 focus:ring-[#e8c559] outline-none"
+                                                required
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-400 mb-2">Email *</label>
+                                            <input
+                                                type="email"
+                                                value={formData.email}
+                                                onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                                                placeholder="Enter email address..."
+                                                className="w-full p-3 rounded-lg bg-black/30 border border-white/10 text-white focus:border-[#e8c559] focus:ring-1 focus:ring-[#e8c559] outline-none"
+                                                required
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="block text-sm font-medium text-gray-400 mb-2">Password *</label>
+                                            <input
+                                                type="text"
+                                                value={formData.password}
+                                                onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                                                placeholder="Enter strong password..."
+                                                className="w-full p-3 rounded-lg bg-black/30 border border-white/10 text-white focus:border-[#e8c559] focus:ring-1 focus:ring-[#e8c559] outline-none"
+                                                required
+                                                minLength={6}
+                                            />
+                                        </div>
+                                    </>
+                                )}
+
+                                {/* Role Selection */}
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-400 mb-2">Department / Role</label>
+                                    <label className="block text-sm font-medium text-gray-400 mb-2">Role System</label>
+                                    <select
+                                        value={formData.role}
+                                        onChange={(e) => {
+                                            const newRole = e.target.value as UserRole;
+                                            setFormData(prev => {
+                                                const updates = { ...prev, role: newRole };
+
+                                                // Auto-lock logic for specific roles
+                                                if (newRole === 'hr') {
+                                                    updates.job_type = 'hr';
+                                                    updates.job_level = 'HR';
+                                                } else if (newRole === 'intern') {
+                                                    updates.job_type = 'intern';
+                                                    updates.job_level = 'Intern';
+                                                }
+
+                                                return updates;
+                                            });
+                                        }}
+                                        className="w-full p-3 rounded-lg bg-black/30 border border-white/10 text-white focus:border-[#e8c559] focus:ring-1 focus:ring-[#e8c559] outline-none"
+                                    >
+                                        <option value="employee">Employee</option>
+                                        <option value="hr">HR Admin</option>
+                                        <option value="intern">Intern</option>
+                                        {(currentUser?.role === 'super_admin' || currentUser?.role === 'ceo' || currentUser?.role === 'owner') && (
+                                            <>
+                                                <option value="super_admin">Super Admin</option>
+                                                <option value="ceo">CEO</option>
+                                                <option value="owner">Owner</option>
+                                            </>
+                                        )}
+                                    </select>
+                                </div>
+
+                                {/* Department (Job Type) - MOVED UP TO BE PROMINENT */}
+                                <div>
+                                    <label className="block text-sm font-medium text-gray-400 mb-2">Department {isDeptLocked && "(Locked by Role)"}</label>
                                     <select
                                         value={formData.job_type}
+                                        disabled={isDeptLocked}
                                         onChange={(e) => {
                                             const newType = e.target.value as Department;
                                             setFormData({
@@ -359,7 +511,7 @@ export default function UserManagementPage() {
                                                 job_level: LEVEL_OPTIONS[newType]?.[0] || ""
                                             });
                                         }}
-                                        className="w-full p-3 rounded-lg bg-black/30 border border-white/10 text-white focus:border-[#e8c559] focus:ring-1 focus:ring-[#e8c559] outline-none"
+                                        className={`w-full p-3 rounded-lg border border-white/10 text-white focus:border-[#e8c559] focus:ring-1 focus:ring-[#e8c559] outline-none ${isDeptLocked ? 'bg-black/50 opacity-70 cursor-not-allowed' : 'bg-black/30'}`}
                                     >
                                         <option value="analyst">Analyst</option>
                                         <option value="bisdev">Bisdev</option>
@@ -371,8 +523,8 @@ export default function UserManagementPage() {
 
                                 {/* Job Level - Conditional */}
                                 <div>
-                                    <label className="block text-sm font-medium text-gray-400 mb-2">Level / Position</label>
-                                    {LEVEL_OPTIONS[formData.job_type] ? (
+                                    <label className="block text-sm font-medium text-gray-400 mb-2">Level / Position {isLevelLocked && "(Locked by Role)"}</label>
+                                    {LEVEL_OPTIONS[formData.job_type] && !isLevelLocked ? (
                                         <select
                                             value={formData.job_level}
                                             onChange={(e) => setFormData({ ...formData, job_level: e.target.value })}
@@ -386,10 +538,11 @@ export default function UserManagementPage() {
                                     ) : (
                                         <input
                                             type="text"
-                                            value={formData.job_level}
+                                            value={formData.job_level || ""}
+                                            disabled={isLevelLocked}
                                             onChange={(e) => setFormData({ ...formData, job_level: e.target.value })}
                                             placeholder="Enter job level..."
-                                            className="w-full p-3 rounded-lg bg-black/30 border border-white/10 text-white focus:border-[#e8c559] focus:ring-1 focus:ring-[#e8c559] outline-none"
+                                            className={`w-full p-3 rounded-lg border border-white/10 text-white focus:border-[#e8c559] focus:ring-1 focus:ring-[#e8c559] outline-none ${isLevelLocked ? 'bg-black/50 opacity-70 cursor-not-allowed' : 'bg-black/30'}`}
                                         />
                                     )}
                                 </div>
@@ -467,7 +620,7 @@ export default function UserManagementPage() {
                                 <div className="flex gap-3 pt-2">
                                     <button
                                         type="button"
-                                        onClick={() => setSelectedUser(null)}
+                                        onClick={() => { setSelectedUser(null); setIsAddMode(false); }}
                                         className="flex-1 py-3 rounded-lg border border-white/10 text-gray-400 hover:bg-white/5 font-medium transition-colors"
                                     >
                                         Cancel

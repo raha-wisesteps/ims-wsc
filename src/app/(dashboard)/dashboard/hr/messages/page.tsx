@@ -23,6 +23,7 @@ import {
 import { createClient } from "@/lib/supabase/client";
 import { announcementService } from "@/services/announcement";
 import { Announcement } from "@/types/announcement";
+import { sendEmailNotification } from "@/lib/email-notification";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -139,6 +140,18 @@ export default function MessageCenterPage() {
                 target_users,
                 author_id: currentUser,
                 category: category
+            });
+
+            // Send email notification to recipients
+            const authorProfile = users.find(u => u.id === currentUser);
+            await sendEmailNotification({
+                type: "company_news",
+                subject: subject,
+                content: messageBody,
+                audience_type: audience_type,
+                target_departments: target_departments,
+                target_users: target_users,
+                author_name: authorProfile?.full_name || "Admin",
             });
 
             setShowSuccess(true);
