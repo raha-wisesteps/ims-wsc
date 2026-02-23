@@ -233,13 +233,32 @@ function buildCompanyNewsEmailHtml(
 </body></html>`;
 }
 
+async function fetchUserEmails(supabase: any, profileIds: string[]): Promise<string[]> {
+  const { data: { users }, error } = await supabase.auth.admin.listUsers({ perPage: 1000 });
+  if (error || !users) return [];
+  const validIds = new Set(profileIds);
+  return users
+    .filter((u: any) => validIds.has(u.id) && u.email)
+    .map((u: any) => u.email as string);
+}
+
 // ============================================
 // RESEND EMAIL SENDER
 // ============================================
 
-async function sendEmail(to: string | string[], subject: string, html: string) {
+async function sendEmail(to: string | string[], subject: string, html: string, bcc?: string[]) {
   const apiKey = process.env.RESEND_API_KEY;
   if (!apiKey) throw new Error("RESEND_API_KEY not configured");
+
+  const payload: any = {
+    from: SENDER_EMAIL,
+    to: Array.isArray(to) ? to : [to],
+    subject,
+    html,
+  };
+  if (bcc && bcc.length > 0) {
+    payload.bcc = bcc;
+  }
 
   const res = await fetch("https://api.resend.com/emails", {
     method: "POST",
@@ -247,12 +266,7 @@ async function sendEmail(to: string | string[], subject: string, html: string) {
       "Content-Type": "application/json",
       Authorization: `Bearer ${apiKey}`,
     },
-    body: JSON.stringify({
-      from: SENDER_EMAIL,
-      to: Array.isArray(to) ? to : [to],
-      subject,
-      html,
-    }),
+    body: JSON.stringify(payload),
   });
 
   if (!res.ok) {
@@ -287,15 +301,13 @@ export async function POST(req: NextRequest) {
         .from("profiles").select("id").eq("role", "ceo");
 
       if (ceoProfiles?.length) {
-        for (const ceo of ceoProfiles) {
-          const { data: { user } } = await supabase.auth.admin.getUserById(ceo.id);
-          if (user?.email) {
-            await sendEmail(
-              user.email,
-              `[IMS] Permintaan Baru: ${typeLabel} dari ${requester_name}`,
-              buildCeoEmailHtml(requester_name, leave_type, start_date, end_date, reason)
-            );
-          }
+        const emails = await fetchUserEmails(supabase, ceoProfiles.map(p => p.id));
+        if (emails.length > 0) {
+          await sendEmail(
+            emails,
+            `[IMS] Permintaan Baru: ${typeLabel} dari ${requester_name}`,
+            buildCeoEmailHtml(requester_name, leave_type, start_date, end_date, reason)
+          );
         }
       }
     } else if (type === "approved_leave") {
@@ -304,40 +316,36 @@ export async function POST(req: NextRequest) {
       }
 
       const { data: hrProfiles } = await supabase
-        .from("profiles").select("id, role").or("role.eq.hr,is_hr.eq.true");
+        .from("profiles").select("id").or("role.eq.hr,is_hr.eq.true");
 
       if (hrProfiles?.length) {
-        for (const hr of hrProfiles) {
-          const { data: { user } } = await supabase.auth.admin.getUserById(hr.id);
-          if (user?.email) {
-            await sendEmail(
-              user.email,
-              `[IMS] Izin/Sakit Disetujui: ${requester_name} - Perlu Administrasi`,
-              buildHrEmailHtml(requester_name, leave_type, start_date, end_date, reason)
-            );
-          }
+        const emails = await fetchUserEmails(supabase, hrProfiles.map(p => p.id));
+        if (emails.length > 0) {
+          await sendEmail(
+            emails,
+            `[IMS] Izin/Sakit Disetujui: ${requester_name} - Perlu Administrasi`,
+            buildHrEmailHtml(requester_name, leave_type, start_date, end_date, reason)
+          );
         }
       }
     } else if (type === "request_approved_user") {
       // Send confirmation email to the requester
-      const { profile_id } = payload;
-      const { data: { user } } = await supabase.auth.admin.getUserById(profile_id);
-      if (user?.email) {
+      const emails = await fetchUserEmails(supabase, [payload.profile_id]);
+      if (emails.length > 0) {
         await sendEmail(
-          user.email,
+          emails[0],
           `[IMS] Permintaan ${typeLabel} Anda Disetujui ✅`,
           buildUserApprovalEmailHtml(requester_name, leave_type, start_date, end_date)
         );
       }
     } else if (type === "request_rejected_user") {
       // Send rejection email to the requester
-      const { profile_id, reject_reason } = payload;
-      const { data: { user } } = await supabase.auth.admin.getUserById(profile_id);
-      if (user?.email) {
+      const emails = await fetchUserEmails(supabase, [payload.profile_id]);
+      if (emails.length > 0) {
         await sendEmail(
-          user.email,
+          emails[0],
           `[IMS] Permintaan ${typeLabel} Ditolak`,
-          buildUserRejectionEmailHtml(requester_name, leave_type, start_date, end_date, reject_reason || "")
+          buildUserRejectionEmailHtml(requester_name, leave_type, start_date, end_date, payload.reject_reason || "")
         );
       }
     } else if (type === "company_news") {
@@ -347,37 +355,28 @@ export async function POST(req: NextRequest) {
       const newsHtml = buildCompanyNewsEmailHtml(author_name || "Admin", newsSubject || "Company News", content || "");
       const emailSubject = `[IMS] ${newsSubject || "Company News"}`;
 
+      let profileIds: string[] = [];
       if (audience_type === "individual" && target_users?.length) {
-        // Private: send only to targeted user(s)
-        for (const userId of target_users) {
-          const { data: { user } } = await supabase.auth.admin.getUserById(userId);
-          if (user?.email) {
-            await sendEmail(user.email, emailSubject, newsHtml);
-          }
-        }
+        profileIds = target_users;
       } else if (audience_type === "department" && target_departments?.length) {
-        // Department: send to all users in that department
         const { data: deptProfiles } = await supabase
           .from("profiles").select("id").in("department", target_departments);
-        if (deptProfiles?.length) {
-          for (const p of deptProfiles) {
-            const { data: { user } } = await supabase.auth.admin.getUserById(p.id);
-            if (user?.email) {
-              await sendEmail(user.email, emailSubject, newsHtml);
-            }
-          }
-        }
+        profileIds = (deptProfiles || []).map(p => p.id);
       } else {
-        // Broadcast: send to ALL active users
         const { data: allProfiles } = await supabase
           .from("profiles").select("id");
-        if (allProfiles?.length) {
-          for (const p of allProfiles) {
-            const { data: { user } } = await supabase.auth.admin.getUserById(p.id);
-            if (user?.email) {
-              await sendEmail(user.email, emailSubject, newsHtml);
-            }
-          }
+        profileIds = (allProfiles || []).map(p => p.id);
+      }
+
+      if (profileIds.length > 0) {
+        const emails = await fetchUserEmails(supabase, profileIds);
+
+        // Send using BCC in chunks of 50 to respect Resend limits
+        const CHUNK_SIZE = 50;
+        for (let i = 0; i < emails.length; i += CHUNK_SIZE) {
+          const chunk = emails.slice(i, i + CHUNK_SIZE);
+          // Sent 'to' the generic SENDER_EMAIL so users don't see each other's emails
+          await sendEmail(SENDER_EMAIL, emailSubject, newsHtml, chunk);
         }
       }
     } else {
