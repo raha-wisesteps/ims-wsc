@@ -71,7 +71,7 @@ const STAGE_CONFIG = {
     proposal: { label: "Proposal", color: "bg-purple-100 text-purple-700", order: 2 },
     leads: { label: "Leads", color: "bg-orange-100 text-orange-700", order: 3 },
     sales: { label: "Sales", color: "bg-emerald-100 text-emerald-700", order: 4 },
-    closed_won: { label: "Won", color: "bg-green-600", order: 5 },
+    closed_won: { label: "Full Payment [Archived]", color: "bg-green-600", order: 5 },
     closed_lost: { label: "Lost", color: "bg-rose-500", order: 6 },
 };
 
@@ -236,6 +236,7 @@ export default function ClientDetailPage() {
 
         created_at: "", // Added for custom date
         has_proposal: false,
+        is_cash_in_verified: false,
     });
 
     // Opportunity Status Config
@@ -246,6 +247,23 @@ export default function ClientDetailPage() {
         sales: ['pending', 'down_payment', 'account_receivable', 'full_payment', 'won'],
         closed_won: ["won"],
         closed_lost: ["lost"]
+    };
+
+    // Display labels for status values (maps raw DB values to user-friendly labels)
+    const STATUS_DISPLAY_LABELS: Record<string, string> = {
+        won: "Full Payment [Archived]",
+        lost: "Lost",
+        pending: "Pending",
+        on_going: "On Going",
+        sent: "Sent",
+        follow_up: "Follow Up",
+        low: "Low",
+        moderate: "Moderate",
+        hot: "Hot",
+        down_payment: "Down Payment",
+        account_receivable: "Account Receivable",
+        full_payment: "Full Payment",
+        failed: "Failed",
     };
 
     const [isEditingDescription, setIsEditingDescription] = useState(false);
@@ -856,6 +874,7 @@ export default function ClientDetailPage() {
                         updated_at: new Date().toISOString(),
                         has_proposal: opportunityForm.has_proposal,
                         cash_in: totalCashIn,
+                        is_cash_in_verified: opportunityForm.is_cash_in_verified,
                     })
                     .eq("id", editingOpportunity.id);
 
@@ -925,6 +944,7 @@ export default function ClientDetailPage() {
                     notes: "",
                     created_at: "",
                     has_proposal: false,
+                    is_cash_in_verified: false,
                 });
                 fetchAllData();
             } else {
@@ -945,6 +965,7 @@ export default function ClientDetailPage() {
                     created_by: profile.id,
                     has_proposal: opportunityForm.has_proposal,
                     cash_in: initialCashIn,
+                    is_cash_in_verified: opportunityForm.is_cash_in_verified,
                 };
 
                 const { data: opp, error } = await supabase
@@ -1011,6 +1032,7 @@ export default function ClientDetailPage() {
                     notes: "",
                     created_at: "",
                     has_proposal: false,
+                    is_cash_in_verified: false,
                 });
                 fetchAllData();
             }
@@ -1034,6 +1056,7 @@ export default function ClientDetailPage() {
             notes: opp.notes || "",
             created_at: opp.created_at ? new Date(opp.created_at).toISOString().split('T')[0] : "",
             has_proposal: opp.has_proposal || false,
+            is_cash_in_verified: opp.is_cash_in_verified || false,
         });
         setShowOpportunityForm(true);
     };
@@ -1801,7 +1824,7 @@ export default function ClientDetailPage() {
                                     <button
                                         onClick={() => {
                                             setEditingOpportunity(null);
-                                            setOpportunityForm({ title: "", stage: "prospect", status: "on_going", value: 0, priority: "medium", opportunity_type: "", cash_in: 0, notes: "", created_at: "", has_proposal: false });
+                                            setOpportunityForm({ title: "", stage: "prospect", status: "on_going", value: 0, priority: "medium", opportunity_type: "", cash_in: 0, notes: "", created_at: "", has_proposal: false, is_cash_in_verified: false });
                                             setShowOpportunityForm(true);
                                         }}
                                         className="px-4 py-2 bg-[#e8c559] text-white font-bold rounded-xl hover:bg-[#d4b44e] transition-colors flex items-center gap-2"
@@ -1846,7 +1869,7 @@ export default function ClientDetailPage() {
                                                     </span>
                                                     {/* Status Badge */}
                                                     <span className="px-2 py-0.5 rounded text-xs font-bold uppercase bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300">
-                                                        {opp.status.replace('_', ' ')}
+                                                        {STATUS_DISPLAY_LABELS[opp.status] || opp.status.replace('_', ' ')}
                                                     </span>
                                                 </div>
                                             </div>
@@ -2301,7 +2324,7 @@ export default function ClientDetailPage() {
                                             className="w-full px-4 py-2 rounded-xl border border-[var(--glass-border)] bg-white dark:bg-[#232b2a] text-[var(--text-primary)] capitalize"
                                         >
                                             {OPPORTUNITY_STATUSES[opportunityForm.stage as keyof typeof OPPORTUNITY_STATUSES]?.map((status) => (
-                                                <option key={status} value={status}>{status.replace('_', ' ')}</option>
+                                                <option key={status} value={status}>{STATUS_DISPLAY_LABELS[status] || status.replace('_', ' ')}</option>
                                             ))}
                                         </select>
                                     </div>
@@ -2447,19 +2470,42 @@ export default function ClientDetailPage() {
                                     )}
                                 </div>
                                 {opportunityForm.stage === 'sales' && (
-                                    <div className="flex items-center gap-2 bg-gray-50 dark:bg-white/5 p-3 rounded-xl border border-[var(--glass-border)]">
-                                        <input
-                                            type="checkbox"
-                                            id="has_proposal"
-                                            checked={opportunityForm.has_proposal || false}
-                                            onChange={(e) => setOpportunityForm({ ...opportunityForm, has_proposal: e.target.checked })}
-                                            className="w-4 h-4 rounded border-gray-300 text-[#e8c559] focus:ring-[#e8c559]"
-                                        />
-                                        <label htmlFor="has_proposal" className="text-sm font-bold text-[var(--text-primary)] cursor-pointer">
-                                            Melalui Proposal?
-                                        </label>
-                                        <span className="text-xs text-[var(--text-muted)] ml-1">(Centang jika penjualan ini diawali dengan proposal)</span>
-                                    </div>
+                                    <>
+                                        <div className="flex items-center gap-2 bg-gray-50 dark:bg-white/5 p-3 rounded-xl border border-[var(--glass-border)]">
+                                            <input
+                                                type="checkbox"
+                                                id="has_proposal"
+                                                checked={opportunityForm.has_proposal || false}
+                                                onChange={(e) => setOpportunityForm({ ...opportunityForm, has_proposal: e.target.checked })}
+                                                className="w-4 h-4 rounded border-gray-300 text-[#e8c559] focus:ring-[#e8c559]"
+                                            />
+                                            <label htmlFor="has_proposal" className="text-sm font-bold text-[var(--text-primary)] cursor-pointer">
+                                                Melalui Proposal?
+                                            </label>
+                                            <span className="text-xs text-[var(--text-muted)] ml-1">(Centang jika penjualan ini diawali dengan proposal)</span>
+                                        </div>
+
+                                        {/* Verification Checkbox */}
+                                        {opportunityForm.status === 'won' && (
+                                            <div className="flex items-start gap-2 bg-emerald-50 dark:bg-emerald-900/10 p-3 rounded-xl border border-emerald-200 dark:border-emerald-900/50 mt-3">
+                                                <input
+                                                    type="checkbox"
+                                                    id="is_cash_in_verified_new"
+                                                    checked={opportunityForm.is_cash_in_verified || false}
+                                                    onChange={(e) => setOpportunityForm({ ...opportunityForm, is_cash_in_verified: e.target.checked })}
+                                                    className="w-4 h-4 rounded border-emerald-300 text-emerald-600 focus:ring-emerald-500 mt-1"
+                                                />
+                                                <div className="flex flex-col">
+                                                    <label htmlFor="is_cash_in_verified_new" className="text-sm font-bold text-emerald-800 dark:text-emerald-400 cursor-pointer">
+                                                        Verify Cash In
+                                                    </label>
+                                                    <span className="text-xs text-emerald-600 dark:text-emerald-500">
+                                                        Data cash in sudah sesuai dan terpotong karena pajak dan lain hal. (Wajib dicentang untuk submit)
+                                                    </span>
+                                                </div>
+                                            </div>
+                                        )}
+                                    </>
                                 )}
 
                                 <div>
@@ -2490,21 +2536,20 @@ export default function ClientDetailPage() {
                                     </button>
                                     <div className="flex flex-col items-end gap-2">
                                         {(() => {
-                                            const currentRevenue = (editingOpportunity?.revenue?.reduce((sum: number, r: any) => sum + r.amount, 0) || 0) + pendingRevenue.reduce((sum: any, r: any) => sum + r.amount, 0);
                                             const isWonStage = opportunityForm.stage === 'sales' && opportunityForm.status === 'won';
-                                            const isRevenueMismatch = isWonStage && (currentRevenue !== opportunityForm.value);
+                                            const isUnverifiedWon = isWonStage && !opportunityForm.is_cash_in_verified;
 
                                             return (
                                                 <>
-                                                    {isRevenueMismatch && (
-                                                        <p className="text-xs text-red-500 font-bold text-right max-w-[200px]">
-                                                            Mohon pastikan kembali nilai cash in sama dengan nilai sales
+                                                    {isUnverifiedWon && (
+                                                        <p className="text-xs text-red-500 font-bold text-right max-w-[250px]">
+                                                            Mohon pastikan kembali nilai cash in sesuai dengan nilai sales dan centang Verify Cash In
                                                         </p>
                                                     )}
                                                     <button
                                                         type="submit"
-                                                        disabled={isRevenueMismatch}
-                                                        className={`px-6 py-2 rounded-xl font-bold transition-colors ${isRevenueMismatch
+                                                        disabled={isUnverifiedWon}
+                                                        className={`px-6 py-2 rounded-xl font-bold transition-colors ${isUnverifiedWon
                                                             ? 'bg-gray-300 dark:bg-gray-700 text-gray-500 cursor-not-allowed'
                                                             : 'bg-[#e8c559] text-[#171611] hover:bg-[#d4b44e]'
                                                             }`}

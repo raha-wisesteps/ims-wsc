@@ -57,7 +57,7 @@ const STATUS_LABELS: Record<string, string> = {
     full_payment: "Full Payment",
     failed: "Failed",
     lost: "Lost",
-    won: "Won"
+    won: "Full Payment [Archived]"
 };
 
 export default function OpportunityBoard() {
@@ -216,7 +216,8 @@ export default function OpportunityBoard() {
         priority: "medium",
         opportunity_type: "" as "" | "customer_based" | "product_based",
         notes: "",
-        created_at: ""
+        created_at: "",
+        is_cash_in_verified: false
     });
 
     // Revenue Management State
@@ -239,7 +240,8 @@ export default function OpportunityBoard() {
             opportunity_type: opp.opportunity_type || "",
             cash_in: opp.cash_in || 0,
             notes: opp.notes || "",
-            created_at: opp.created_at ? new Date(opp.created_at).toISOString().split('T')[0] : ""
+            created_at: opp.created_at ? new Date(opp.created_at).toISOString().split('T')[0] : "",
+            is_cash_in_verified: opp.is_cash_in_verified || false
         });
         setExistingRevenue(opp.revenue || []);
         setPendingRevenue([]);
@@ -274,6 +276,27 @@ export default function OpportunityBoard() {
         }
     };
 
+    const handleToggleVerification = async (checked: boolean) => {
+        if (!editingOpp) return;
+
+        // Optimistic update
+        setEditingOpp({ ...editingOpp, is_cash_in_verified: checked });
+        setEditForm(prev => ({ ...prev, is_cash_in_verified: checked }));
+
+        try {
+            await opportunityService.updateOpportunity(editingOpp.id, {
+                is_cash_in_verified: checked
+            });
+            fetchData(); // Refresh to update board/table arrays
+        } catch (error) {
+            console.error("Failed to update verification", error);
+            alert("Failed to update verification status. Please try again.");
+            // Revert on error
+            setEditingOpp({ ...editingOpp, is_cash_in_verified: !checked });
+            setEditForm(prev => ({ ...prev, is_cash_in_verified: !checked }));
+        }
+    };
+
     const handleUpdateOpportunity = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!editingOpp) return;
@@ -287,6 +310,7 @@ export default function OpportunityBoard() {
                 ...editForm,
                 cash_in: totalRevenue, // Use calculated revenue instead of manual input
                 opportunity_type: editForm.opportunity_type || null,
+                is_cash_in_verified: editForm.is_cash_in_verified,
                 created_at: editForm.created_at ? new Date(editForm.created_at).toISOString() : undefined
             };
             await opportunityService.updateOpportunity(editingOpp.id, payload);
@@ -494,16 +518,14 @@ export default function OpportunityBoard() {
 
                                                                         {(() => {
                                                                             if (activeTab === 'sales') {
-                                                                                // Only allow "Won" if status is Full Payment AND Cash In equals Value
+                                                                                // Only allow "Full Payment [Archived]" if status is Full Payment AND Cash In equals Value
                                                                                 const isFullPayment = opp.status === 'full_payment';
-                                                                                const currentCashIn = opp.revenue?.reduce((sum, r) => sum + (r.amount || 0), 0) || 0;
-                                                                                const isPaidInFull = currentCashIn >= (opp.value || 0);
-                                                                                const canComplete = isFullPayment && isPaidInFull;
+                                                                                const canComplete = isFullPayment && !!opp.is_cash_in_verified;
 
                                                                                 return (
                                                                                     <button
                                                                                         onClick={() => handleArchive(opp.id, 'won')}
-                                                                                        title={canComplete ? "Mark Completed (Won)" : "Requires Full Payment Status & 100% Cash In"}
+                                                                                        title={canComplete ? "Mark Full Payment [Archived]" : "Requires Full Payment Status & Cash In Verification"}
                                                                                         disabled={!canComplete}
                                                                                         className={`p-1 rounded transition-colors ${!canComplete
                                                                                             ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
@@ -705,13 +727,11 @@ export default function OpportunityBoard() {
                                                         {activeTab === 'sales' ? (
                                                             (() => {
                                                                 const isFullPayment = opp.status === 'full_payment';
-                                                                const currentCashIn = opp.revenue?.reduce((sum, r) => sum + (r.amount || 0), 0) || 0;
-                                                                const isPaidInFull = currentCashIn >= (opp.value || 0);
-                                                                const canComplete = isFullPayment && isPaidInFull;
+                                                                const canComplete = isFullPayment && !!opp.is_cash_in_verified;
                                                                 return (
                                                                     <button
                                                                         onClick={() => handleArchive(opp.id, 'won')}
-                                                                        title={canComplete ? "Mark Completed (Won)" : "Requires Full Payment Status & 100% Cash In"}
+                                                                        title={canComplete ? "Mark Full Payment [Archived]" : "Requires Full Payment Status & Cash In Verification"}
                                                                         disabled={!canComplete}
                                                                         className={`p-1.5 rounded transition-colors ${!canComplete
                                                                             ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
@@ -821,6 +841,28 @@ export default function OpportunityBoard() {
                                                 </div>
                                             )}
                                         </div>
+
+                                        {/* Verification Checkbox in Preview */}
+                                        {editingOpp.stage === 'sales' && (
+                                            <div className="p-4 rounded-xl border border-emerald-200 bg-emerald-50 dark:border-emerald-900/50 dark:bg-emerald-900/10">
+                                                <label className="flex items-start gap-3 cursor-pointer">
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={editingOpp.is_cash_in_verified || false}
+                                                        onChange={(e) => handleToggleVerification(e.target.checked)}
+                                                        className="mt-1 w-5 h-5 rounded border-emerald-300 text-emerald-600 focus:ring-emerald-500 bg-white"
+                                                    />
+                                                    <div className="flex flex-col">
+                                                        <span className="text-sm font-bold text-emerald-800 dark:text-emerald-400">
+                                                            Verify Cash In
+                                                        </span>
+                                                        <span className="text-xs text-emerald-600 dark:text-emerald-500">
+                                                            Data cash in sudah sesuai dan terpotong karena pajak dan lain hal. (Wajib dicentang untuk mengubah status ke Full Payment [Archived])
+                                                        </span>
+                                                    </div>
+                                                </label>
+                                            </div>
+                                        )}
 
                                         <div className="space-y-2">
                                             <div className="flex items-center justify-between">
@@ -1050,6 +1092,26 @@ export default function OpportunityBoard() {
                                                             Add
                                                         </button>
                                                     </div>
+                                                </div>
+
+                                                {/* Verification Checkbox */}
+                                                <div className="mt-4 p-4 rounded-xl border border-emerald-200 bg-emerald-50 dark:border-emerald-900/50 dark:bg-emerald-900/10">
+                                                    <label className="flex items-start gap-3 cursor-pointer">
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={editForm.is_cash_in_verified}
+                                                            onChange={(e) => setEditForm(prev => ({ ...prev, is_cash_in_verified: e.target.checked }))}
+                                                            className="mt-1 w-5 h-5 rounded border-emerald-300 text-emerald-600 focus:ring-emerald-500 bg-white"
+                                                        />
+                                                        <div className="flex flex-col">
+                                                            <span className="text-sm font-bold text-emerald-800 dark:text-emerald-400">
+                                                                Verify Cash In
+                                                            </span>
+                                                            <span className="text-xs text-emerald-600 dark:text-emerald-500">
+                                                                Data cash in sudah sesuai dan terpotong karena pajak dan lain hal. (Wajib dicentang untuk mengubah status ke Full Payment [Archived])
+                                                            </span>
+                                                        </div>
+                                                    </label>
                                                 </div>
                                             </div>
                                         )}

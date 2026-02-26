@@ -37,6 +37,25 @@ const formatCurrency = (value: number) => {
     return new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0 }).format(value);
 };
 
+// Display labels for status values (maps raw DB values to user-friendly labels)
+const STATUS_DISPLAY_LABELS: Record<string, string> = {
+    won: "Full Payment [Archived]",
+    lost: "Lost",
+    pending: "Pending",
+    on_going: "On Going",
+    sent: "Sent",
+    follow_up: "Follow Up",
+    low: "Low",
+    moderate: "Moderate",
+    hot: "Hot",
+    down_payment: "Down Payment",
+    account_receivable: "Account Receivable",
+    full_payment: "Full Payment",
+    failed: "Failed",
+    closed_won: "Full Payment [Archived]",
+    closed_lost: "Lost",
+};
+
 import { Opportunity } from "@/lib/services/opportunity.service";
 
 // Theme-aware chart colors — vibrant but legible in both modes
@@ -709,7 +728,7 @@ export default function BisDevDashboardPage() {
                                                 <span>{item.client}</span>
                                                 {item.status && (
                                                     <span className="px-1.5 py-0.5 rounded bg-[var(--glass-border)] text-[var(--text-secondary)] capitalize">
-                                                        {item.status.replace('_', ' ')}
+                                                        {STATUS_DISPLAY_LABELS[item.status] || item.status.replace('_', ' ')}
                                                     </span>
                                                 )}
                                                 {item.stage && <span className="capitalize">Stage: {item.stage}</span>}
@@ -970,7 +989,7 @@ export default function BisDevDashboardPage() {
                                                             <td className="px-4 py-3 text-[var(--text-primary)] font-medium truncate max-w-[150px]">{item.client}</td>
                                                             <td className="px-4 py-3">
                                                                 <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase border ${getStatusColor(item.status)}`}>
-                                                                    {item.status?.replace('_', ' ') || '-'}
+                                                                    {STATUS_DISPLAY_LABELS[item.status] || item.status?.replace('_', ' ') || '-'}
                                                                 </span>
                                                             </td>
                                                             <td className="px-4 py-3 text-[var(--text-secondary)] truncate max-w-[200px]">{item.title}</td>
@@ -1113,7 +1132,7 @@ export default function BisDevDashboardPage() {
                                         <div className="flex justify-between items-start">
                                             <div>
                                                 <p className="text-sm font-bold text-[var(--text-primary)]">{activity.title}</p>
-                                                <p className="text-xs text-[var(--text-secondary)] capitalize">{activity.subtitle.replace('_', ' ')}</p>
+                                                <p className="text-xs text-[var(--text-secondary)] capitalize">{STATUS_DISPLAY_LABELS[activity.subtitle] || activity.subtitle.replace('_', ' ')}</p>
                                             </div>
                                             <span className="text-xs text-[var(--text-muted)]">{new Date(activity.date).toLocaleDateString()}</span>
                                         </div>

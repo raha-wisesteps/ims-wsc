@@ -54,7 +54,7 @@ const STAGE_CONFIG = {
     proposal: { label: "Proposal", color: "bg-blue-500", textColor: "text-blue-700" },
     lead: { label: "Lead", color: "bg-amber-500", textColor: "text-amber-700" },
     sales: { label: "Sales", color: "bg-emerald-500", textColor: "text-emerald-700" },
-    closed_won: { label: "Won", color: "bg-green-600", textColor: "text-green-700" },
+    closed_won: { label: "Full Payment [Archived]", color: "bg-green-600", textColor: "text-green-700" },
     closed_lost: { label: "Lost", color: "bg-rose-500", textColor: "text-rose-700" },
 };
 
