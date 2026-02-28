@@ -1,21 +1,61 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
+import { usePathname } from "next/navigation";
 import { useTheme } from "@/contexts/ThemeContext";
 import Sidebar from "@/components/layout/Sidebar";
 import Header from "@/components/layout/Header";
 import { AuthProvider } from "@/contexts/AuthContext";
+
+/** Breakpoint matching Tailwind's `md` (768px) */
+function useIsMobile(breakpoint = 768) {
+    const [isMobile, setIsMobile] = useState(false);
+
+    useEffect(() => {
+        const mql = window.matchMedia(`(max-width: ${breakpoint - 1}px)`);
+        const onChange = (e: MediaQueryListEvent | MediaQueryList) =>
+            setIsMobile(e.matches);
+
+        // Initial check
+        onChange(mql);
+
+        mql.addEventListener("change", onChange);
+        return () => mql.removeEventListener("change", onChange);
+    }, [breakpoint]);
+
+    return isMobile;
+}
 
 export default function DashboardClientLayout({
     children,
 }: {
     children: React.ReactNode;
 }) {
-    const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+    const isMobile = useIsMobile();
+    const pathname = usePathname();
 
-    const handleSidebarToggle = () => {
-        setSidebarCollapsed(!sidebarCollapsed);
-    };
+    // On desktop start open, on mobile start closed
+    const [sidebarOpen, setSidebarOpen] = useState(true);
+
+    // When switching between mobile/desktop, reset sidebar state
+    useEffect(() => {
+        setSidebarOpen(!isMobile);
+    }, [isMobile]);
+
+    // Auto-close sidebar on mobile when navigating
+    useEffect(() => {
+        if (isMobile) {
+            setSidebarOpen(false);
+        }
+    }, [pathname, isMobile]);
+
+    const handleSidebarToggle = useCallback(() => {
+        setSidebarOpen((prev) => !prev);
+    }, []);
+
+    const handleSidebarClose = useCallback(() => {
+        setSidebarOpen(false);
+    }, []);
 
     const { setTheme } = useTheme();
 
@@ -26,8 +66,22 @@ export default function DashboardClientLayout({
     return (
         <AuthProvider>
             <div className="h-screen flex overflow-hidden bg-[var(--background)] text-[var(--foreground)] transition-colors duration-300">
-                {/* Sidebar */}
-                <Sidebar collapsed={sidebarCollapsed} />
+
+                {/* ── Mobile Backdrop ── */}
+                {isMobile && sidebarOpen && (
+                    <div
+                        className="fixed inset-0 z-40 bg-black/50 backdrop-blur-sm transition-opacity"
+                        onClick={handleSidebarClose}
+                        aria-label="Close sidebar"
+                    />
+                )}
+
+                {/* ── Sidebar ── */}
+                <Sidebar
+                    collapsed={!sidebarOpen}
+                    isMobile={isMobile}
+                    onClose={handleSidebarClose}
+                />
 
                 {/* Main Content */}
                 <main className="flex-1 h-full overflow-y-auto relative">
@@ -38,16 +92,16 @@ export default function DashboardClientLayout({
                         {/* Header */}
                         <Header
                             onSidebarToggle={handleSidebarToggle}
-                            sidebarCollapsed={sidebarCollapsed}
+                            sidebarCollapsed={!sidebarOpen}
                         />
 
                         {/* Page Content */}
-                        <div className="flex-1 p-4 pt-0 xl:p-8 xl:pt-0">
+                        <div className="flex-1 p-3 pt-0 sm:p-4 sm:pt-0 xl:p-8 xl:pt-0">
                             {children}
                         </div>
 
                         {/* Footer */}
-                        <footer className="p-4 pt-0 xl:p-8 xl:pt-0 text-center">
+                        <footer className="p-3 pt-0 sm:p-4 sm:pt-0 xl:p-8 xl:pt-0 text-center">
                             <p className="text-xs text-[var(--text-secondary)]">© 2026 Wise Steps Consulting Smart Tourism Team. All rights reserved.</p>
                         </footer>
                     </div>

@@ -2,7 +2,7 @@
 
 import { useTheme } from "@/contexts/ThemeContext";
 import { useAuth } from "@/contexts/AuthContext";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 
@@ -22,6 +22,18 @@ export default function Header({
     const [recentNotifs, setRecentNotifs] = useState<any[]>([]);
     const supabase = createClient();
     const { user } = useAuth(); // getting user object for ID
+    const notifRef = useRef<HTMLDivElement>(null);
+
+    // Close notifications when clicking outside
+    useEffect(() => {
+        const handleClickOutside = (e: MouseEvent) => {
+            if (notifRef.current && !notifRef.current.contains(e.target as Node)) {
+                setShowNotifications(false);
+            }
+        };
+        document.addEventListener("mousedown", handleClickOutside);
+        return () => document.removeEventListener("mousedown", handleClickOutside);
+    }, []);
 
     // Fetch notifications
     useEffect(() => {
@@ -131,15 +143,15 @@ export default function Header({
     };
 
     return (
-        <header className="flex flex-wrap justify-between items-center gap-4 p-4 pb-3 xl:p-8 xl:pb-6">
-            <div className="flex items-center gap-4">
-                {/* Sidebar Toggle Button */}
+        <header className="flex flex-wrap justify-between items-center gap-3 p-3 pb-2 sm:gap-4 sm:p-4 sm:pb-3 xl:p-8 xl:pb-6">
+            <div className="flex items-center gap-3 sm:gap-4">
+                {/* Sidebar Toggle / Hamburger Button */}
                 <button
                     onClick={onSidebarToggle}
                     className="p-2 rounded-lg bg-[var(--glass-bg)] border border-[var(--glass-border)] hover:bg-[var(--glass-border-hover)] transition-colors flex items-center justify-center"
                     title={sidebarCollapsed ? "Buka Sidebar" : "Tutup Sidebar"}
                 >
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-[var(--text-secondary)]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 sm:h-6 sm:w-6 text-[var(--text-secondary)]" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                         {sidebarCollapsed ? (
                             <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16" />
                         ) : (
@@ -148,8 +160,8 @@ export default function Header({
                     </svg>
                 </button>
 
-                {/* Date Display */}
-                <div className="flex items-center gap-2 text-[var(--text-secondary)]">
+                {/* Date Display - hidden on small mobile */}
+                <div className="hidden sm:flex items-center gap-2 text-[var(--text-secondary)]">
                     <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor">
                         <path d="M19 3h-1V1h-2v2H8V1H6v2H5c-1.11 0-1.99.9-1.99 2L3 19c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H5V8h14v11zM9 10H7v2h2v-2zm4 0h-2v2h2v-2zm4 0h-2v2h2v-2zm-8 4H7v2h2v-2zm4 0h-2v2h2v-2zm4 0h-2v2h2v-2z" />
                     </svg>
@@ -157,14 +169,14 @@ export default function Header({
                 </div>
             </div>
 
-            <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2 sm:gap-4">
                 {/* Notification Bell */}
-                <div className="relative">
+                <div className="relative" ref={notifRef}>
                     <button
                         onClick={() => setShowNotifications(!showNotifications)}
                         className="bg-[var(--glass-bg)] hover:bg-[var(--glass-border-hover)] p-2 rounded-full relative transition-colors border border-[var(--glass-border)]"
                     >
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-[var(--text-secondary)]" viewBox="0 0 24 24" fill="currentColor">
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 sm:h-6 sm:w-6 text-[var(--text-secondary)]" viewBox="0 0 24 24" fill="currentColor">
                             <path d="M12 22c1.1 0 2-.9 2-2h-4c0 1.1.9 2 2 2zm6-6v-5c0-3.07-1.63-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.64 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2zm-2 1H8v-6c0-2.48 1.51-4.5 4-4.5s4 2.02 4 4.5v6z" />
                         </svg>
                         {unreadCount > 0 && (
@@ -173,7 +185,7 @@ export default function Header({
                     </button>
 
                     {showNotifications && (
-                        <div className="absolute right-0 top-12 w-80 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl shadow-2xl overflow-hidden z-[300]">
+                        <div className="absolute right-0 top-12 w-80 max-w-[calc(100vw-2rem)] bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl shadow-2xl overflow-hidden z-[300]">
                             <div className="p-4 border-b border-zinc-200 dark:border-zinc-800 flex justify-between items-center bg-gray-50/50 dark:bg-zinc-900/50">
                                 <h3 className="font-bold text-gray-900 dark:text-gray-100">Notifications</h3>
                             </div>
@@ -213,12 +225,12 @@ export default function Header({
                 >
                     {theme === "dark" ? (
                         // Sun icon for dark mode (click to go light)
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-[var(--primary)] group-hover:rotate-45 transition-transform" viewBox="0 0 24 24" fill="currentColor">
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 sm:h-6 sm:w-6 text-[var(--primary)] group-hover:rotate-45 transition-transform" viewBox="0 0 24 24" fill="currentColor">
                             <path d="M6.76 4.84l-1.8-1.79-1.41 1.41 1.79 1.79 1.42-1.41zM4 10.5H1v2h3v-2zm9-9.95h-2V3.5h2V.55zm7.45 3.91l-1.41-1.41-1.79 1.79 1.41 1.41 1.79-1.79zm-3.21 13.7l1.79 1.8 1.41-1.41-1.8-1.79-1.4 1.4zM20 10.5v2h3v-2h-3zm-8-5c-3.31 0-6 2.69-6 6s2.69 6 6 6 6-2.69 6-6-2.69-6-6-6zm-1 16.95h2V19.5h-2v2.95zm-7.45-3.91l1.41 1.41 1.79-1.8-1.41-1.41-1.79 1.8z" />
                         </svg>
                     ) : (
                         // Moon icon for light mode (click to go dark)
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-[var(--primary)] group-hover:scale-110 transition-transform" viewBox="0 0 24 24" fill="currentColor">
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 sm:h-6 sm:w-6 text-[var(--primary)] group-hover:scale-110 transition-transform" viewBox="0 0 24 24" fill="currentColor">
                             <path d="M9.37,5.51C9.19,6.15,9.1,6.82,9.1,7.5c0,4.08,3.32,7.4,7.4,7.4c0.68,0,1.35-0.09,1.99-0.27C17.45,17.19,14.93,19,12,19 c-3.86,0-7-3.14-7-7C5,9.07,6.81,6.55,9.37,5.51z M12,3c-4.97,0-9,4.03-9,9s4.03,9,9,9s9-4.03,9-9c0-0.46-0.04-0.92-0.1-1.36 c-0.98,1.37-2.58,2.26-4.4,2.26c-2.98,0-5.4-2.42-5.4-5.4c0-1.81,0.89-3.42,2.26-4.4C12.92,3.04,12.46,3,12,3L12,3z" />
                         </svg>
                     )}
@@ -227,14 +239,14 @@ export default function Header({
                 {/* User Profile */}
                 <Link
                     href="/dashboard/profile"
-                    className="flex items-center gap-3 pl-4 border-l border-[var(--glass-border)] cursor-pointer group"
+                    className="flex items-center gap-2 sm:gap-3 pl-2 sm:pl-4 border-l border-[var(--glass-border)] cursor-pointer group"
                 >
                     <div className="text-right hidden sm:block">
                         <p className="text-sm font-bold text-[var(--text-primary)] group-hover:text-[var(--primary)] transition-colors">{userName}</p>
                         <p className="text-xs text-[var(--primary)]">{userRole}</p>
                     </div>
                     <div
-                        className="h-10 w-10 rounded-full bg-cover bg-center overflow-hidden group-hover:brightness-110 transition-all"
+                        className="h-8 w-8 sm:h-10 sm:w-10 rounded-full bg-cover bg-center overflow-hidden group-hover:brightness-110 transition-all"
                         style={{
                             backgroundColor: "var(--primary)",
                             ...(userAvatar ? { backgroundImage: `url('${userAvatar}')`, backgroundSize: 'cover', backgroundPosition: 'center' } : {})
@@ -242,7 +254,7 @@ export default function Header({
                     >
                         {!userAvatar && (
                             <div
-                                className="w-full h-full flex items-center justify-center font-bold text-sm text-[var(--primary-foreground)]"
+                                className="w-full h-full flex items-center justify-center font-bold text-xs sm:text-sm text-[var(--primary-foreground)]"
                             >
                                 {userName.split(" ").map(n => n[0]).join("").slice(0, 2)}
                             </div>

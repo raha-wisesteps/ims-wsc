@@ -1530,6 +1530,24 @@ textarea:-webkit-autofill:active {
 
 
 
+/* ===== MOBILE RESPONSIVE ===== */
+@media (max-width: 767px) {
+  html {
+    /* Slightly smaller base on mobile for better fit */
+    font-size: clamp(13px, 3.5vw, 16px);
+  }
+
+  /* Sidebar nav items – larger tap targets on mobile */
+  aside nav a {
+    min-height: 44px;
+  }
+
+  /* Prevent content from overflowing horizontally */
+  main {
+    overflow-x: hidden;
+  }
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;

@@ -77,7 +77,6 @@ const navItems: NavItem[] = [
 
 
 
-
     // Operasional - Office Manager, CEO, Super Admin
     {
         label: "Operasional",
@@ -146,9 +145,11 @@ const navItems: NavItem[] = [
 
 interface SidebarProps {
     collapsed?: boolean;
+    isMobile?: boolean;
+    onClose?: () => void;
 }
 
-export default function Sidebar({ collapsed = false }: SidebarProps) {
+export default function Sidebar({ collapsed = false, isMobile = false, onClose }: SidebarProps) {
     const pathname = usePathname();
     const router = useRouter();
     const supabase = createClient();
@@ -302,28 +303,36 @@ export default function Sidebar({ collapsed = false }: SidebarProps) {
     const NavLink = ({ item }: { item: NavItem }) => {
         const isActive = pathname === item.href;
 
+        const handleClick = () => {
+            // Close sidebar on mobile when navigating
+            if (isMobile && onClose) {
+                onClose();
+            }
+        };
+
         return (
             <Link
                 href={item.href}
+                onClick={handleClick}
                 className={`flex items-center gap-3 px-3 py-3 rounded-xl transition-all duration-200 group ${isActive
                     ? "bg-white/10 dark:bg-primary/10 border border-white/20 dark:border-primary/20"
                     : "hover:bg-white/10 dark:hover:bg-white/5 border border-transparent"
                     }`}
             >
                 <span
-                    className={`transition-colors ${isActive ? "text-primary" : "group-hover:opacity-100"}`}
+                    className={`transition-colors flex-shrink-0 ${isActive ? "text-primary" : "group-hover:opacity-100"}`}
                     style={{ color: isActive ? 'var(--sidebar-text-hover)' : 'var(--sidebar-text)' }}
                 >
                     {item.icon}
                 </span>
                 <p
-                    className={`text-sm font-medium leading-normal transition-colors ${isActive ? "font-semibold" : ""}`}
+                    className={`text-sm font-medium leading-normal transition-colors truncate ${isActive ? "font-semibold" : ""}`}
                     style={{ color: isActive ? 'var(--sidebar-text-hover)' : 'var(--sidebar-text)' }}
                 >
                     {item.label}
                 </p>
                 {item.badge && (
-                    <span className="ml-auto bg-[#e8c559] text-[#171611] text-xs font-bold px-2 py-0.5 rounded-full">
+                    <span className="ml-auto bg-[#e8c559] text-[#171611] text-xs font-bold px-2 py-0.5 rounded-full flex-shrink-0">
                         {item.badge}
                     </span>
                 )}
@@ -332,17 +341,55 @@ export default function Sidebar({ collapsed = false }: SidebarProps) {
     };
 
 
+    // ── Build class names ──
+    const baseClasses =
+        "h-full bg-[var(--sidebar-bg)] border-r border-[var(--glass-border)] flex flex-col p-4 flex-shrink-0 transition-all duration-300";
+
+    let positionClasses: string;
+
+    if (isMobile) {
+        // Mobile: fixed overlay, slide in/out via translate
+        positionClasses = collapsed
+            ? "fixed top-0 left-0 w-64 z-50 -translate-x-full"
+            : "fixed top-0 left-0 w-64 z-50 translate-x-0 shadow-2xl";
+    } else {
+        // Desktop: inline, collapse via negative margin
+        positionClasses = collapsed
+            ? "w-64 -ml-64 z-20"
+            : "w-64 ml-0 z-20";
+    }
 
     return (
-        <aside className={`w-64 h-full bg-[var(--sidebar-bg)] border-r border-[var(--glass-border)] flex flex-col p-4 flex-shrink-0 z-20 transition-all duration-300 ${collapsed ? '-ml-64' : 'ml-0'}`}>
+        <aside className={`${baseClasses} ${positionClasses}`}>
             {/* Logo Area - Fixed at top */}
-            <div className="flex items-center px-2 py-2 flex-shrink-0">
+            <div className="flex items-center justify-between px-2 py-2 flex-shrink-0">
                 <img
                     src="/logo_fix.svg"
                     alt="Company Logo"
                     className="h-[70px] w-auto object-contain transition-all duration-300"
                     style={{ filter: 'var(--logo-filter)' }}
                 />
+                {/* Close button – mobile only */}
+                {isMobile && !collapsed && (
+                    <button
+                        onClick={onClose}
+                        className="p-1.5 rounded-lg hover:bg-white/10 transition-colors"
+                        aria-label="Close sidebar"
+                    >
+                        <svg
+                            xmlns="http://www.w3.org/2000/svg"
+                            className="h-5 w-5"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="var(--sidebar-text)"
+                            strokeWidth="2"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                        >
+                            <path d="M18 6L6 18M6 6l12 12" />
+                        </svg>
+                    </button>
+                )}
             </div>
 
             {/* Navigation - Scrollable */}
