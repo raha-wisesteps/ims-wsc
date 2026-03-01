@@ -141,37 +141,55 @@ export default function SharingSessionModal({
                 setParticipantStatuses(initialStatuses);
             }
         }
-    }, [isOpen, sessionToEdit, profiles, currentUser]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [isOpen, sessionToEdit?.id]);
 
-    // Helper for rendering time select
     const renderTimeInput = (value: string, onChange: (val: string) => void, disabled: boolean, id: string) => {
-        const [h, m] = (value || "00:00").split(":");
+        const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+            let val = e.target.value.replace(/[^0-9:]/g, '');
+            // Auto insert colon after 2 digits if typing forward
+            if (val.length === 2 && !val.includes(':') && value.length === 1) {
+                val += ':';
+            }
+            // Limit length
+            if (val.length > 5) {
+                val = val.slice(0, 5);
+            }
+            onChange(val);
+        };
+
+        const handleBlur = (e: React.FocusEvent<HTMLInputElement>) => {
+            let val = e.target.value;
+            if (!val) {
+                onChange("00:00");
+                return;
+            }
+            let [h, m] = val.split(':');
+            h = h || "00";
+            m = m || "00";
+
+            // Pad and validate
+            h = h.padStart(2, '0');
+            m = m.padEnd(2, '0').slice(0, 2);
+
+            if (parseInt(h) > 23) h = "23";
+            if (parseInt(m) > 59) m = "59";
+
+            onChange(`${h}:${m}`);
+        };
+
         return (
-            <div className="flex items-center gap-1">
-                <select
-                    id={id + "-hour"}
-                    value={h || "00"}
-                    onChange={(e) => onChange(`${e.target.value}:${m || "00"}`)}
-                    disabled={disabled}
-                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-base ring-offset-background disabled:cursor-not-allowed disabled:opacity-50 text-center appearance-none"
-                >
-                    {Array.from({ length: 24 }, (_, i) => String(i).padStart(2, '0')).map(hour => (
-                        <option key={hour} value={hour}>{hour}</option>
-                    ))}
-                </select>
-                <span className="font-bold">:</span>
-                <select
-                    id={id + "-minute"}
-                    value={m || "00"}
-                    onChange={(e) => onChange(`${h || "00"}:${e.target.value}`)}
-                    disabled={disabled}
-                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-base ring-offset-background disabled:cursor-not-allowed disabled:opacity-50 text-center appearance-none"
-                >
-                    {['00', '05', '10', '15', '20', '25', '30', '35', '40', '45', '50', '55'].map(minute => (
-                        <option key={minute} value={minute}>{minute}</option>
-                    ))}
-                </select>
-            </div>
+            <Input
+                id={id}
+                type="text"
+                value={value}
+                onChange={handleChange}
+                onBlur={handleBlur}
+                disabled={disabled}
+                placeholder="00:00"
+                className="bg-background block w-full text-center tracking-widest font-mono text-base"
+                required
+            />
         );
     };
 
@@ -341,11 +359,11 @@ export default function SharingSessionModal({
                                         />
                                     </div>
                                     <div className="space-y-2">
-                                        <Label htmlFor="time-hour" className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Mulai WIB *</Label>
+                                        <Label htmlFor="time" className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Mulai WIB *</Label>
                                         {renderTimeInput(sessionTime, setSessionTime, !canEdit || isSaving, "time")}
                                     </div>
                                     <div className="space-y-2">
-                                        <Label htmlFor="endTime-hour" className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Selesai WIB *</Label>
+                                        <Label htmlFor="endTime" className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Selesai WIB *</Label>
                                         {renderTimeInput(sessionEndTime, setSessionEndTime, !canEdit || isSaving, "endTime")}
                                     </div>
                                 </div>
