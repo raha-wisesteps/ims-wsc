@@ -14,6 +14,7 @@ import {
     Settings,
     Download,
     ChevronRight,
+    ChevronDown,
     Leaf,
     Loader2,
     Save,
@@ -21,7 +22,8 @@ import {
     User,
     MoreVertical,
     Edit3,
-    Trash2
+    Trash2,
+    Filter
 } from "lucide-react";
 import { toast } from "sonner";
 import * as XLSX from "xlsx";
@@ -40,11 +42,33 @@ const ACTIVITY_TYPE_LABELS: Record<string, string> = {
     others: "Others",
 };
 
+const CATEGORY_LABELS: Record<string, string> = {
+    project: "Project",
+    sales_visit: "Sales Visit",
+    event: "Event (Attendance / Guest Speaker)",
+    other: "Other",
+};
+
+const CATEGORY_SHORT_LABELS: Record<string, string> = {
+    project: "Project",
+    sales_visit: "Sales Visit",
+    event: "Event",
+    other: "Other",
+};
+
+const CATEGORY_COLORS: Record<string, { text: string; bg: string; border: string }> = {
+    project: { text: "text-blue-700 dark:text-blue-300", bg: "bg-blue-100 dark:bg-blue-900/30", border: "" },
+    sales_visit: { text: "text-purple-700 dark:text-purple-300", bg: "bg-purple-100 dark:bg-purple-900/30", border: "" },
+    event: { text: "text-amber-700 dark:text-amber-300", bg: "bg-amber-100 dark:bg-amber-900/30", border: "" },
+    other: { text: "text-emerald-700 dark:text-emerald-300", bg: "bg-emerald-100 dark:bg-emerald-900/30", border: "" },
+};
+
 // Types
 interface TravelActivity {
     id: string;
     title: string;
     description: string;
+    category: string;
     total_emission: number;
     total_distance: number;
     log_count: number;
@@ -77,6 +101,8 @@ export default function TravelPage() {
     const [isLoading, setIsLoading] = useState(true);
     const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
     const [searchQuery, setSearchQuery] = useState("");
+    const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
+    const [expandedStat, setExpandedStat] = useState<string | null>(null);
 
     // Modals
     const [showAddModal, setShowAddModal] = useState(false);
@@ -85,7 +111,7 @@ export default function TravelPage() {
     const [editingActivityId, setEditingActivityId] = useState<string | null>(null);
 
     // Form Data
-    const [newActivity, setNewActivity] = useState({ title: "", description: "" });
+    const [newActivity, setNewActivity] = useState({ title: "", description: "", category: "other" });
     const [isSaving, setIsSaving] = useState(false);
 
     // Settings Data
@@ -144,11 +170,13 @@ export default function TravelPage() {
 
     // Derived State
     const filteredActivities = useMemo(() => {
-        return activities.filter(act =>
-            act.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-            act.description?.toLowerCase().includes(searchQuery.toLowerCase())
-        );
-    }, [activities, searchQuery]);
+        return activities.filter(act => {
+            const matchesSearch = act.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                act.description?.toLowerCase().includes(searchQuery.toLowerCase());
+            const matchesCategory = !selectedCategory || act.category === selectedCategory;
+            return matchesSearch && matchesCategory;
+        });
+    }, [activities, searchQuery, selectedCategory]);
 
     const stats = useMemo(() => {
         return activities.reduce((acc, act) => ({
@@ -156,6 +184,21 @@ export default function TravelPage() {
             totalDistance: acc.totalDistance + (act.total_distance || 0),
             logCount: acc.logCount + (act.log_count || 0)
         }), { totalEmission: 0, totalDistance: 0, logCount: 0 });
+    }, [activities]);
+
+    const categoryStats = useMemo(() => {
+        const result: Record<string, { emission: number; distance: number; count: number }> = {};
+        for (const key of Object.keys(CATEGORY_LABELS)) {
+            result[key] = { emission: 0, distance: 0, count: 0 };
+        }
+        activities.forEach(act => {
+            const cat = act.category || 'other';
+            if (!result[cat]) result[cat] = { emission: 0, distance: 0, count: 0 };
+            result[cat].emission += act.total_emission || 0;
+            result[cat].distance += act.total_distance || 0;
+            result[cat].count += 1;
+        });
+        return result;
     }, [activities]);
 
     // Handlers
@@ -172,6 +215,7 @@ export default function TravelPage() {
                     .update({
                         title: newActivity.title,
                         description: newActivity.description,
+                        category: newActivity.category,
                     })
                     .eq('id', editingActivityId);
 
@@ -183,6 +227,7 @@ export default function TravelPage() {
                     .insert({
                         title: newActivity.title,
                         description: newActivity.description,
+                        category: newActivity.category,
                         created_by: profile?.id
                     });
 
@@ -191,7 +236,7 @@ export default function TravelPage() {
             }
 
             setShowAddModal(false);
-            setNewActivity({ title: "", description: "" });
+            setNewActivity({ title: "", description: "", category: "other" });
             setEditingActivityId(null);
             fetchActivities();
         } catch (error) {
@@ -202,7 +247,7 @@ export default function TravelPage() {
     };
 
     const handleEditActivity = (act: TravelActivity) => {
-        setNewActivity({ title: act.title, description: act.description });
+        setNewActivity({ title: act.title, description: act.description, category: act.category || "other" });
         setEditingActivityId(act.id);
         setShowAddModal(true);
         setActiveActionDropdown(null);
@@ -270,6 +315,7 @@ export default function TravelPage() {
             // Sheet 1: Activities Summary
             const summaryData = activities.map(act => ({
                 "Activity Title": act.title,
+                "Category": CATEGORY_LABELS[act.category] || act.category,
                 "Description": act.description,
                 "Created Date": new Date(act.created_at).toLocaleDateString(),
                 "Created By": act.creator?.full_name || "Unknown",
@@ -362,7 +408,7 @@ export default function TravelPage() {
                     <button
                         onClick={() => {
                             setEditingActivityId(null);
-                            setNewActivity({ title: "", description: "" });
+                            setNewActivity({ title: "", description: "", category: "other" });
                             setShowAddModal(true);
                         }}
 
@@ -375,32 +421,96 @@ export default function TravelPage() {
 
             {/* Stats */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6 shrink-0" onClick={() => setActiveActionDropdown(null)}>
-                <div className="glass-panel p-6 rounded-2xl border border-emerald-500/20 bg-emerald-500/5 relative overflow-hidden shadow-sm">
-                    <div className="absolute top-0 right-0 p-4 opacity-10">
-                        <Leaf className="w-24 h-24 text-emerald-500" />
-                    </div>
-                    <div className="relative z-10">
-                        <p className="text-emerald-600 dark:text-emerald-400 text-sm font-bold uppercase tracking-wider mb-2">Total Emission</p>
-                        <div className="flex items-baseline gap-2">
-                            <span className="text-4xl font-black text-[var(--text-primary)]">{stats.totalEmission.toFixed(1)}</span>
-                            <span className="text-sm text-[var(--text-secondary)] font-medium">kgCO2</span>
+                {/* Total Emission Card */}
+                <div className="glass-panel rounded-2xl border border-emerald-500/20 bg-emerald-500/5 relative overflow-hidden shadow-sm">
+                    <div
+                        className="p-6 cursor-pointer group"
+                        onClick={() => setExpandedStat(expandedStat === 'emission' ? null : 'emission')}
+                    >
+                        <div className="absolute top-0 right-0 p-4 opacity-10">
+                            <Leaf className="w-24 h-24 text-emerald-500" />
+                        </div>
+                        <div className="relative z-10">
+                            <div className="flex items-center justify-between mb-2">
+                                <p className="text-emerald-600 dark:text-emerald-400 text-sm font-bold uppercase tracking-wider">Total Emission</p>
+                                <ChevronDown className={cn("w-4 h-4 text-emerald-500 transition-transform", expandedStat === 'emission' && "rotate-180")} />
+                            </div>
+                            <div className="flex items-baseline gap-2 mb-1">
+                                <span className="text-4xl font-black text-[var(--text-primary)]">{stats.totalEmission.toFixed(1)}</span>
+                                <span className="text-sm text-[var(--text-secondary)] font-medium">kgCO2</span>
+                            </div>
+                            <p className="text-[10px] text-[var(--text-muted)] italic opacity-0 group-hover:opacity-100 transition-opacity">Click to view more detail</p>
                         </div>
                     </div>
+                    {expandedStat === 'emission' && (
+                        <div className="px-6 pb-4 space-y-2 border-t border-emerald-500/10 pt-3">
+                            {Object.entries(categoryStats).map(([key, val]) => {
+                                const pct = stats.totalEmission > 0 ? (val.emission / stats.totalEmission) * 100 : 0;
+                                const catColor = CATEGORY_COLORS[key] || CATEGORY_COLORS.other;
+                                return (
+                                    <div key={key}>
+                                        <div className="flex justify-between text-xs mb-0.5">
+                                            <span className="text-[var(--text-secondary)] font-medium">{CATEGORY_SHORT_LABELS[key]}</span>
+                                            <span className="text-[var(--text-primary)] font-bold">{val.emission.toFixed(1)} kg</span>
+                                        </div>
+                                        <div className="h-1.5 rounded-full bg-black/5 dark:bg-white/5 overflow-hidden">
+                                            <div
+                                                className={cn("h-full rounded-full transition-all", catColor.bg.replace('bg-', 'bg-').replace('/30', ''))}
+                                                style={{ width: `${pct}%`, backgroundColor: key === 'project' ? '#3b82f6' : key === 'sales_visit' ? '#a855f7' : key === 'event' ? '#f59e0b' : '#10b981' }}
+                                            />
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    )}
                 </div>
 
-                <div className="glass-panel p-6 rounded-2xl border border-blue-500/20 bg-blue-500/5 relative overflow-hidden shadow-sm">
-                    <div className="absolute top-0 right-0 p-4 opacity-10">
-                        <Plane className="w-24 h-24 text-blue-500" />
-                    </div>
-                    <div className="relative z-10">
-                        <p className="text-blue-600 dark:text-blue-400 text-sm font-bold uppercase tracking-wider mb-2">Total Distance</p>
-                        <div className="flex items-baseline gap-2">
-                            <span className="text-4xl font-black text-[var(--text-primary)]">{stats.totalDistance.toLocaleString()}</span>
-                            <span className="text-sm text-[var(--text-secondary)] font-medium">km</span>
+                {/* Total Distance Card */}
+                <div className="glass-panel rounded-2xl border border-blue-500/20 bg-blue-500/5 relative overflow-hidden shadow-sm">
+                    <div
+                        className="p-6 cursor-pointer group"
+                        onClick={() => setExpandedStat(expandedStat === 'distance' ? null : 'distance')}
+                    >
+                        <div className="absolute top-0 right-0 p-4 opacity-10">
+                            <Plane className="w-24 h-24 text-blue-500" />
+                        </div>
+                        <div className="relative z-10">
+                            <div className="flex items-center justify-between mb-2">
+                                <p className="text-blue-600 dark:text-blue-400 text-sm font-bold uppercase tracking-wider">Total Distance</p>
+                                <ChevronDown className={cn("w-4 h-4 text-blue-500 transition-transform", expandedStat === 'distance' && "rotate-180")} />
+                            </div>
+                            <div className="flex items-baseline gap-2 mb-1">
+                                <span className="text-4xl font-black text-[var(--text-primary)]">{stats.totalDistance.toLocaleString()}</span>
+                                <span className="text-sm text-[var(--text-secondary)] font-medium">km</span>
+                            </div>
+                            <p className="text-[10px] text-[var(--text-muted)] italic opacity-0 group-hover:opacity-100 transition-opacity">Click to view more detail</p>
                         </div>
                     </div>
+                    {expandedStat === 'distance' && (
+                        <div className="px-6 pb-4 space-y-2 border-t border-blue-500/10 pt-3">
+                            {Object.entries(categoryStats).map(([key, val]) => {
+                                const pct = stats.totalDistance > 0 ? (val.distance / stats.totalDistance) * 100 : 0;
+                                return (
+                                    <div key={key}>
+                                        <div className="flex justify-between text-xs mb-0.5">
+                                            <span className="text-[var(--text-secondary)] font-medium">{CATEGORY_SHORT_LABELS[key]}</span>
+                                            <span className="text-[var(--text-primary)] font-bold">{val.distance.toLocaleString()} km</span>
+                                        </div>
+                                        <div className="h-1.5 rounded-full bg-black/5 dark:bg-white/5 overflow-hidden">
+                                            <div
+                                                className="h-full rounded-full transition-all"
+                                                style={{ width: `${pct}%`, backgroundColor: key === 'project' ? '#3b82f6' : key === 'sales_visit' ? '#a855f7' : key === 'event' ? '#f59e0b' : '#10b981' }}
+                                            />
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    )}
                 </div>
 
+                {/* Total Activities Card */}
                 <div className="glass-panel p-6 rounded-2xl border border-amber-500/20 bg-amber-500/5 relative overflow-hidden shadow-sm">
                     <div className="absolute top-0 right-0 p-4 opacity-10">
                         <LayoutGrid className="w-24 h-24 text-amber-500" />
@@ -409,12 +519,57 @@ export default function TravelPage() {
                         <p className="text-amber-600 dark:text-amber-400 text-sm font-bold uppercase tracking-wider mb-2">Total Activities</p>
                         <div className="flex items-baseline gap-2">
                             <span className="text-4xl font-black text-[var(--text-primary)]">{activities.length}</span>
-                            <span className="text-sm text-[var(--text-secondary)] font-medium">Logs</span>
+                            <span className="text-sm text-[var(--text-secondary)] font-medium">Activities</span>
+                        </div>
+                        <div className="flex flex-wrap gap-1.5 mt-3">
+                            {Object.entries(categoryStats).map(([key, val]) => {
+                                if (val.count === 0) return null;
+                                const catColor = CATEGORY_COLORS[key] || CATEGORY_COLORS.other;
+                                return (
+                                    <span key={key} className={`px-2 py-0.5 text-[10px] rounded-md font-bold ${catColor.text} ${catColor.bg}`}>
+                                        {CATEGORY_SHORT_LABELS[key]}: {val.count}
+                                    </span>
+                                );
+                            })}
                         </div>
                     </div>
                 </div>
             </div>
 
+
+            {/* Category Filter Pills */}
+            <div className="flex flex-wrap items-center gap-2 mb-4 shrink-0">
+                <Filter className="w-4 h-4 text-[var(--text-muted)]" />
+                <button
+                    onClick={() => setSelectedCategory(null)}
+                    className={cn(
+                        "px-3 py-1.5 rounded-full text-xs font-bold transition-all border",
+                        !selectedCategory
+                            ? "bg-[#e8c559] text-[#171611] border-[#e8c559]"
+                            : "bg-white dark:bg-[#1c2120] text-[var(--text-secondary)] border-[var(--glass-border)] hover:border-[#e8c559]/50"
+                    )}
+                >
+                    All ({activities.length})
+                </button>
+                {Object.entries(CATEGORY_LABELS).map(([key, label]) => {
+                    const count = categoryStats[key]?.count || 0;
+                    const catColor = CATEGORY_COLORS[key] || CATEGORY_COLORS.other;
+                    return (
+                        <button
+                            key={key}
+                            onClick={() => setSelectedCategory(selectedCategory === key ? null : key)}
+                            className={cn(
+                                "px-3 py-1.5 rounded-full text-xs font-bold transition-all border",
+                                selectedCategory === key
+                                    ? `${catColor.bg} ${catColor.text} border-current`
+                                    : "bg-white dark:bg-[#1c2120] text-[var(--text-secondary)] border-[var(--glass-border)] hover:border-[#e8c559]/50"
+                            )}
+                        >
+                            {CATEGORY_SHORT_LABELS[key]} ({count})
+                        </button>
+                    );
+                })}
+            </div>
 
             {/* Filters */}
             <div className="flex flex-col md:flex-row justify-between items-center gap-4 mb-6 shrink-0">
@@ -478,9 +633,14 @@ export default function TravelPage() {
                                 <div className="flex justify-between items-start mb-4">
                                     <div>
                                         <div className="flex items-center gap-2 mb-2">
-                                            <span className="px-2.5 py-1 rounded-full text-[10px] uppercase tracking-wider font-bold text-emerald-700 bg-emerald-100 dark:text-emerald-300 dark:bg-emerald-900/30">
-                                                Activity
-                                            </span>
+                                            {(() => {
+                                                const catColor = CATEGORY_COLORS[act.category] || CATEGORY_COLORS.other;
+                                                return (
+                                                    <span className={`px-2.5 py-1 rounded-full text-[10px] uppercase tracking-wider font-bold ${catColor.text} ${catColor.bg}`}>
+                                                        {CATEGORY_SHORT_LABELS[act.category] || "Other"}
+                                                    </span>
+                                                );
+                                            })()}
                                             <span className="text-xs text-[var(--text-muted)]">{new Date(act.created_at).toLocaleDateString()}</span>
                                         </div>
                                         <h3 className="text-lg font-bold text-[var(--text-primary)] group-hover:text-[#e8c559] transition-colors line-clamp-1">
@@ -559,6 +719,7 @@ export default function TravelPage() {
                         <thead className="bg-[var(--glass-bg)] border-b border-[var(--glass-border)] sticky top-0 z-10 backdrop-blur-md">
                             <tr>
                                 <th className="px-6 py-4 text-left font-semibold text-[var(--text-primary)]">Activity Title</th>
+                                <th className="px-6 py-4 text-left font-semibold text-[var(--text-primary)]">Category</th>
                                 <th className="px-6 py-4 text-left font-semibold text-[var(--text-primary)]">Created By</th>
                                 <th className="px-6 py-4 text-left font-semibold text-[var(--text-primary)]">Date</th>
                                 <th className="px-6 py-4 text-right font-semibold text-[var(--text-primary)]">Logs</th>
@@ -571,6 +732,16 @@ export default function TravelPage() {
                             {filteredActivities.map(act => (
                                 <tr key={act.id} onClick={() => router.push(`/dashboard/sustainability/travel/${act.id}`)} className="hover:bg-[var(--glass-bg)] cursor-pointer transition-colors">
                                     <td className="px-6 py-4 font-semibold text-[var(--text-primary)] hover:text-[#e8c559]">{act.title}</td>
+                                    <td className="px-6 py-4">
+                                        {(() => {
+                                            const catColor = CATEGORY_COLORS[act.category] || CATEGORY_COLORS.other;
+                                            return (
+                                                <span className={`px-2 py-0.5 rounded-full text-[10px] uppercase tracking-wider font-bold ${catColor.text} ${catColor.bg}`}>
+                                                    {CATEGORY_SHORT_LABELS[act.category] || "Other"}
+                                                </span>
+                                            );
+                                        })()}
+                                    </td>
                                     <td className="px-6 py-4 text-[var(--text-muted)]">{act.creator?.full_name}</td>
                                     <td className="px-6 py-4 text-[var(--text-muted)]">{new Date(act.created_at).toLocaleDateString()}</td>
                                     <td className="px-6 py-4 text-right text-[var(--text-primary)]">{act.log_count}</td>
@@ -608,6 +779,19 @@ export default function TravelPage() {
                                     value={newActivity.title}
                                     onChange={e => setNewActivity({ ...newActivity, title: e.target.value })}
                                 />
+                            </div>
+                            <div>
+                                <label className="block text-sm font-bold text-[var(--text-primary)] mb-1">Category *</label>
+                                <select
+                                    value={newActivity.category}
+                                    onChange={e => setNewActivity({ ...newActivity, category: e.target.value })}
+                                    className="w-full px-4 py-2 rounded-xl border border-[var(--glass-border)] bg-white dark:bg-[#232b2a] text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-[#e8c559]"
+                                >
+                                    {Object.entries(CATEGORY_LABELS).map(([key, label]) => (
+                                        <option key={key} value={key}>{label}</option>
+                                    ))}
+                                </select>
+                                <p className="text-xs text-[var(--text-muted)] mt-1">Used for tagging and sorting activities</p>
                             </div>
                             <div>
                                 <label className="block text-sm font-bold text-[var(--text-primary)] mb-1">Description</label>

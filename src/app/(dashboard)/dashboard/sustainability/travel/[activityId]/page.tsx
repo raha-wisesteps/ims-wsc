@@ -34,6 +34,7 @@ interface TravelActivity {
     id: string;
     title: string;
     description: string;
+    category: string;
     total_emission: number;
     total_distance: number;
     log_count: number;
