@@ -146,6 +146,9 @@ export default function BisDevDashboardPage() {
     // ============================================
     const [detailModal, setDetailModal] = useState<{ type: string; title: string; data: any[] } | null>(null);
 
+    // Cash In Revenue inline dropdown state
+    const [cashInExpanded, setCashInExpanded] = useState(false);
+
     // Cached data for detail drill-downs
     const [cachedOpportunities, setCachedOpportunities] = useState<Opportunity[]>([]);
     const [cachedAllOpportunities, setCachedAllOpportunities] = useState<Opportunity[]>([]);
@@ -1008,15 +1011,25 @@ export default function BisDevDashboardPage() {
                         <div className="w-full flex-shrink-0 px-1">
                             {/* Financial metrics */}
                             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
-                                <MetricCard
-                                    title="Cash In (Revenue)"
-                                    value={formatCurrency(stats.cashIn)}
-                                    icon={Wallet}
-                                    colorClass="text-emerald-500"
-                                    borderClass="border-l-emerald-500"
-                                    subtext="Actual Paid Amount"
-                                    detailType="cash_in"
-                                />
+                                {/* Cash In (Revenue) — Expandable Card */}
+                                <div className="flex flex-col">
+                                    <div
+                                        onClick={() => setCashInExpanded(prev => !prev)}
+                                        className="p-5 rounded-xl glass-panel border-l-4 border-l-emerald-500 cursor-pointer hover:shadow-lg hover:scale-[1.02] transition-all group"
+                                    >
+                                        <div className="flex justify-between items-start mb-2">
+                                            <p className="text-xs text-[var(--text-muted)] uppercase tracking-wider font-bold">Cash In (Revenue)</p>
+                                            <div className="flex items-center gap-1">
+                                                <Wallet className="w-4 h-4 text-emerald-500" />
+                                                <ChevronDown className={`w-3.5 h-3.5 text-emerald-500 transition-transform duration-300 ${cashInExpanded ? 'rotate-180' : ''}`} />
+                                            </div>
+                                        </div>
+                                        <p className="text-2xl font-black text-[var(--text-primary)] truncate" title={formatCurrency(stats.cashIn)}>
+                                            {isLoadingData ? '...' : formatCurrency(stats.cashIn)}
+                                        </p>
+                                        <p className="text-xs mt-1 text-emerald-500 opacity-80">Click to view details</p>
+                                    </div>
+                                </div>
                                 <MetricCard
                                     title="Rem. Target (Cash)"
                                     value={formatCurrency(stats.remainingTargetCashIn)}
@@ -1044,6 +1057,88 @@ export default function BisDevDashboardPage() {
                                     subtext="vs Contract Value"
                                     detailType="remaining_booking"
                                 />
+                            </div>
+
+                            {/* Cash In Revenue Inline Dropdown */}
+                            <div
+                                className={`overflow-hidden transition-all duration-400 ease-in-out mb-4 ${cashInExpanded ? 'max-h-[500px] opacity-100' : 'max-h-0 opacity-0'
+                                    }`}
+                            >
+                                <div className="glass-panel rounded-xl border border-[var(--glass-border)] overflow-hidden">
+                                    <div className="p-3 border-b border-[var(--glass-border)] bg-emerald-500/5 flex items-center justify-between">
+                                        <h4 className="text-sm font-bold text-[var(--text-primary)] flex items-center gap-2">
+                                            <Wallet className="w-4 h-4 text-emerald-500" />
+                                            Cash In Revenue Details
+                                        </h4>
+                                        <span className="text-xs text-[var(--text-muted)]">
+                                            {(() => {
+                                                let count = 0;
+                                                cachedAllOpportunities.forEach(o => {
+                                                    if (o.revenue && Array.isArray(o.revenue)) {
+                                                        o.revenue.forEach((r: any) => {
+                                                            if (new Date(r.payment_date).getFullYear() === selectedYear) count++;
+                                                        });
+                                                    }
+                                                });
+                                                return `${count} payment(s)`;
+                                            })()}
+                                        </span>
+                                    </div>
+                                    <div className="overflow-y-auto max-h-[400px] custom-scrollbar">
+                                        {(() => {
+                                            const items: any[] = [];
+                                            cachedAllOpportunities.forEach(o => {
+                                                if (o.revenue && Array.isArray(o.revenue)) {
+                                                    o.revenue.forEach((r: any) => {
+                                                        const paymentYear = new Date(r.payment_date).getFullYear();
+                                                        if (paymentYear === selectedYear) {
+                                                            items.push({
+                                                                title: o.title,
+                                                                client: clientMap.get(o.client_id) || 'Unknown',
+                                                                amount: r.amount,
+                                                                payment_date: r.payment_date,
+                                                                notes: r.notes || '-',
+                                                            });
+                                                        }
+                                                    });
+                                                }
+                                            });
+                                            items.sort((a, b) => new Date(b.payment_date).getTime() - new Date(a.payment_date).getTime());
+
+                                            if (items.length === 0) {
+                                                return (
+                                                    <div className="p-6 text-center text-[var(--text-muted)] text-sm italic">
+                                                        No revenue data for {selectedYear}.
+                                                    </div>
+                                                );
+                                            }
+
+                                            return (
+                                                <div className="divide-y divide-[var(--glass-border)]">
+                                                    {items.map((item, idx) => (
+                                                        <div key={idx} className="flex items-center justify-between p-3 hover:bg-black/5 dark:hover:bg-white/5 transition-colors">
+                                                            <div className="min-w-0 flex-1">
+                                                                <p className="text-sm font-bold text-[var(--text-primary)] truncate">{item.title}</p>
+                                                                <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-[var(--text-secondary)]">
+                                                                    <span>{item.client}</span>
+                                                                    <span>
+                                                                        📅 {new Date(item.payment_date).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })}
+                                                                    </span>
+                                                                    {item.notes && item.notes !== '-' && (
+                                                                        <span className="truncate max-w-[200px]">📝 {item.notes}</span>
+                                                                    )}
+                                                                </div>
+                                                            </div>
+                                                            <p className="text-sm font-bold text-emerald-500 whitespace-nowrap ml-3">
+                                                                {formatCurrency(item.amount || 0)}
+                                                            </p>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            );
+                                        })()}
+                                    </div>
+                                </div>
                             </div>
 
                             {/* Charts */}

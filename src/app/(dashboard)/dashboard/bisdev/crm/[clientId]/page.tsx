@@ -63,6 +63,7 @@ const CATEGORY_CONFIG = {
     tourism_village: { label: "Tourism Village", color: "bg-emerald-500" },
     hospitality_suppliers: { label: "Hospitality Suppliers", color: "bg-teal-500" },
     supporting_organizations: { label: "Supporting Orgs", color: "bg-violet-500" },
+    university: { label: "University", color: "bg-rose-500" },
     others: { label: "Others", color: "bg-gray-500" },
 };
 
