@@ -195,6 +195,19 @@ export default function ActivityDetailPage() {
         return configs.filter(c => c.config_key.startsWith(formData.transport_mode));
     }, [configs, formData.transport_mode]);
 
+    // Auto-sync transport_subtype when transport_mode changes
+    useEffect(() => {
+        if (subtypeOptions.length > 0) {
+            const currentSubtypeValid = subtypeOptions.some(s => s.config_key === formData.transport_subtype);
+            if (!currentSubtypeValid) {
+                setFormData(prev => ({ ...prev, transport_subtype: subtypeOptions[0].config_key }));
+            }
+        } else {
+            // No subtypes available — use the mode key directly (e.g. 'travel', 'ferry')
+            setFormData(prev => ({ ...prev, transport_subtype: prev.transport_mode }));
+        }
+    }, [subtypeOptions]);
+
     // Sync passenger count with selected participants
     useEffect(() => {
         // If participants change, update passenger count to at least match participants + 1 (self) or just count?
@@ -658,7 +671,15 @@ export default function ActivityDetailPage() {
                                     <label className="block text-sm font-bold text-[var(--text-primary)] mb-1">Transport Mode</label>
                                     <select
                                         value={formData.transport_mode}
-                                        onChange={e => setFormData({ ...formData, transport_mode: e.target.value })}
+                                        onChange={e => {
+                                            const newMode = e.target.value;
+                                            const newSubtypes = configs.filter(c => c.config_key.startsWith(newMode));
+                                            setFormData({
+                                                ...formData,
+                                                transport_mode: newMode,
+                                                transport_subtype: newSubtypes.length > 0 ? newSubtypes[0].config_key : newMode
+                                            });
+                                        }}
                                         className="w-full px-4 py-2.5 rounded-xl border border-[var(--glass-border)] bg-white dark:bg-[#232b2a] text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-[#e8c559]"
                                     >
                                         {transportOptions.map(m => <option key={m} value={m}>{m.toUpperCase()}</option>)}
