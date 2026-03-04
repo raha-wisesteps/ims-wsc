@@ -84,7 +84,7 @@ export default function AssignmentHistoryPage() {
                 const combinedMap = new Map<string, UserHistoryProject>();
 
                 // Add Leads (Highest priority)
-                leadProjects?.forEach(p => {
+                leadProjects?.forEach((p: any) => {
                     combinedMap.set(p.id, {
                         id: p.id,
                         name: p.name,
@@ -97,7 +97,7 @@ export default function AssignmentHistoryPage() {
                 });
 
                 // Add Members (If not already lead)
-                memberData?.forEach(m => {
+                memberData?.forEach((m: any) => {
                     const p = m.project as any;
                     if (p && !combinedMap.has(p.id)) {
                         combinedMap.set(p.id, {
@@ -113,7 +113,7 @@ export default function AssignmentHistoryPage() {
                 });
 
                 // Add Helpers (If not already lead or member)
-                helperData?.forEach(h => {
+                helperData?.forEach((h: any) => {
                     const p = h.project as any;
                     if (p && !combinedMap.has(p.id)) {
                         combinedMap.set(p.id, {
