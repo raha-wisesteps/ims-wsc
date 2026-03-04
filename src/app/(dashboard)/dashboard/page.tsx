@@ -2360,29 +2360,29 @@ export default function DashboardPage() {
                                             </h4>
                                             <div className="grid grid-rows-3 gap-3 flex-1">
                                                 <Link
-                                                    href="/dashboard/my-request/training"
+                                                    href="/dashboard/assignment-history"
                                                     className="flex items-center gap-4 p-4 rounded-xl bg-[#e8c559]/10 dark:bg-white/5 border border-[#e8c559]/20 dark:border-white/10 hover:bg-[#e8c559]/20 dark:hover:bg-white/10 hover:border-[#e8c559]/30 dark:hover:border-white/20 transition-all group"
                                                 >
                                                     <div className="w-10 h-10 rounded-lg bg-blue-500/20 flex items-center justify-center text-blue-400 group-hover:scale-110 transition-transform">
-                                                        <Plus className="w-5 h-5" />
+                                                        <Briefcase className="w-5 h-5" />
                                                     </div>
                                                     <div>
-                                                        <div className="font-bold !text-white text-sm">Request Training</div>
-                                                        <div className="text-[10px] !text-gray-300">Ajukan pelatihan baru</div>
+                                                        <div className="font-bold !text-white text-sm">Assignment History</div>
+                                                        <div className="text-[10px] !text-gray-300">Cek riwayat penugasan Anda</div>
                                                     </div>
                                                     <ArrowRight className="ml-auto w-4 h-4 !text-white/50 group-hover:!text-white group-hover:translate-x-1 transition-all" />
                                                 </Link>
 
                                                 <Link
-                                                    href="/dashboard/knowledge"
+                                                    href="/dashboard/peer-review"
                                                     className="flex items-center gap-4 p-4 rounded-xl bg-[#e8c559]/10 dark:bg-white/5 border border-[#e8c559]/20 dark:border-white/10 hover:bg-[#e8c559]/20 dark:hover:bg-white/10 hover:border-[#e8c559]/30 dark:hover:border-white/20 transition-all group"
                                                 >
                                                     <div className="w-10 h-10 rounded-lg bg-emerald-500/20 flex items-center justify-center text-emerald-400 group-hover:scale-110 transition-transform">
                                                         <BookOpen className="w-5 h-5" />
                                                     </div>
                                                     <div>
-                                                        <div className="font-bold !text-white text-sm">Knowledge Hub</div>
-                                                        <div className="text-[10px] !text-gray-300">Akses materi belajar</div>
+                                                        <div className="font-bold !text-white text-sm">Peer to peer review</div>
+                                                        <div className="text-[10px] !text-gray-300">Berikan penilaian rekan kerja</div>
                                                     </div>
                                                     <ArrowRight className="ml-auto w-4 h-4 !text-white/50 group-hover:!text-white group-hover:translate-x-1 transition-all" />
                                                 </Link>

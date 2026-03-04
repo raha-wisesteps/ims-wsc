@@ -317,7 +317,7 @@ export default function ClientDetailPage() {
         notes: "",
     });
 
-    const hasFullAccess = profile?.job_type === "bisdev" || ["ceo", "super_admin"].includes(profile?.role || "");
+    const hasFullAccess = canAccessBisdev || profile?.job_type === "bisdev" || ["ceo", "super_admin"].includes(profile?.role || "");
 
     useEffect(() => {
         if (canAccessBisdev && clientId) {
