@@ -129,13 +129,21 @@ export default function DashboardPage() {
 
                 }
                 else {
-                    setDailyPlan(myTasks?.map((t: any) => ({
+                    const mappedTasks = myTasks?.map((t: any) => ({
                         id: t.id,
                         text: t.task_text,
                         project: "General",
                         priority: t.priority as "high" | "medium" | "low",
                         completed: t.completed || false
-                    })) || []);
+                    })) || [];
+
+                    // Auto-sort completed tasks to the bottom
+                    const sortedTasks = [...mappedTasks].sort((a, b) => {
+                        if (a.completed === b.completed) return 0;
+                        return a.completed ? 1 : -1;
+                    });
+
+                    setDailyPlan(sortedTasks);
                 }
 
                 // 2. Fetch User's Status Message
@@ -1172,10 +1180,16 @@ export default function DashboardPage() {
 
         const newCompletedStatus = !taskToToggle.completed;
 
-        // Optimistic update
-        setDailyPlan(prev => prev.map(t =>
-            t.id === id ? { ...t, completed: newCompletedStatus } : t
-        ));
+        // Optimistic update and auto-sort completed tasks to the bottom
+        setDailyPlan(prev => {
+            const updatedTasks = prev.map(t =>
+                t.id === id ? { ...t, completed: newCompletedStatus } : t
+            );
+            return updatedTasks.sort((a, b) => {
+                if (a.completed === b.completed) return 0;
+                return a.completed ? 1 : -1;
+            });
+        });
 
         // Sync with DB
         try {
@@ -1210,9 +1224,15 @@ export default function DashboardPage() {
         } catch (error) {
             console.error("Error toggling task:", error);
             // Revert state if error
-            setDailyPlan(prev => prev.map(t =>
-                t.id === id ? { ...t, completed: !taskToToggle.completed } : t
-            ));
+            setDailyPlan(prev => {
+                const revertedTasks = prev.map(t =>
+                    t.id === id ? { ...t, completed: !newCompletedStatus } : t
+                );
+                return revertedTasks.sort((a, b) => {
+                    if (a.completed === b.completed) return 0;
+                    return a.completed ? 1 : -1;
+                });
+            });
             alert("Failed to update task status");
         }
     };
@@ -1259,7 +1279,13 @@ export default function DashboardPage() {
                         completed: false
                     };
 
-                    setDailyPlan(prev => [newTask, ...prev]);
+                    setDailyPlan(prev => {
+                        const newPlan = [newTask, ...prev];
+                        return newPlan.sort((a, b) => {
+                            if (a.completed === b.completed) return 0;
+                            return a.completed ? 1 : -1;
+                        });
+                    });
 
                     // Sync with Team Activity (Local)
                     setTeamStatuses(prev => prev.map(m => {
