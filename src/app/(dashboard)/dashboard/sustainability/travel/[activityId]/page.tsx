@@ -209,32 +209,28 @@ export default function ActivityDetailPage() {
     }, [subtypeOptions]);
 
     // Sync passenger count with selected participants
+    // Emission only starts counting once at least 1 participant is checked
     useEffect(() => {
-        // If participants change, update passenger count to at least match participants + 1 (self) or just count?
-        // Assuming "Participant IDs" are "Other people". So Total = IDs.length + 1 (Self).
-        // Let's assume the user IS in the car.
         if (formData.participant_ids.length > 0) {
-            const currentCount = parseInt(formData.passenger_count) || 1;
-            const minCount = formData.participant_ids.length + 1; // Self + others
-
-            // Only auto-update if the manual count is less than implicit count, OR always sync?
-            // User asked: "add participant tidak mempengaruhi ... jumlah yang di mobil"
-            // So they expect it to update.
+            // Participants selected: count = selected participants (they ARE the travelers)
+            const count = formData.participant_ids.length;
             setFormData(prev => ({
                 ...prev,
-                passenger_count: minCount.toString()
+                passenger_count: count.toString()
             }));
         } else {
-            // If no participants selected, reset passenger count to 1 (for self)
+            // No participants selected: emission = 0, passenger count = 0
             setFormData(prev => ({
                 ...prev,
-                passenger_count: "1"
+                passenger_count: "0"
             }));
         }
     }, [formData.participant_ids]);
 
-    // Live Emission Calc
-    const calculatePreview = useMemo(() => { // Renamed to calculatePreview
+    // Live Emission Calc — only shows values when at least 1 participant is checked
+    const calculatePreview = useMemo(() => {
+        // No participants checked = emission is 0
+        if (formData.participant_ids.length === 0) return { total: 0, perPerson: 0 };
         if (!formData.distance_km || !formData.transport_mode) return { total: 0, perPerson: 0 };
         const dist = parseFloat(formData.distance_km);
         if (isNaN(dist)) return { total: 0, perPerson: 0 };
@@ -268,7 +264,7 @@ export default function ActivityDetailPage() {
 
         return { total, perPerson };
 
-    }, [formData.distance_km, formData.transport_mode, formData.transport_subtype, formData.passenger_count, configs]);
+    }, [formData.distance_km, formData.transport_mode, formData.transport_subtype, formData.passenger_count, formData.participant_ids, configs]);
 
     const isFormValid = useMemo(() => {
         return (
@@ -276,7 +272,8 @@ export default function ActivityDetailPage() {
             formData.origin?.trim().length > 0 &&
             formData.destination?.trim().length > 0 &&
             formData.distance_km && parseFloat(formData.distance_km) > 0 &&
-            formData.travel_date
+            formData.travel_date &&
+            formData.participant_ids.length > 0 // At least 1 participant required
         );
     }, [formData]);
 
@@ -302,12 +299,16 @@ export default function ActivityDetailPage() {
             toast.error("Please select a Date");
             return;
         }
+        if (formData.participant_ids.length === 0) {
+            toast.error("Please select at least one participant");
+            return;
+        }
 
         setIsSaving(true);
         try {
             // Recalculate Logic Final
             const dist = parseFloat(formData.distance_km);
-            const pCountInput = parseInt(formData.passenger_count) || 1;
+            const pCountInput = formData.participant_ids.length; // passenger count = number of checked participants
             const participants = formData.participant_ids;
 
             let factor = 0;
@@ -825,19 +826,25 @@ export default function ActivityDetailPage() {
                         {/* Footer / Calc Preview */}
                         <div className="p-6 border-t border-[var(--glass-border)] bg-[var(--glass-bg)] sticky bottom-0 z-10">
                             {/* Live Preview */}
-                            <div className="p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-between">
+                            <div className={`p-4 rounded-xl border flex items-center justify-between ${formData.participant_ids.length === 0 ? 'bg-gray-100/50 dark:bg-white/5 border-[var(--glass-border)]' : 'bg-emerald-500/10 border-emerald-500/20'}`}>
                                 <div>
-                                    <p className="text-sm text-emerald-600 dark:text-emerald-400 font-medium">Estimated Total Emission</p>
-                                    <p className="text-2xl font-bold text-emerald-600 dark:text-emerald-400">
-                                        {calculatePreview.total.toFixed(2)} <span className="text-sm font-normal">kgCO2</span>
-                                    </p>
+                                    <p className={`text-sm font-medium ${formData.participant_ids.length === 0 ? 'text-[var(--text-secondary)]' : 'text-emerald-600 dark:text-emerald-400'}`}>Estimated Total Emission</p>
+                                    {formData.participant_ids.length === 0 ? (
+                                        <p className="text-sm text-[var(--text-muted)] mt-1">Select at least 1 participant to calculate emission</p>
+                                    ) : (
+                                        <p className="text-2xl font-bold text-emerald-600 dark:text-emerald-400">
+                                            {calculatePreview.total.toFixed(2)} <span className="text-sm font-normal">kgCO2</span>
+                                        </p>
+                                    )}
                                 </div>
-                                <div className="text-right">
-                                    <p className="text-xs text-emerald-600/70 dark:text-emerald-400/70 font-medium">Your Share</p>
-                                    <p className="text-lg font-bold text-emerald-600 dark:text-emerald-400">
-                                        {calculatePreview.perPerson.toFixed(2)} <span className="text-xs font-normal">kgCO2</span>
-                                    </p>
-                                </div>
+                                {formData.participant_ids.length > 0 && (
+                                    <div className="text-right">
+                                        <p className="text-xs text-emerald-600/70 dark:text-emerald-400/70 font-medium">Per Person</p>
+                                        <p className="text-lg font-bold text-emerald-600 dark:text-emerald-400">
+                                            {calculatePreview.perPerson.toFixed(2)} <span className="text-xs font-normal">kgCO2</span>
+                                        </p>
+                                    </div>
+                                )}
                             </div>
 
                             <div className="flex gap-3 mt-4">
