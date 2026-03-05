@@ -6,6 +6,8 @@ import Link from "next/link";
 import { Home, MapPin, ArrowLeft, Calendar, Send, Loader2, CheckCircle, XCircle, AlertCircle, ChevronRight } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
+import { useCompanyHolidays } from "@/hooks/useCompanyHolidays";
+import { calculateWorkingDays, getExcludedDates } from "@/lib/utils/working-days";
 import { sendEmailNotification } from "@/lib/email-notification";
 
 // Work type options
@@ -19,6 +21,7 @@ export default function FlexibleWorkPage() {
     const { user, profile, leaveQuota } = useAuth();
     const supabase = createClient();
     const isIntern = profile?.job_type === 'intern';
+    const { holidays, holidayDates, isLoading: isLoadingHolidays } = useCompanyHolidays();
 
     const [workType, setWorkType] = useState<"wfh" | "wfa">("wfh");
     const [startDate, setStartDate] = useState("");
@@ -79,11 +82,26 @@ export default function FlexibleWorkPage() {
     // Calculate days
     const calculateDays = () => {
         if (!startDate) return 1;
+        if (workType === "wfa") {
+            // WFA: count only working days (exclude weekends + holidays)
+            const days = calculateWorkingDays(startDate, endDate || startDate, holidayDates);
+            return days || 1;
+        }
+        // WFH: single day
         if (!endDate || endDate === startDate) return 1;
         const start = new Date(startDate);
         const end = new Date(endDate);
         return Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1;
     };
+
+    // Get excluded dates info for WFA
+    const excludedDates = workType === "wfa" && startDate && endDate
+        ? getExcludedDates(startDate, endDate, holidays.map(h => ({ date: h.date, name: h.name })))
+        : [];
+
+    const totalCalendarDays = startDate && endDate
+        ? Math.ceil((new Date(endDate).getTime() - new Date(startDate).getTime()) / (1000 * 60 * 60 * 24)) + 1
+        : 1;
 
     const requestedDays = calculateDays();
 
@@ -319,9 +337,28 @@ export default function FlexibleWorkPage() {
                         )}
                     </div>
 
-                    {workType === "wfa" && requestedDays > 1 && (
-                        <div className="text-center py-2 px-4 rounded-lg bg-violet-500/10 text-violet-600 dark:text-violet-400 text-sm font-medium">
-                            Total: {requestedDays} hari
+                    {workType === "wfa" && startDate && endDate && (
+                        <div className="space-y-2">
+                            <div className="text-center py-2 px-4 rounded-lg bg-violet-500/10 text-violet-600 dark:text-violet-400 text-sm font-medium">
+                                Total: {requestedDays} hari kerja
+                                {excludedDates.length > 0 && (
+                                    <span className="text-xs opacity-75 ml-1">
+                                        (dari {totalCalendarDays} hari kalender)
+                                    </span>
+                                )}
+                            </div>
+                            {excludedDates.length > 0 && (
+                                <div className="px-4 py-2 rounded-lg bg-amber-500/10 border border-amber-500/20 text-xs text-amber-600 dark:text-amber-400">
+                                    <p className="font-medium mb-1">📅 Hari yang di-exclude ({excludedDates.length}):</p>
+                                    <div className="flex flex-wrap gap-1">
+                                        {excludedDates.map((d) => (
+                                            <span key={d.date} className="inline-block px-2 py-0.5 rounded bg-amber-500/10 text-[11px]">
+                                                {new Date(d.date).toLocaleDateString('id-ID', { day: 'numeric', month: 'short' })} — {d.reason}
+                                            </span>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
                         </div>
                     )}
 

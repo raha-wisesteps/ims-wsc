@@ -24,6 +24,8 @@ interface UserHistoryProject {
     role: ProjectRole;
     startDate: string;
     dueDate: string;
+    proposal_status?: 'success' | 'fail' | null;
+    proposal_reason?: string | null;
 }
 
 export default function AssignmentHistoryPage() {
@@ -32,15 +34,10 @@ export default function AssignmentHistoryPage() {
     const [historyData, setHistoryData] = useState<UserHistoryProject[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [searchQuery, setSearchQuery] = useState("");
+    const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
+    const [proposalExpanded, setProposalExpanded] = useState(false);
 
-    const [stats, setStats] = useState({
-        totalProjects: 0,
-        totalProposals: 0,
-        asPM: 0,
-        asMember: 0,
-        asHelper: 0,
-        totalActive: 0
-    });
+
 
     useEffect(() => {
         const fetchHistory = async () => {
@@ -54,7 +51,7 @@ export default function AssignmentHistoryPage() {
                 // Fetch projects where user is lead
                 const { data: leadProjects, error: leadError } = await supabase
                     .from('projects')
-                    .select('id, name, status, category, start_date, due_date')
+                    .select('id, name, status, category, start_date, due_date, proposal_status, proposal_reason')
                     .eq('lead_id', user.id)
                     .eq('is_archived', false);
 
@@ -64,7 +61,7 @@ export default function AssignmentHistoryPage() {
                 const { data: memberData, error: memberError } = await supabase
                     .from('project_members')
                     .select(`
-                        project:projects(id, name, status, category, start_date, due_date)
+                        project:projects(id, name, status, category, start_date, due_date, proposal_status, proposal_reason)
                     `)
                     .eq('profile_id', user.id);
 
@@ -74,7 +71,7 @@ export default function AssignmentHistoryPage() {
                 const { data: helperData, error: helperError } = await supabase
                     .from('project_helpers')
                     .select(`
-                        project:projects(id, name, status, category, start_date, due_date)
+                        project:projects(id, name, status, category, start_date, due_date, proposal_status, proposal_reason)
                     `)
                     .eq('profile_id', user.id);
 
@@ -92,7 +89,9 @@ export default function AssignmentHistoryPage() {
                         category: p.category,
                         role: "pm",
                         startDate: p.start_date,
-                        dueDate: p.due_date
+                        dueDate: p.due_date,
+                        proposal_status: p.proposal_status,
+                        proposal_reason: p.proposal_reason
                     });
                 });
 
@@ -107,7 +106,9 @@ export default function AssignmentHistoryPage() {
                             category: p.category,
                             role: "member",
                             startDate: p.start_date,
-                            dueDate: p.due_date
+                            dueDate: p.due_date,
+                            proposal_status: p.proposal_status,
+                            proposal_reason: p.proposal_reason
                         });
                     }
                 });
@@ -123,7 +124,9 @@ export default function AssignmentHistoryPage() {
                             category: p.category,
                             role: "helper",
                             startDate: p.start_date,
-                            dueDate: p.due_date
+                            dueDate: p.due_date,
+                            proposal_status: p.proposal_status,
+                            proposal_reason: p.proposal_reason
                         });
                     }
                 });
@@ -134,16 +137,7 @@ export default function AssignmentHistoryPage() {
 
                 setHistoryData(finalData);
 
-                // Calculate Stats
-                setStats({
-                    totalProjects: finalData.filter(d => d.category.toLowerCase() === 'project').length,
-                    totalProposals: finalData.filter(d => d.category.toLowerCase() === 'proposal').length,
-                    asPM: finalData.filter(d => d.role === 'pm').length,
-                    asMember: finalData.filter(d => d.role === 'member').length,
-                    asHelper: finalData.filter(d => d.role === 'helper').length,
-                    totalActive: finalData.filter(d => d.status === 'active').length
-                });
-
+                // Calculation moved to synchronous rendering step
             } catch (err) {
                 console.error("Error fetching assignment history:", err);
             } finally {
@@ -154,9 +148,36 @@ export default function AssignmentHistoryPage() {
         fetchHistory();
     }, [supabase]);
 
-    const filteredData = historyData.filter(item =>
+    const availableYears = Array.from(new Set(historyData.map(item => {
+        const d = item.startDate || item.dueDate;
+        return d ? new Date(d).getFullYear() : new Date().getFullYear();
+    }))).sort((a, b) => b - a);
+
+    const yearFilteredData = historyData.filter(item => {
+        const d = item.startDate || item.dueDate;
+        const year = d ? new Date(d).getFullYear() : new Date().getFullYear();
+        return year === selectedYear;
+    });
+
+    const filteredData = yearFilteredData.filter(item =>
         item.name.toLowerCase().includes(searchQuery.toLowerCase())
     );
+
+    const stats = (() => {
+        const totalProjects = yearFilteredData.filter(d => d.category.toLowerCase() === 'project').length;
+        const totalProposals = yearFilteredData.filter(d => d.category.toLowerCase() === 'proposal').length;
+        const asPM = yearFilteredData.filter(d => d.role === 'pm').length;
+        const asMember = yearFilteredData.filter(d => d.role === 'member').length;
+        const asHelper = yearFilteredData.filter(d => d.role === 'helper').length;
+        const totalActive = yearFilteredData.filter(d => d.status === 'active').length;
+
+        const successProposals = yearFilteredData.filter(d => d.category.toLowerCase() === 'proposal' && d.proposal_status === 'success').length;
+        const failProposals = yearFilteredData.filter(d => d.category.toLowerCase() === 'proposal' && d.proposal_status === 'fail').length;
+        const totalDecided = successProposals + failProposals;
+        const conversionRate = totalDecided > 0 ? Math.round((successProposals / totalDecided) * 100) : 0;
+
+        return { totalProjects, totalProposals, asPM, asMember, asHelper, totalActive, successProposals, failProposals, conversionRate };
+    })();
 
     const getRoleStying = (role: string) => {
         switch (role) {
@@ -194,10 +215,28 @@ export default function AssignmentHistoryPage() {
                         <p className="text-sm text-[var(--text-secondary)]">Your complete history and contribution across projects and proposals.</p>
                     </div>
                 </div>
+
+                <div className="flex bg-[var(--card-bg)] border border-[var(--glass-border)] rounded-lg p-1 overflow-x-auto max-w-full">
+                    {availableYears.map(year => (
+                        <button
+                            key={year}
+                            onClick={() => setSelectedYear(year)}
+                            className={`px-4 py-2 text-sm font-medium rounded-md transition-all whitespace-nowrap ${selectedYear === year
+                                ? 'bg-[#e8c559] text-black shadow-sm'
+                                : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-black/5 dark:hover:bg-white/5'
+                                }`}
+                        >
+                            {year}
+                        </button>
+                    ))}
+                    {availableYears.length === 0 && (
+                        <span className="px-4 py-2 text-sm font-medium text-[var(--text-muted)]">No Data</span>
+                    )}
+                </div>
             </div>
 
             {/* Quick Cards */}
-            <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4 mb-8">
+            <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4 mb-4">
                 <div className="rounded-xl border border-[var(--glass-border)] bg-[var(--card-bg)] p-4 flex flex-col justify-center shadow-sm relative overflow-hidden group">
                     <div className="absolute top-0 right-0 p-4 opacity-5 group-hover:opacity-10 transition-opacity">
                         <Briefcase className="w-12 h-12" />
@@ -208,6 +247,16 @@ export default function AssignmentHistoryPage() {
                 <div className="rounded-xl border border-[var(--glass-border)] bg-[var(--card-bg)] p-4 flex flex-col justify-center shadow-sm relative overflow-hidden group">
                     <span className="text-xs text-[var(--text-secondary)] font-bold uppercase tracking-wider mb-1">Proposals</span>
                     <span className="text-2xl font-black text-[var(--text-primary)]">{stats.totalProposals}</span>
+                </div>
+                <div
+                    className={`rounded-xl border p-4 flex flex-col justify-center shadow-sm relative overflow-hidden group cursor-pointer transition-all ${proposalExpanded ? 'bg-[#e8c559]/10 border-[#e8c559]/50' : 'border-[var(--glass-border)] bg-[var(--card-bg)] hover:border-[#e8c559]/30'}`}
+                    onClick={() => setProposalExpanded(!proposalExpanded)}
+                >
+                    <span className="text-xs text-[var(--text-secondary)] font-bold uppercase tracking-wider mb-1">Conv. Rate</span>
+                    <div className="flex items-end gap-2">
+                        <span className="text-2xl font-black text-[#e8c559]">{stats.conversionRate}%</span>
+                        <span className="text-xs text-[var(--text-muted)] mb-1 pb-0.5">({stats.successProposals}/{stats.successProposals + stats.failProposals})</span>
+                    </div>
                 </div>
                 <div className="rounded-xl border border-[var(--glass-border)] bg-[var(--card-bg)] p-4 flex flex-col justify-center shadow-sm relative overflow-hidden group">
                     <span className="text-xs text-[var(--text-secondary)] font-bold uppercase tracking-wider mb-1 px-1">Currently Active</span>
@@ -226,6 +275,52 @@ export default function AssignmentHistoryPage() {
                     <span className="text-2xl font-black text-[var(--text-primary)]">{stats.asHelper}</span>
                 </div>
             </div>
+
+            {/* Proposal Conversion Details */}
+            {proposalExpanded && (
+                <div className="mb-8 p-6 rounded-2xl border border-[var(--glass-border)] bg-black/5 dark:bg-white/5 animate-in fade-in slide-in-from-top-4">
+                    <h3 className="text-lg font-bold text-[var(--text-primary)] mb-4 flex items-center gap-2">
+                        Proposal Outcomes ({selectedYear})
+                    </h3>
+                    {(() => {
+                        const proposals = yearFilteredData.filter(d =>
+                            d.category.toLowerCase() === 'proposal' && (d.proposal_status === 'success' || d.proposal_status === 'fail')
+                        ).sort((a, b) => new Date(b.startDate || b.dueDate).getTime() - new Date(a.startDate || a.dueDate).getTime());
+
+                        if (proposals.length === 0) {
+                            return (
+                                <div className="text-center py-6 text-[var(--text-muted)] text-sm italic">
+                                    No proposal outcomes recorded for this year.
+                                </div>
+                            );
+                        }
+
+                        return (
+                            <div className="grid gap-3 grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
+                                {proposals.map(p => (
+                                    <div key={p.id} className="p-4 rounded-xl border border-[var(--glass-border)] bg-[var(--card-bg)] flex flex-col gap-2 shadow-sm">
+                                        <div className="flex items-start justify-between gap-2">
+                                            <span className="font-bold text-[var(--text-primary)] line-clamp-2 text-sm">{p.name}</span>
+                                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider shrink-0 ${p.proposal_status === 'success' ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20' : 'bg-gray-500/10 text-gray-500 border border-gray-500/20'
+                                                }`}>
+                                                {p.proposal_status}
+                                            </span>
+                                        </div>
+                                        <div className="text-xs text-[var(--text-secondary)]">
+                                            {p.startDate ? new Date(p.startDate).toLocaleDateString('id-ID', { month: 'short', year: 'numeric' }) : '-'}
+                                        </div>
+                                        {p.proposal_reason && (
+                                            <div className="text-xs mt-1 p-2 bg-black/5 dark:bg-white/5 rounded-md text-[var(--text-secondary)] border border-[var(--glass-border)]">
+                                                <span className="font-medium text-[var(--text-primary)]">Reason:</span> {p.proposal_reason}
+                                            </div>
+                                        )}
+                                    </div>
+                                ))}
+                            </div>
+                        );
+                    })()}
+                </div>
+            )}
 
             {/* List / Table View */}
             <div className="rounded-2xl border border-[var(--glass-border)] bg-[var(--card-bg)] shadow-md overflow-hidden flex flex-col">

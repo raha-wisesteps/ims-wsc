@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 
 import { createClient } from "@/lib/supabase/client";
+import { useCompanyHolidays } from "@/hooks/useCompanyHolidays";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -151,87 +152,8 @@ const STATUS_CONFIG: Record<string, { label: string; icon: string; bgClass: stri
     },
 };
 
-const HOLIDAYS_2026: Record<string, string> = {
-    "2026-01-16": "Isra Mikraj Nabi Muhammad S.A.W.",
-    "2026-02-17": "Tahun Baru Imlek 2577 Kongzili",
-    "2026-03-19": "Hari Suci Nyepi (Tahun Baru Saka 1948)",
-    "2026-03-21": "Idul Fitri 1447 Hijriah",
-    "2026-03-22": "Idul Fitri 1447 Hijriah",
-    "2026-04-03": "Wafat Yesus Kristus",
-    "2026-04-05": "Kebangkitan (Paskah) Yesus Kristus",
-    "2026-05-01": "Hari Buruh Internasional",
-    "2026-05-14": "Kenaikan Yesus Kristus",
-    "2026-05-27": "Idul Adha 1447 Hijriah",
-    "2026-05-31": "Hari Raya Waisak 2570 BE",
-    "2026-06-01": "Hari Lahir Pancasila",
-    "2026-06-16": "1 Muharam Tahun Baru Islam 1448 H",
-    "2026-08-17": "Proklamasi Kemerdekaan",
-    "2026-08-25": "Maulid Nabi Muhammad S.A.W.",
-    "2026-12-25": "Kelahiran Yesus Kristus"
-};
 
-interface Employee {
-    id: string;
-    name: string;
-    role: string;
-    isOnline: boolean;
-}
 
-const mockEmployees: Employee[] = [
-    { id: "1", name: "Rega Aditia", role: "Senior Analyst", isOnline: true },
-    { id: "2", name: "Raha Pratama", role: "BisDev Lead", isOnline: true },
-    { id: "3", name: "Mila Kartika", role: "HR Specialist", isOnline: false },
-    { id: "4", name: "Rifqi Fauzan", role: "Sales Executive", isOnline: true },
-    { id: "5", name: "Dwi Santoso", role: "Junior Analyst", isOnline: false },
-    { id: "6", name: "Shafa Anindya", role: "UI/UX Designer", isOnline: true },
-    { id: "7", name: "Sofyan", role: "Research Associate", isOnline: false },
-    { id: "8", name: "Pak Ale", role: "CEO", isOnline: true },
-];
-
-const getHolidayName = (date: Date): string | null => {
-    const y = date.getFullYear();
-    const m = String(date.getMonth() + 1).padStart(2, '0');
-    const d = String(date.getDate()).padStart(2, '0');
-    return HOLIDAYS_2026[`${y}-${m}-${d}`] || null;
-};
-
-// Helper to reliably get mock status for any date
-const getMockStatus = (empId: string, date: Date): StatusType | null => {
-    // SIMULATION: Block Leave for Mila Kartika (ID: 3) for 4 days
-    // Week of Jan 12-18, 2026. Let's block Jan 13, 14, 15, 16 (Tue-Fri)
-    if (empId === '3') {
-        const year = date.getFullYear();
-        const month = date.getMonth(); // 0-indexed
-        const d = date.getDate();
-
-        // Exact dates: Jan 13, 14, 15, 16 2026
-        if (year === 2026 && month === 0 && (d >= 13 && d <= 16)) {
-            return "leave";
-        }
-    }
-
-    const holiday = getHolidayName(date);
-    const day = date.getDay();
-    const isWeekend = day === 0 || day === 6;
-
-    // Deterministic random based on ID + Date
-    const seed = empId.charCodeAt(0) + date.getDate() + date.getMonth();
-
-    // Specific logic: 
-    // 1. Weekends & Holidays -> Default Empty, unless Overtime
-    if (isWeekend || holiday) {
-        // 10% chance of overtime on weekends/holidays
-        if (seed % 20 === 0) return "overtime";
-        return null; // Empty means "Off" / "Holiday" / "Weekend"
-    }
-
-    // 2. Weekdays -> Default Office, with exceptions
-    if (seed % 15 === 0) return "sick";
-    if (seed % 12 === 0) return "leave";
-    if (seed % 8 === 0) return "wfh";
-
-    return "office";
-};
 
 // --- Components ---
 
@@ -251,6 +173,7 @@ const StatusBadge = ({ status }: { status: StatusType | null | undefined }) => {
 
 export default function WeeklyBoardPage() {
     const supabase = createClient();
+    const { holidayMap } = useCompanyHolidays();
     const [currentDate, setCurrentDate] = useState(new Date());
     const [selectedDate, setSelectedDate] = useState<Date | null>(null);
     const [searchQuery, setSearchQuery] = useState("");
@@ -440,10 +363,18 @@ export default function WeeklyBoardPage() {
             date.getFullYear() === today.getFullYear();
     };
 
+    // Helper to get holiday name from map
+    const getHolidayForDate = (d: Date): string | null => {
+        const y = d.getFullYear();
+        const m = String(d.getMonth() + 1).padStart(2, '0');
+        const dd = String(d.getDate()).padStart(2, '0');
+        return holidayMap[`${y}-${m}-${dd}`] || null;
+    };
+
     // REAL STATUS GETTER
     const getRealStatus = (empId: string, date: Date): StatusType | null => {
         const dStr = date.toISOString().split('T')[0];
-        const holiday = getHolidayName(date);
+        const holiday = getHolidayForDate(date);
         const day = date.getDay();
         const isWeekend = day === 0 || day === 6;
 
@@ -520,7 +451,7 @@ export default function WeeklyBoardPage() {
                                         <div className="px-2">Employee Name</div>
                                     </TableHead>
                                     {weekDays.map((day, i) => {
-                                        const holiday = getHolidayName(day);
+                                        const holiday = getHolidayForDate(day);
                                         const isWeekend = day.getDay() === 0 || day.getDay() === 6;
                                         return (
                                             <TableHead key={i} className={`text-center min-w-[140px] ${isToday(day) ? "bg-muted/50" : ""} ${isWeekend || holiday ? "bg-muted/20" : ""}`}>
@@ -584,7 +515,7 @@ export default function WeeklyBoardPage() {
                                                 }
 
                                                 // Render Cell
-                                                const holiday = getHolidayName(day);
+                                                const holiday = getHolidayForDate(day);
                                                 const isWeekend = day.getDay() === 0 || day.getDay() === 6;
                                                 const config = status ? STATUS_CONFIG[status] : null;
 
@@ -635,9 +566,12 @@ export default function WeeklyBoardPage() {
                                 <CardTitle className="flex items-center gap-2">
                                     {selectedDate.toLocaleDateString('en-US', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
                                 </CardTitle>
-                                {getHolidayName(selectedDate) && (
-                                    <p className="text-sm text-red-500 font-medium mt-1">{getHolidayName(selectedDate)}</p>
-                                )}
+                                {(() => {
+                                    const selHoliday = getHolidayForDate(selectedDate);
+                                    return selHoliday ? (
+                                        <p className="text-sm text-red-500 font-medium mt-1">{selHoliday}</p>
+                                    ) : null;
+                                })()}
                                 <CardDescription className="mt-1">Daily Attendance Summary</CardDescription>
                             </div>
                             <Button variant="ghost" size="icon" onClick={() => setSelectedDate(null)}>

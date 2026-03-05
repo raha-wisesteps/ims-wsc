@@ -49,6 +49,8 @@ interface Project {
     jira_link?: string;
     drive_link?: string;
     is_archived: boolean;
+    proposal_status?: 'success' | 'fail' | null;
+    proposal_reason?: string | null;
 }
 
 interface Profile {
@@ -59,6 +61,7 @@ interface Profile {
 
     is_hr?: boolean;
     role?: string;
+    job_type?: string;
 }
 
 // Helper to get initials
@@ -119,7 +122,23 @@ export default function ProjectBoardPage() {
     const [inlineEditData, setInlineEditData] = useState<{ progress: number; status: ProjectStatus }>({ progress: 0, status: "planning" });
 
     // Details Modal Edit State
-    const [detailsEditData, setDetailsEditData] = useState<{ progress: number; status: ProjectStatus; helpers: Helper[]; jira_link: string; drive_link: string }>({ progress: 0, status: "planning", helpers: [], jira_link: "", drive_link: "" });
+    const [detailsEditData, setDetailsEditData] = useState<{
+        progress: number;
+        status: ProjectStatus;
+        helpers: Helper[];
+        jira_link: string;
+        drive_link: string;
+        proposal_status?: 'success' | 'fail' | null;
+        proposal_reason?: string | null;
+    }>({
+        progress: 0,
+        status: "planning",
+        helpers: [],
+        jira_link: "",
+        drive_link: "",
+        proposal_status: null,
+        proposal_reason: null
+    });
     const [detailsNewHelper, setDetailsNewHelper] = useState({ name: "", profileId: "", startDate: "", endDate: "" });
 
     // Fetch Data
@@ -130,7 +149,7 @@ export default function ProjectBoardPage() {
             // Fetch Profiles
             const { data: profilesData } = await supabase
                 .from('profiles')
-                .select('id, full_name, email, avatar_url, is_hr, role')
+                .select('id, full_name, email, avatar_url, is_hr, role, job_type')
                 .order('full_name');
 
             if (profilesData) setProfiles(profilesData);
@@ -188,7 +207,9 @@ export default function ProjectBoardPage() {
                     })),
                     jira_link: p.jira_link,
                     drive_link: p.drive_link,
-                    is_archived: p.is_archived
+                    is_archived: p.is_archived,
+                    proposal_status: p.proposal_status,
+                    proposal_reason: p.proposal_reason
                 }));
                 setProjects(formattedProjects);
             }
@@ -424,7 +445,9 @@ export default function ProjectBoardPage() {
             status: project.status,
             helpers: [...project.helpers],
             jira_link: project.jira_link || "",
-            drive_link: project.drive_link || ""
+            drive_link: project.drive_link || "",
+            proposal_status: project.proposal_status || null,
+            proposal_reason: project.proposal_reason || null
         });
         setDetailsNewHelper({ name: "", profileId: "", startDate: "", endDate: "" });
         setIsDetailsOpen(true);
@@ -454,7 +477,9 @@ export default function ProjectBoardPage() {
                     progress: detailsEditData.progress,
                     status: detailsEditData.status,
                     jira_link: detailsEditData.jira_link || null,
-                    drive_link: detailsEditData.drive_link || null
+                    drive_link: detailsEditData.drive_link || null,
+                    proposal_status: detailsEditData.proposal_status || null,
+                    proposal_reason: detailsEditData.proposal_reason || null
                 })
                 .eq('id', selectedProject.id);
 
@@ -786,6 +811,14 @@ export default function ProjectBoardPage() {
                                                     <span className="inline-flex items-center gap-1 rounded-full border border-[var(--glass-border)] bg-black/5 dark:bg-white/5 px-2 py-0.5 text-[10px] font-medium text-[var(--text-secondary)] uppercase tracking-wide">
                                                         {project.category}
                                                     </span>
+                                                    {project.category === 'proposal' && project.proposal_status && (
+                                                        <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide border
+                                                            ${project.proposal_status === 'success'
+                                                                ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20'
+                                                                : 'bg-gray-500/10 text-gray-600 dark:text-gray-400 border-gray-500/20'}`}>
+                                                            {project.proposal_status === 'success' ? '★ Success' : '• Fail'}
+                                                        </span>
+                                                    )}
                                                 </div>
                                                 <h3 className="text-xl font-bold text-[var(--text-primary)] leading-tight line-clamp-2">{project.name}</h3>
                                             </div>
@@ -1032,7 +1065,19 @@ export default function ProjectBoardPage() {
                                                 <td className="px-6 py-4 font-bold text-[var(--text-primary)]">
                                                     <div className="flex flex-col">
                                                         <span>{project.name}</span>
-                                                        <span className="text-[10px] uppercase tracking-wide text-[var(--text-secondary)] font-normal">{project.category}</span>
+                                                        <div className="flex items-center gap-2 mt-1">
+                                                            <span className="text-[10px] uppercase tracking-wide text-[var(--text-secondary)] font-normal border border-[var(--glass-border)] bg-black/5 dark:bg-white/5 px-1.5 py-0.5 rounded-md">
+                                                                {project.category}
+                                                            </span>
+                                                            {project.category === 'proposal' && project.proposal_status && (
+                                                                <span className={`text-[10px] uppercase tracking-wide font-bold px-1.5 py-0.5 rounded-md border
+                                                                    ${project.proposal_status === 'success'
+                                                                        ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20'
+                                                                        : 'bg-gray-500/10 text-gray-600 dark:text-gray-400 border-gray-500/20'}`}>
+                                                                    {project.proposal_status === 'success' ? '★ Success' : '• Fail'}
+                                                                </span>
+                                                            )}
+                                                        </div>
                                                     </div>
                                                 </td>
                                                 <td className="px-6 py-4">
@@ -1408,6 +1453,97 @@ export default function ProjectBoardPage() {
                                         ))}
                                     </select>
                                 </div>
+
+                                {/* Proposal Outcome Section Conditional */}
+                                {selectedProject.category === 'proposal' && (
+                                    <div>
+                                        <h3 className="text-sm font-bold text-[var(--text-muted)] uppercase tracking-wider mb-3">Proposal Outcome</h3>
+                                        <div className="bg-black/5 dark:bg-white/5 rounded-xl p-4 border border-[var(--glass-border)]">
+                                            {(() => {
+                                                const canEditOutcome =
+                                                    userProfile?.role === 'ceo' ||
+                                                    userProfile?.role === 'super_admin' ||
+                                                    userProfile?.job_type === 'bisdev' ||
+                                                    userProfile?.id === selectedProject.lead.id;
+
+                                                if (canEditOutcome) {
+                                                    return (
+                                                        <div className="space-y-4">
+                                                            <div>
+                                                                <label className="block text-xs font-semibold text-[var(--text-secondary)] mb-2">Status</label>
+                                                                <div className="flex gap-4 items-center">
+                                                                    <label className="flex items-center gap-2 cursor-pointer">
+                                                                        <input
+                                                                            type="radio"
+                                                                            name="proposal_status"
+                                                                            value="success"
+                                                                            checked={detailsEditData.proposal_status === 'success'}
+                                                                            onChange={() => setDetailsEditData({ ...detailsEditData, proposal_status: 'success' })}
+                                                                            className="text-emerald-500 focus:ring-emerald-500"
+                                                                        />
+                                                                        <span className="text-sm text-emerald-600 dark:text-emerald-400 font-medium">Success</span>
+                                                                    </label>
+                                                                    <label className="flex items-center gap-2 cursor-pointer">
+                                                                        <input
+                                                                            type="radio"
+                                                                            name="proposal_status"
+                                                                            value="fail"
+                                                                            checked={detailsEditData.proposal_status === 'fail'}
+                                                                            onChange={() => setDetailsEditData({ ...detailsEditData, proposal_status: 'fail' })}
+                                                                            className="text-gray-500 focus:ring-gray-500"
+                                                                        />
+                                                                        <span className="text-sm text-[var(--text-secondary)] font-medium">Fail</span>
+                                                                    </label>
+                                                                    {detailsEditData.proposal_status && (
+                                                                        <button
+                                                                            type="button"
+                                                                            onClick={() => setDetailsEditData({ ...detailsEditData, proposal_status: null, proposal_reason: null })}
+                                                                            className="ml-2 text-xs font-bold text-rose-500 hover:text-rose-600 bg-rose-50 hover:bg-rose-100 dark:bg-rose-500/10 dark:hover:bg-rose-500/20 px-2 py-1 rounded-md transition-colors"
+                                                                        >
+                                                                            Undo / Clear
+                                                                        </button>
+                                                                    )}
+                                                                </div>
+                                                            </div>
+                                                            <div>
+                                                                <label className="block text-xs font-semibold text-[var(--text-secondary)] mb-2">Reason</label>
+                                                                <textarea
+                                                                    className="w-full rounded-xl border border-[var(--glass-border)] bg-white dark:bg-[#2a2f2e] px-4 py-3 text-sm text-[var(--text-primary)] focus:ring-2 focus:ring-[#e8c559]/50 focus:border-[#e8c559] min-h-[80px]"
+                                                                    placeholder="Why did it succeed or fail?"
+                                                                    value={detailsEditData.proposal_reason || ""}
+                                                                    onChange={(e) => setDetailsEditData({ ...detailsEditData, proposal_reason: e.target.value })}
+                                                                />
+                                                            </div>
+                                                        </div>
+                                                    );
+                                                } else {
+                                                    return (
+                                                        <div className="space-y-2">
+                                                            <div className="flex items-center gap-2">
+                                                                <span className="text-xs text-[var(--text-muted)] w-16">Status:</span>
+                                                                {selectedProject.proposal_status === 'success' ? (
+                                                                    <span className="text-sm font-bold text-emerald-600 dark:text-emerald-400">Success</span>
+                                                                ) : selectedProject.proposal_status === 'fail' ? (
+                                                                    <span className="text-sm font-bold text-[var(--text-secondary)]">Fail</span>
+                                                                ) : (
+                                                                    <span className="text-sm text-[var(--text-muted)] italic">Pending</span>
+                                                                )}
+                                                            </div>
+                                                            {selectedProject.proposal_reason && (
+                                                                <div className="flex items-start gap-2">
+                                                                    <span className="text-xs text-[var(--text-muted)] w-16 pt-0.5">Reason:</span>
+                                                                    <p className="text-sm text-[var(--text-primary)] flex-1 bg-white/5 p-2 rounded-lg border border-[var(--glass-border)]">
+                                                                        {selectedProject.proposal_reason}
+                                                                    </p>
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    );
+                                                }
+                                            })()}
+                                        </div>
+                                    </div>
+                                )}
 
                                 {/* Team Section (Read Only) */}
                                 <div>

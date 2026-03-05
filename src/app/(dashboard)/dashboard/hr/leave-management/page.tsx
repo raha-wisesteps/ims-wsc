@@ -203,14 +203,22 @@ export default function LeaveManagementPage() {
                     </div>
                 </div>
 
-                <div className="relative w-full md:w-64">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-                    <input
-                        placeholder="Search employee..."
-                        className="w-full pl-9 h-10 rounded-md bg-white/5 border border-white/10 focus:outline-none focus:ring-1 focus:ring-[#e8c559] text-sm"
-                        value={searchQuery}
-                        onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearchQuery(e.target.value)}
-                    />
+                <div className="flex items-center gap-3">
+                    <Link
+                        href="/dashboard/hr/leave-management/dayoff"
+                        className="px-4 h-10 rounded-md bg-amber-500/10 border border-amber-500/30 text-amber-600 dark:text-amber-400 hover:bg-amber-500/20 transition-colors text-sm font-medium flex items-center gap-2 whitespace-nowrap"
+                    >
+                        📅 Kelola Hari Libur
+                    </Link>
+                    <div className="relative w-full md:w-64">
+                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                        <input
+                            placeholder="Search employee..."
+                            className="w-full pl-9 h-10 rounded-md bg-white/5 border border-white/10 focus:outline-none focus:ring-1 focus:ring-[#e8c559] text-sm"
+                            value={searchQuery}
+                            onChange={(e: React.ChangeEvent<HTMLInputElement>) => setSearchQuery(e.target.value)}
+                        />
+                    </div>
                 </div>
             </div>
 
