@@ -5,7 +5,19 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth, Profile } from "@/contexts/AuthContext";
-import { Lightbulb } from "lucide-react";
+import {
+    Lightbulb,
+    Briefcase,
+    ClipboardList,
+    FolderKanban,
+    Presentation,
+    History,
+    Target,
+    Clock,
+    UserCheck,
+    Home,
+    FileText
+} from "lucide-react";
 
 interface NavItem {
     label: string;
@@ -26,22 +38,61 @@ const navItems: NavItem[] = [
     {
         label: "Home",
         href: "/dashboard",
-        icon: (
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" viewBox="0 0 24 24" fill="currentColor">
-                <path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z" />
-            </svg>
-        ),
+        icon: <Home className="h-6 w-6" />,
+        section: "Main Menu",
     },
 
+    // My Workspace (The requested big group)
     {
         label: "My Request",
         href: "/dashboard/my-request",
-        icon: (
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" viewBox="0 0 24 24" fill="currentColor">
-                <path d="M19 3h-4.18C14.4 1.84 13.3 1 12 1c-1.3 0-2.4.84-2.82 2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-7 0c.55 0 1 .45 1 1s-.45 1-1 1-1-.45-1-1 .45-1 1-1zm2 14H7v-2h7v2zm3-4H7v-2h10v2zm0-4H7V7h10v2z" />
-            </svg>
-        ),
+        icon: <FileText className="h-6 w-6" />,
         excludeRoles: ['ceo', 'hr'], // Hide from CEO and HR
+        section: "My Workspace",
+    },
+    {
+        label: "Workload",
+        href: "/dashboard/workload",
+        icon: <ClipboardList className="h-6 w-6" />,
+        section: "My Workspace",
+    },
+    {
+        label: "Projects",
+        href: "/dashboard/projects",
+        icon: <Briefcase className="h-6 w-6" />,
+        section: "My Workspace",
+    },
+    {
+        label: "Sharing Session",
+        href: "/dashboard/sharing-session",
+        icon: <Presentation className="h-6 w-6" />,
+        section: "My Workspace",
+    },
+    {
+        label: "Assignment History",
+        href: "/dashboard/assignment-history",
+        icon: <History className="h-6 w-6" />,
+        section: "My Workspace",
+    },
+    {
+        label: "My KPI",
+        href: "/dashboard/my-kpi",
+        icon: <Target className="h-6 w-6" />,
+        section: "My Workspace",
+    },
+    {
+        label: "Attendance",
+        href: "/dashboard/attendance",
+        icon: <Clock className="h-6 w-6" />,
+        section: "My Workspace",
+    },
+    {
+        label: "Peer Review",
+        href: "/dashboard/peer-review",
+        icon: <UserCheck className="h-6 w-6" />,
+        excludeIntern: true,
+        excludeRoles: ['ceo', 'hr'],
+        section: "My Workspace",
     },
     // Resources - Moved here
     {
@@ -395,9 +446,21 @@ export default function Sidebar({ collapsed = false, isMobile = false, onClose }
             {/* Navigation - Scrollable */}
             <nav className="flex-1 overflow-y-auto mt-6 pr-1 scrollbar-thin">
                 <div className="flex flex-col gap-1">
-                    {filteredNavItems.map((item) => (
-                        <NavLink key={item.href} item={item} />
-                    ))}
+                    {filteredNavItems.map((item, index) => {
+                        const showSection = index === 0 || item.section !== filteredNavItems[index - 1].section;
+                        const sectionName = item.section || "Main Menu";
+
+                        return (
+                            <div key={item.href} className="flex flex-col">
+                                {showSection && (
+                                    <p className="px-3 mt-4 mb-2 text-xs font-semibold uppercase tracking-wider text-[var(--sidebar-text)] opacity-50">
+                                        {sectionName}
+                                    </p>
+                                )}
+                                <NavLink item={item} />
+                            </div>
+                        );
+                    })}
                 </div>
             </nav>
 

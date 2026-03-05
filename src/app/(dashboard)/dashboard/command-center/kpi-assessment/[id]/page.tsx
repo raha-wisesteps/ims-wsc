@@ -18,7 +18,10 @@ import {
     Send,
     ChevronDown,
     ChevronUp,
-    MessageSquare
+    MessageSquare,
+    BarChart3,
+    Eye,
+    Lock
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -30,11 +33,38 @@ import {
     KPIPillar,
     KPIMetric,
     KPI_CATEGORIES,
+    KPI_METRICS_DEFINITION,
     getGroupedMetrics,
     getRoleLabel,
     StaffRole,
     mapProfileToStaffRole
 } from "../../kpi-data";
+
+// Peer Review aggregate types
+interface PeerReviewAggregate {
+    kpi_metric_id: string;
+    reviewer_count: number;
+    avg_score: number;
+    comments: string[];
+}
+
+interface CompletionEntry {
+    reviewer_id: string;
+    reviewer_name: string;
+    kpi_metric_id: string;
+}
+
+interface PerQuestionAvg {
+    question_number: number;
+    avg_score: number;
+}
+
+interface ProposalItem {
+    id: string;
+    name: string;
+    proposal_status: 'success' | 'fail' | null;
+    proposal_reason: string | null;
+}
 
 
 
@@ -50,6 +80,15 @@ export default function AssessmentPage() {
     const [kpiScoreId, setKpiScoreId] = useState<string | null>(null);
     const [attendancePercent, setAttendancePercent] = useState<number>(0);
     const [docStatus, setDocStatus] = useState<'draft' | 'final'>('draft');
+
+    // Peer review + conversion rate state
+    const [peerAggregates, setPeerAggregates] = useState<PeerReviewAggregate[]>([]);
+    const [completionStatus, setCompletionStatus] = useState<CompletionEntry[]>([]);
+    const [perQuestionAvgs, setPerQuestionAvgs] = useState<Record<string, PerQuestionAvg[]>>({});
+    const [proposals, setProposals] = useState<ProposalItem[]>([]);
+    const [conversionRate, setConversionRate] = useState<{ rate: number; won: number; total: number }>({ rate: 0, won: 0, total: 0 });
+    const [expandedSysRec, setExpandedSysRec] = useState<Record<string, boolean>>({});
+    const [totalEligibleReviewers, setTotalEligibleReviewers] = useState<Record<string, number>>({});
 
     // Modal states for frontend dialogs
     const [modalOpen, setModalOpen] = useState(false);
@@ -110,8 +149,130 @@ export default function AssessmentPage() {
                 }
                 setAttendancePercent(latePct);
 
+                // 4. Fetch Peer Review Aggregates
+                const { data: aggregateData } = await supabase
+                    .from('peer_review_aggregated')
+                    .select('*')
+                    .eq('reviewee_id', profileId)
+                    .eq('period', '2026-S1');
 
-                // 4. Initialize Staff KPI Structure
+                if (aggregateData) {
+                    setPeerAggregates(aggregateData.map((a: any) => ({
+                        kpi_metric_id: a.kpi_metric_id,
+                        reviewer_count: a.reviewer_count,
+                        avg_score: parseFloat(a.avg_score) || 0,
+                        comments: a.comments || [],
+                    })));
+                }
+
+                // 5. Fetch Completion Status
+                const { data: completionData } = await supabase
+                    .from('peer_review_completion_status')
+                    .select('*')
+                    .eq('reviewee_id', profileId)
+                    .eq('period', '2026-S1');
+
+                if (completionData) {
+                    setCompletionStatus(completionData.map((c: any) => ({
+                        reviewer_id: c.reviewer_id,
+                        reviewer_name: c.reviewer_name,
+                        kpi_metric_id: c.kpi_metric_id,
+                    })));
+                }
+
+                // 6. Fetch Per-Question Averages for peer review metrics
+                const peerMetricIds = ['L1', 'S2', 'S4', 'P2'];
+                const pqAvgs: Record<string, PerQuestionAvg[]> = {};
+
+                for (const metricId of peerMetricIds) {
+                    const { data: reviewsForMetric } = await supabase
+                        .from('peer_reviews')
+                        .select('id')
+                        .eq('reviewee_id', profileId)
+                        .eq('period', '2026-S1')
+                        .eq('kpi_metric_id', metricId);
+
+                    if (reviewsForMetric && reviewsForMetric.length > 0) {
+                        const reviewIds = reviewsForMetric.map((r: any) => r.id);
+                        const { data: answersData } = await supabase
+                            .from('peer_review_answers')
+                            .select('question_number, score')
+                            .in('peer_review_id', reviewIds);
+
+                        if (answersData) {
+                            // Group by question_number, calculate avg
+                            const byQ = new Map<number, number[]>();
+                            answersData.forEach((a: any) => {
+                                if (!byQ.has(a.question_number)) byQ.set(a.question_number, []);
+                                byQ.get(a.question_number)!.push(a.score);
+                            });
+                            pqAvgs[metricId] = Array.from(byQ.entries()).map(([qn, scores]) => ({
+                                question_number: qn,
+                                avg_score: scores.reduce((s, v) => s + v, 0) / scores.length,
+                            })).sort((a, b) => a.question_number - b.question_number);
+                        }
+                    }
+                }
+                setPerQuestionAvgs(pqAvgs);
+
+                // 7. Fetch Proposals (B3 Conversion Rate)
+                // Get projects where this person is lead
+                const { data: staffProposals } = await supabase
+                    .from('projects')
+                    .select('id, name, proposal_status, proposal_reason')
+                    .eq('lead_id', profileId)
+                    .eq('category', 'proposal');
+
+                if (staffProposals) {
+                    setProposals(staffProposals);
+                    const total = staffProposals.length;
+                    const won = staffProposals.filter((p: any) => p.proposal_status === 'success').length;
+                    setConversionRate({
+                        rate: total > 0 ? (won / total) * 100 : 0,
+                        won,
+                        total,
+                    });
+                }
+
+                // 8. Count total eligible reviewers for each peer metric
+                // (people who share projects with this staff, excluding CEO/HR/self)
+                const [{ data: asLeadP }, { data: asMemberP }, { data: asHelperP }] = await Promise.all([
+                    supabase.from('projects').select('id').eq('lead_id', profileId).eq('is_archived', false),
+                    supabase.from('project_members').select('project_id').eq('profile_id', profileId),
+                    supabase.from('project_helpers').select('project_id').eq('profile_id', profileId),
+                ]);
+                const staffProjectIds = new Set<string>();
+                (asLeadP || []).forEach((p: any) => staffProjectIds.add(p.id));
+                (asMemberP || []).forEach((m: any) => staffProjectIds.add(m.project_id));
+                (asHelperP || []).forEach((h: any) => staffProjectIds.add(h.project_id));
+
+                if (staffProjectIds.size > 0) {
+                    const pArr = Array.from(staffProjectIds);
+                    const [{ data: pLeads }, { data: pMembers }, { data: pHelpers }] = await Promise.all([
+                        supabase.from('projects').select('lead_id').in('id', pArr),
+                        supabase.from('project_members').select('profile_id').in('project_id', pArr),
+                        supabase.from('project_helpers').select('profile_id').in('project_id', pArr).not('profile_id', 'is', null),
+                    ]);
+                    const eligibleIds = new Set<string>();
+                    (pLeads || []).forEach((p: any) => { if (p.lead_id !== profileId) eligibleIds.add(p.lead_id); });
+                    (pMembers || []).forEach((m: any) => { if (m.profile_id !== profileId) eligibleIds.add(m.profile_id); });
+                    (pHelpers || []).forEach((h: any) => { if (h.profile_id && h.profile_id !== profileId) eligibleIds.add(h.profile_id); });
+
+                    // Remove CEO/HR from eligible
+                    if (eligibleIds.size > 0) {
+                        const { data: eligibleProfiles } = await supabase
+                            .from('profiles').select('id').in('id', Array.from(eligibleIds))
+                            .neq('role', 'ceo').eq('is_hr', false);
+                        const eligibleCount = eligibleProfiles?.length || 0;
+                        // Set same count for all peer metrics as base
+                        const erMap: Record<string, number> = {};
+                        peerMetricIds.forEach(mid => { erMap[mid] = eligibleCount; });
+                        setTotalEligibleReviewers(erMap);
+                    }
+                }
+
+
+                // 9. Initialize Staff KPI Structure
                 const role = mapProfileToStaffRole(profile.job_level, profile.job_type) || 'analyst_staff';
                 const groupedMetrics = getGroupedMetrics(role);
 
@@ -150,7 +311,7 @@ export default function AssessmentPage() {
                 };
 
                 setStaff({
-                    id: profile.id, // Use profile ID
+                    id: profile.id,
                     name: profile.full_name || 'Unknown',
                     role: role,
                     period: "2026-S1",
@@ -494,9 +655,145 @@ export default function AssessmentPage() {
                                                             {Object.entries(metric.scoring_criteria).map(([score, desc]: any) => (
                                                                 <div key={score} className="flex gap-2 items-start">
                                                                     <span className={`font-bold w-4 shrink-0 text-center rounded ${score >= 4 ? 'bg-emerald-500/20 text-emerald-400' :
-                                                                            score >= 3 ? 'bg-amber-500/20 text-amber-400' : 'bg-rose-500/20 text-rose-400'
+                                                                        score >= 3 ? 'bg-amber-500/20 text-amber-400' : 'bg-rose-500/20 text-rose-400'
                                                                         }`}>{score}</span>
                                                                     <span className="text-gray-300 leading-tight">{desc}</span>
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            )}
+
+                                            {/* SYSTEM RECOMMENDATION FOR PEER REVIEW METRICS */}
+                                            {metric.isPeerReview && (() => {
+                                                const agg = peerAggregates.find(a => a.kpi_metric_id === metric.id);
+                                                const metricCompletion = completionStatus.filter(c => c.kpi_metric_id === metric.id);
+                                                const allEligible = totalEligibleReviewers[metric.id] || 0;
+                                                const pqData = perQuestionAvgs[metric.id] || [];
+                                                const metricDef = KPI_METRICS_DEFINITION.find(m => m.id === metric.id);
+                                                const isExpanded = expandedSysRec[metric.id] || false;
+
+                                                return (
+                                                    <div className="mt-2 p-3 rounded-lg bg-indigo-500/10 border border-indigo-500/20">
+                                                        <p className="text-[10px] text-indigo-300 font-bold mb-2 flex items-center gap-1">
+                                                            <BarChart3 className="w-3 h-3" /> SYSTEM RECOMMENDATION (Peer Review)
+                                                        </p>
+                                                        {agg ? (
+                                                            <>
+                                                                <div className="flex justify-between items-end mb-1">
+                                                                    <span className="text-xs text-gray-300">Rata-rata:</span>
+                                                                    <span className="text-sm font-bold text-white">
+                                                                        {agg.avg_score.toFixed(1)} / 5.0
+                                                                        <span className="text-xs font-normal text-gray-400 ml-1">
+                                                                            (dari {agg.reviewer_count}/{allEligible} reviewer)
+                                                                        </span>
+                                                                    </span>
+                                                                </div>
+                                                                <div className="h-1.5 w-full bg-black/40 rounded-full overflow-hidden mb-2">
+                                                                    <div className="h-full bg-indigo-500 transition-all" style={{ width: `${(agg.avg_score / 5) * 100}%` }} />
+                                                                </div>
+
+                                                                {/* Comments */}
+                                                                {agg.comments.length > 0 && (
+                                                                    <div className="mb-2">
+                                                                        <p className="text-[10px] text-gray-400 font-bold mb-1">💬 Komentar Anonim:</p>
+                                                                        {agg.comments.slice(0, 3).map((c, i) => (
+                                                                            <p key={i} className="text-[10px] text-gray-300 italic pl-2 border-l border-indigo-500/30 mb-1">"{c}"</p>
+                                                                        ))}
+                                                                    </div>
+                                                                )}
+
+                                                                {/* Toggle Detail */}
+                                                                <button
+                                                                    onClick={() => setExpandedSysRec(p => ({ ...p, [metric.id]: !p[metric.id] }))}
+                                                                    className="flex items-center gap-1 text-[10px] text-indigo-400 hover:text-indigo-300 mt-1"
+                                                                >
+                                                                    {isExpanded ? <ChevronUp className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
+                                                                    {isExpanded ? 'Hide Detail' : 'View Detail'}
+                                                                </button>
+
+                                                                {isExpanded && (
+                                                                    <div className="mt-2 space-y-2 animate-in fade-in slide-in-from-top-2 duration-200">
+                                                                        {/* Completion Status */}
+                                                                        <div className="p-2 rounded bg-black/20 border border-white/5">
+                                                                            <p className="text-[10px] text-gray-400 font-bold mb-1">
+                                                                                📋 Completion ({metricCompletion.length}/{allEligible})
+                                                                            </p>
+                                                                            <div className="space-y-0.5 max-h-32 overflow-y-auto">
+                                                                                {metricCompletion.map((c, i) => (
+                                                                                    <p key={i} className="text-[10px] text-emerald-400">✅ {c.reviewer_name}</p>
+                                                                                ))}
+                                                                            </div>
+                                                                        </div>
+
+                                                                        {/* Per-Question Breakdown */}
+                                                                        {pqData.length > 0 && metricDef?.peerReviewConfig && (
+                                                                            <div className="p-2 rounded bg-black/20 border border-white/5">
+                                                                                <p className="text-[10px] text-gray-400 font-bold mb-1">📊 Per-Question Breakdown:</p>
+                                                                                {pqData.map((pq) => (
+                                                                                    <div key={pq.question_number} className="flex items-center gap-2 mb-0.5">
+                                                                                        <span className="text-[9px] text-gray-500 w-6 shrink-0">Q{pq.question_number + 1}</span>
+                                                                                        <div className="flex-1 h-1 bg-black/40 rounded-full overflow-hidden">
+                                                                                            <div className="h-full bg-indigo-400/60" style={{ width: `${(pq.avg_score / 5) * 100}%` }} />
+                                                                                        </div>
+                                                                                        <span className="text-[9px] text-gray-300 w-6 text-right">{pq.avg_score.toFixed(1)}</span>
+                                                                                    </div>
+                                                                                ))}
+                                                                            </div>
+                                                                        )}
+                                                                    </div>
+                                                                )}
+                                                            </>
+                                                        ) : (
+                                                            <p className="text-[10px] text-gray-500 italic">Belum ada peer review untuk metrik ini.</p>
+                                                        )}
+                                                    </div>
+                                                );
+                                            })()}
+
+                                            {/* SYSTEM RECOMMENDATION FOR B3 (CONVERSION RATE) */}
+                                            {metric.id === 'B3' && (
+                                                <div className="mt-2 p-3 rounded-lg bg-purple-500/10 border border-purple-500/20">
+                                                    <p className="text-[10px] text-purple-300 font-bold mb-1 flex items-center gap-1">
+                                                        <BarChart3 className="w-3 h-3" /> SYSTEM RECOMMENDATION (IMS Data)
+                                                    </p>
+                                                    <div className="flex justify-between items-end mb-1">
+                                                        <span className="text-xs text-gray-300">Conversion Rate:</span>
+                                                        <span className="text-sm font-bold text-white">
+                                                            {conversionRate.rate.toFixed(0)}%
+                                                            <span className="text-xs font-normal text-gray-400 ml-1">
+                                                                ({conversionRate.won}/{conversionRate.total} proposals)
+                                                            </span>
+                                                        </span>
+                                                    </div>
+                                                    <div className="h-1.5 w-full bg-black/40 rounded-full overflow-hidden mb-1">
+                                                        <div className="h-full bg-purple-500 transition-all" style={{ width: `${Math.min(100, conversionRate.rate)}%` }} />
+                                                    </div>
+                                                    <p className="text-[9px] text-gray-500 mb-2">
+                                                        → Score: {conversionRate.rate >= 60 ? '5' : conversionRate.rate >= 45 ? '4' : conversionRate.rate >= 30 ? '3' : conversionRate.rate >= 15 ? '2' : '1'}
+                                                        {' '}({conversionRate.rate >= 60 ? 'Sangat efektif' : conversionRate.rate >= 45 ? 'Tinggi' : conversionRate.rate >= 30 ? 'Wajar' : conversionRate.rate >= 15 ? 'Perlu perbaikan' : 'Tidak efektif'})
+                                                    </p>
+
+                                                    <button
+                                                        onClick={() => setExpandedSysRec(p => ({ ...p, B3: !p.B3 }))}
+                                                        className="flex items-center gap-1 text-[10px] text-purple-400 hover:text-purple-300"
+                                                    >
+                                                        {expandedSysRec.B3 ? <ChevronUp className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
+                                                        {expandedSysRec.B3 ? 'Hide Detail' : 'View Detail'}
+                                                    </button>
+
+                                                    {expandedSysRec.B3 && proposals.length > 0 && (
+                                                        <div className="mt-2 space-y-1 max-h-40 overflow-y-auto animate-in fade-in slide-in-from-top-2 duration-200">
+                                                            {proposals.map(p => (
+                                                                <div key={p.id} className="flex items-center gap-2 text-[10px] p-1.5 rounded bg-black/20">
+                                                                    <span className={`w-4 text-center ${p.proposal_status === 'success' ? 'text-emerald-400' : p.proposal_status === 'fail' ? 'text-rose-400' : 'text-gray-500'}`}>
+                                                                        {p.proposal_status === 'success' ? '✅' : p.proposal_status === 'fail' ? '❌' : '⏳'}
+                                                                    </span>
+                                                                    <span className="text-gray-300 flex-1 truncate">{p.name}</span>
+                                                                    {p.proposal_reason && (
+                                                                        <span className="text-gray-500 text-[9px] truncate max-w-[100px]">{p.proposal_reason}</span>
+                                                                    )}
                                                                 </div>
                                                             ))}
                                                         </div>

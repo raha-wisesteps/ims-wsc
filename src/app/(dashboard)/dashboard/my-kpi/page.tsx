@@ -18,6 +18,9 @@ import {
     ChevronDown,
     ChevronUp,
     ChevronRight,
+    MessageSquare,
+    BarChart3,
+    Lock,
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { createClient } from "@/lib/supabase/client";
@@ -27,8 +30,17 @@ import {
     KPI_CATEGORIES,
     KPIMetric,
     SCORE_LEVELS,
-    mapProfileToStaffRole
+    mapProfileToStaffRole,
+    KPI_METRICS_DEFINITION,
 } from "../command-center/kpi-data";
+
+// Peer review aggregate type
+interface PeerReviewAgg {
+    kpi_metric_id: string;
+    reviewer_count: number;
+    avg_score: number;
+    comments: string[];
+}
 
 export default function MyKPIPage() {
     const { profile, isLoading: authLoading } = useAuth();
@@ -38,6 +50,11 @@ export default function MyKPIPage() {
     const [loading, setLoading] = useState(true);
     const [unsavedChanges, setUnsavedChanges] = useState(false);
     const [expandedCriteria, setExpandedCriteria] = useState<Record<string, boolean>>({});
+
+    // Peer review + conversion rate state
+    const [peerAggregates, setPeerAggregates] = useState<PeerReviewAgg[]>([]);
+    const [conversionRate, setConversionRate] = useState<{ rate: number; won: number; total: number }>({ rate: 0, won: 0, total: 0 });
+    const [expandedPeerFeedback, setExpandedPeerFeedback] = useState<Record<string, boolean>>({});
 
     const toggleCriteria = (id: string) => {
         setExpandedCriteria(prev => ({ ...prev, [id]: !prev[id] }));
@@ -108,14 +125,48 @@ export default function MyKPIPage() {
                     .from('kpi_scores')
                     .select('*, kpi_sub_aspect_scores(*)')
                     .eq('profile_id', profile.id)
-                    .eq('period', '2026-S1') // Hardcoded period for now as per plan
+                    .eq('period', '2026-S1')
                     .single();
 
-                if (error && error.code !== 'PGRST116') { // PGRST116 is no rows
+                if (error && error.code !== 'PGRST116') {
                     console.error("Error fetching KPI:", error);
                 }
 
                 setKpiData(data);
+
+                // Fetch peer review aggregates for this user
+                const { data: aggData } = await supabase
+                    .from('peer_review_aggregated')
+                    .select('*')
+                    .eq('reviewee_id', profile.id)
+                    .eq('period', '2026-S1');
+
+                if (aggData) {
+                    setPeerAggregates(aggData.map((a: any) => ({
+                        kpi_metric_id: a.kpi_metric_id,
+                        reviewer_count: a.reviewer_count,
+                        avg_score: parseFloat(a.avg_score) || 0,
+                        comments: a.comments || [],
+                    })));
+                }
+
+                // Fetch B3 conversion rate (projects where user is lead)
+                const { data: staffProposals } = await supabase
+                    .from('projects')
+                    .select('id, name, proposal_status')
+                    .eq('lead_id', profile.id)
+                    .eq('category', 'proposal');
+
+                if (staffProposals) {
+                    const total = staffProposals.length;
+                    const won = staffProposals.filter((p: any) => p.proposal_status === 'success').length;
+                    setConversionRate({
+                        rate: total > 0 ? (won / total) * 100 : 0,
+                        won,
+                        total,
+                    });
+                }
+
             } catch (err) {
                 console.error("KPI fetch error:", err);
             } finally {
@@ -371,6 +422,76 @@ export default function MyKPIPage() {
                                                     <span className="inline-flex items-center gap-1 text-[10px] text-blue-500 dark:text-blue-400 mt-1">
                                                         <Info className="w-3 h-3" /> System Calculated
                                                     </span>
+                                                )}
+
+                                                {/* Peer Review Badge & Feedback */}
+                                                {metric.isPeerReview && (() => {
+                                                    const agg = peerAggregates.find(a => a.kpi_metric_id === metric.id);
+                                                    const isExpanded = expandedPeerFeedback[metric.id] || false;
+
+                                                    return (
+                                                        <div className="mt-2 p-2.5 rounded-lg bg-indigo-500/10 border border-indigo-500/20">
+                                                            <div className="flex items-center gap-1.5 mb-1">
+                                                                <Lock className="w-3 h-3 text-indigo-400" />
+                                                                <span className="text-[10px] font-bold text-indigo-400">Peer Reviewed</span>
+                                                            </div>
+                                                            {agg ? (
+                                                                <>
+                                                                    <p className="text-[10px] text-gray-300">
+                                                                        Dinilai oleh <span className="text-white font-bold">{agg.reviewer_count}</span> rekan kerja
+                                                                    </p>
+                                                                    <div className="flex items-center gap-2 mt-1">
+                                                                        <span className="text-xs text-gray-400">Avg:</span>
+                                                                        <span className="text-xs font-bold text-white">{agg.avg_score.toFixed(1)}/5.0</span>
+                                                                        <div className="flex-1 h-1 bg-black/30 rounded-full overflow-hidden">
+                                                                            <div className="h-full bg-indigo-400" style={{ width: `${(agg.avg_score / 5) * 100}%` }} />
+                                                                        </div>
+                                                                    </div>
+
+                                                                    {agg.comments.length > 0 && (
+                                                                        <>
+                                                                            <button
+                                                                                onClick={() => setExpandedPeerFeedback(p => ({ ...p, [metric.id]: !p[metric.id] }))}
+                                                                                className="flex items-center gap-1 text-[10px] text-indigo-400 hover:text-indigo-300 mt-1.5"
+                                                                            >
+                                                                                <MessageSquare className="w-3 h-3" />
+                                                                                {isExpanded ? 'Sembunyikan' : `${agg.comments.length} Komentar Anonim`}
+                                                                            </button>
+                                                                            {isExpanded && (
+                                                                                <div className="mt-1.5 space-y-1 animate-in fade-in slide-in-from-top-2 duration-200">
+                                                                                    {agg.comments.map((c, i) => (
+                                                                                        <p key={i} className="text-[10px] text-gray-300 italic pl-2 border-l border-indigo-500/30">
+                                                                                            "{c}"
+                                                                                        </p>
+                                                                                    ))}
+                                                                                </div>
+                                                                            )}
+                                                                        </>
+                                                                    )}
+                                                                </>
+                                                            ) : (
+                                                                <p className="text-[10px] text-gray-500 italic">Belum ada review dari rekan kerja.</p>
+                                                            )}
+                                                            <p className="text-[9px] text-gray-600 mt-1">Skor final ditentukan oleh CEO</p>
+                                                        </div>
+                                                    );
+                                                })()}
+
+                                                {/* B3 Conversion Rate Badge */}
+                                                {metric.id === 'B3' && conversionRate.total > 0 && (
+                                                    <div className="mt-2 p-2.5 rounded-lg bg-purple-500/10 border border-purple-500/20">
+                                                        <div className="flex items-center gap-1.5 mb-1">
+                                                            <BarChart3 className="w-3 h-3 text-purple-400" />
+                                                            <span className="text-[10px] font-bold text-purple-400">System Calculated</span>
+                                                        </div>
+                                                        <p className="text-[10px] text-gray-300">
+                                                            Conversion Rate: <span className="text-white font-bold">{conversionRate.rate.toFixed(0)}%</span>
+                                                            <span className="text-gray-500 ml-1">({conversionRate.won}/{conversionRate.total} proposals)</span>
+                                                        </p>
+                                                        <div className="h-1 bg-black/30 rounded-full overflow-hidden mt-1">
+                                                            <div className="h-full bg-purple-400" style={{ width: `${Math.min(100, conversionRate.rate)}%` }} />
+                                                        </div>
+                                                    </div>
                                                 )}
                                             </td>
                                             <td className="px-6 py-4 text-center text-[var(--text-secondary)]">

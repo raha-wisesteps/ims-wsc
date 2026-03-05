@@ -23,8 +23,17 @@ import {
     Edit3,
     ChevronRight,
     Trophy,
-    FileText
+    FileText,
+    Clock,
+    Lock,
+    Unlock,
+    Calendar,
+    ChevronDown,
+    ChevronUp,
+    AlertCircle,
+    CheckCircle2,
 } from "lucide-react";
+import { Button } from "@/components/ui/button";
 
 export default function AssessmentCenterPage() {
     const { isLoading, canAccessCommandCenter } = useAuth();
@@ -33,6 +42,13 @@ export default function AssessmentCenterPage() {
     const [viewMode, setViewMode] = useState<"grid" | "table">("grid");
     const [staffList, setStaffList] = useState<any[]>([]);
     const [loading, setLoading] = useState(true);
+
+    // Deadline management state
+    const [showDeadlineSection, setShowDeadlineSection] = useState(false);
+    const [deadlines, setDeadlines] = useState<Record<string, { deadline_date: string; is_locked: boolean; id?: string }>>({});
+    const [bulkDeadline, setBulkDeadline] = useState("");
+    const [savingDeadline, setSavingDeadline] = useState(false);
+    const [deadlineMessage, setDeadlineMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
     const supabase = createClient();
 
@@ -101,6 +117,106 @@ export default function AssessmentCenterPage() {
         fetchStaff();
     }, [canAccessCommandCenter]);
 
+    // Fetch deadlines/review periods
+    useEffect(() => {
+        if (!canAccessCommandCenter) return;
+
+        const fetchDeadlines = async () => {
+            const { data } = await supabase
+                .from('kpi_review_periods')
+                .select('*')
+                .eq('period', '2026-S1');
+
+            if (data) {
+                const dMap: Record<string, { deadline_date: string; is_locked: boolean; id?: string }> = {};
+                data.forEach((d: any) => {
+                    dMap[d.profile_id] = {
+                        deadline_date: d.deadline_date,
+                        is_locked: d.is_locked,
+                        id: d.id,
+                    };
+                });
+                setDeadlines(dMap);
+            }
+        };
+        fetchDeadlines();
+    }, [canAccessCommandCenter]);
+
+    // Save individual deadline
+    const saveDeadline = async (profileId: string, deadlineDate: string) => {
+        setSavingDeadline(true);
+        setDeadlineMessage(null);
+        try {
+            const existing = deadlines[profileId];
+            if (existing?.id) {
+                const { error } = await supabase.from('kpi_review_periods')
+                    .update({ deadline_date: deadlineDate, is_locked: false, updated_at: new Date().toISOString() })
+                    .eq('id', existing.id);
+                if (error) throw error;
+            } else {
+                const { error } = await supabase.from('kpi_review_periods')
+                    .insert({ profile_id: profileId, period: '2026-S1', deadline_date: deadlineDate });
+                if (error) throw error;
+            }
+            setDeadlines(prev => ({ ...prev, [profileId]: { ...prev[profileId], deadline_date: deadlineDate, is_locked: false } }));
+            setDeadlineMessage({ type: 'success', text: 'Deadline berhasil disimpan!' });
+        } catch (err: any) {
+            setDeadlineMessage({ type: 'error', text: err.message || 'Gagal menyimpan deadline' });
+        } finally {
+            setSavingDeadline(false);
+            setTimeout(() => setDeadlineMessage(null), 3000);
+        }
+    };
+
+    // Bulk set deadline for all staff
+    const saveBulkDeadline = async () => {
+        if (!bulkDeadline) return;
+        setSavingDeadline(true);
+        setDeadlineMessage(null);
+        try {
+            const upserts = staffList.map(s => ({
+                profile_id: s.id,
+                period: '2026-S1',
+                deadline_date: bulkDeadline,
+                is_locked: false,
+                updated_at: new Date().toISOString(),
+            }));
+            const { error } = await supabase.from('kpi_review_periods')
+                .upsert(upserts, { onConflict: 'profile_id,period' });
+            if (error) throw error;
+
+            const newDeadlines: Record<string, any> = {};
+            staffList.forEach(s => {
+                newDeadlines[s.id] = { deadline_date: bulkDeadline, is_locked: false };
+            });
+            setDeadlines(prev => ({ ...prev, ...newDeadlines }));
+            setDeadlineMessage({ type: 'success', text: `Deadline untuk ${staffList.length} staff berhasil diset!` });
+        } catch (err: any) {
+            setDeadlineMessage({ type: 'error', text: err.message || 'Gagal menyimpan bulk deadline' });
+        } finally {
+            setSavingDeadline(false);
+            setTimeout(() => setDeadlineMessage(null), 3000);
+        }
+    };
+
+    // Toggle lock
+    const toggleLock = async (profileId: string) => {
+        const existing = deadlines[profileId];
+        if (!existing?.id && !existing?.deadline_date) return;
+
+        const newLocked = !existing.is_locked;
+        try {
+            if (existing.id) {
+                await supabase.from('kpi_review_periods')
+                    .update({ is_locked: newLocked, updated_at: new Date().toISOString() })
+                    .eq('id', existing.id);
+            }
+            setDeadlines(prev => ({ ...prev, [profileId]: { ...prev[profileId], is_locked: newLocked } }));
+        } catch (err) {
+            console.error('Toggle lock error:', err);
+        }
+    };
+
     // Early return for loading/access check - MUST be after all hooks
     if (isLoading || (!canAccessCommandCenter && loading)) {
         return <div className="p-10 text-white text-center">Checking access...</div>;
@@ -164,6 +280,105 @@ export default function AssessmentCenterPage() {
                         </button>
                     </div>
                 </div>
+            </div>
+
+            {/* Deadline Management Section */}
+            <div className="glass-panel rounded-xl border border-white/10 overflow-hidden">
+                <button
+                    onClick={() => setShowDeadlineSection(p => !p)}
+                    className="w-full flex items-center justify-between p-5 hover:bg-white/5 transition-colors"
+                >
+                    <div className="flex items-center gap-3">
+                        <div className="p-2 rounded-lg bg-blue-500/10">
+                            <Calendar className="w-5 h-5 text-blue-400" />
+                        </div>
+                        <div className="text-left">
+                            <h3 className="text-white font-bold">Deadline Management</h3>
+                            <p className="text-xs text-gray-400">Set deadline per staff atau bulk untuk peer review</p>
+                        </div>
+                    </div>
+                    <div className="flex items-center gap-3">
+                        <span className="text-xs text-gray-500">
+                            {Object.keys(deadlines).length}/{staffList.length} staff
+                        </span>
+                        {showDeadlineSection ? <ChevronUp className="w-4 h-4 text-gray-400" /> : <ChevronDown className="w-4 h-4 text-gray-400" />}
+                    </div>
+                </button>
+
+                {showDeadlineSection && (
+                    <div className="p-5 pt-0 border-t border-white/5 space-y-4 animate-in fade-in slide-in-from-top-2 duration-200">
+                        {/* Feedback message */}
+                        {deadlineMessage && (
+                            <div className={`p-3 rounded-lg flex items-center gap-2 text-sm ${deadlineMessage.type === 'success' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-rose-500/10 text-rose-400 border border-rose-500/20'}`}>
+                                {deadlineMessage.type === 'success' ? <CheckCircle2 className="w-4 h-4" /> : <AlertCircle className="w-4 h-4" />}
+                                {deadlineMessage.text}
+                            </div>
+                        )}
+
+                        {/* Bulk Deadline */}
+                        <div className="p-4 rounded-xl bg-white/5 border border-white/10">
+                            <p className="text-xs text-gray-400 font-bold uppercase mb-2">Set Deadline untuk Semua Staff</p>
+                            <div className="flex items-center gap-3">
+                                <input
+                                    type="date"
+                                    value={bulkDeadline}
+                                    onChange={(e) => setBulkDeadline(e.target.value)}
+                                    className="flex-1 h-10 rounded-lg border border-white/10 bg-black/20 px-3 text-sm text-white focus:border-[#e8c559] outline-none"
+                                />
+                                <Button
+                                    onClick={saveBulkDeadline}
+                                    disabled={!bulkDeadline || savingDeadline}
+                                    className="bg-[#e8c559] text-black hover:bg-[#d4a843] font-bold"
+                                >
+                                    {savingDeadline ? 'Saving...' : 'Set All'}
+                                </Button>
+                            </div>
+                        </div>
+
+                        {/* Per-Staff Deadlines */}
+                        <div className="space-y-2">
+                            <p className="text-xs text-gray-400 font-bold uppercase">Per-Staff Deadline</p>
+                            <div className="max-h-[400px] overflow-y-auto space-y-2 pr-1">
+                                {staffList.map(s => {
+                                    const dl = deadlines[s.id];
+                                    const isPast = dl?.deadline_date && new Date(dl.deadline_date) < new Date();
+                                    const daysLeft = dl?.deadline_date
+                                        ? Math.ceil((new Date(dl.deadline_date).getTime() - Date.now()) / (1000 * 60 * 60 * 24))
+                                        : null;
+
+                                    return (
+                                        <div key={s.id} className="flex items-center gap-3 p-3 rounded-lg bg-black/20 border border-white/5">
+                                            <div className="flex-1 min-w-0">
+                                                <p className="text-sm text-white font-medium truncate">{s.name}</p>
+                                                <p className="text-[10px] text-gray-500">{ROLE_NAMES[s.role as StaffRole]?.split('(')[0]}</p>
+                                            </div>
+                                            <input
+                                                type="date"
+                                                value={dl?.deadline_date || ''}
+                                                onChange={(e) => saveDeadline(s.id, e.target.value)}
+                                                className="h-8 rounded-lg border border-white/10 bg-black/30 px-2 text-xs text-white focus:border-[#e8c559] outline-none w-[140px]"
+                                            />
+                                            {dl?.deadline_date && (
+                                                <>
+                                                    <span className={`text-[10px] font-bold w-16 text-center ${dl.is_locked ? 'text-rose-400' : isPast ? 'text-amber-400' : daysLeft !== null && daysLeft <= 7 ? 'text-amber-400' : 'text-emerald-400'}`}>
+                                                        {dl.is_locked ? '🔒 Locked' : isPast ? 'Expired' : `${daysLeft}d left`}
+                                                    </span>
+                                                    <button
+                                                        onClick={() => toggleLock(s.id)}
+                                                        title={dl.is_locked ? 'Unlock' : 'Lock'}
+                                                        className={`p-1.5 rounded-lg transition-colors ${dl.is_locked ? 'bg-rose-500/10 text-rose-400 hover:bg-rose-500/20' : 'bg-gray-500/10 text-gray-400 hover:bg-gray-500/20'}`}
+                                                    >
+                                                        {dl.is_locked ? <Lock className="w-3.5 h-3.5" /> : <Unlock className="w-3.5 h-3.5" />}
+                                                    </button>
+                                                </>
+                                            )}
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    </div>
+                )}
             </div>
 
             {viewMode === "grid" ? (

@@ -4,7 +4,7 @@ import React, { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
-import { BookOpen, ArrowLeft, Loader2, ChevronRight, Plus, ExternalLink, Calendar, Clock, User, Users, Trash2, FileText } from "lucide-react";
+import { BookOpen, Presentation, ArrowLeft, Loader2, ChevronRight, Plus, ExternalLink, Calendar, Clock, User, Users, Trash2, FileText } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import SharingSessionModal from "./_components/SharingSessionModal";
@@ -191,7 +191,7 @@ export default function SharingSessionPage() {
                 <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                     <div className="flex items-center gap-4">
                         <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-amber-500 to-amber-700 flex items-center justify-center shadow-lg shadow-amber-500/20">
-                            <BookOpen className="w-6 h-6 text-white" />
+                            <Presentation className="w-6 h-6 text-white" />
                         </div>
                         <div>
                             <div className="flex items-center gap-2 text-sm text-[var(--text-muted)] mb-1">
@@ -264,7 +264,7 @@ export default function SharingSessionPage() {
                 </div>
             ) : sessions.length === 0 ? (
                 <div className="flex flex-col items-center justify-center h-64 bg-secondary/10 rounded-xl border border-dashed border-border/50">
-                    <BookOpen className="w-12 h-12 text-muted-foreground opacity-50 mb-3" />
+                    <Presentation className="w-12 h-12 text-muted-foreground opacity-50 mb-3" />
                     <p className="text-muted-foreground text-sm font-medium">Belum ada Sharing Session terjadwal.</p>
                 </div>
             ) : (

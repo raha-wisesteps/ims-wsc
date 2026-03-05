@@ -1,6 +1,11 @@
 
 export type StaffRole = 'analyst_staff' | 'analyst_supervisor' | 'sales_staff' | 'bisdev';
 
+export interface PeerReviewConfig {
+    questions: string[];
+    scale: Record<number, string>;
+}
+
 export interface KPIMetric {
     id: string; // e.g., "K1", "P1"
     name: string;
@@ -20,6 +25,11 @@ export interface KPIMetric {
         4: string;
         5: string;
     };
+    isPeerReview?: boolean;
+    isSystemCalculated?: boolean;
+    peerReviewConfig?: PeerReviewConfig;
+    /** For L1: only reviewable if reviewee role matches */
+    peerReviewRoleLock?: StaffRole[];
 }
 
 export interface KPIPillar {
@@ -239,24 +249,34 @@ export const KPI_METRICS_DEFINITION: KPIMetric[] = [
         method: 'Peer Review',
         weight: 0,
         criteria: 'Feedback from colleagues',
+        isPeerReview: true,
         scoring_criteria: {
-            1: 'Kurang membantu, berdalih, tidak mengambil peran',
-            2: 'Terbatas dalam memberikan bantuan',
-            3: 'Mau membantu',
-            4: 'Memegang peranan dalam tim',
-            5: 'Sangat kooperatif dan proaktif membantu tim' // Added 5 based on pattern, missing in CSV snippet for P2 row 18? Actually P2 row 18 has 1-5 columns but empty text in 2,3,4? Wait CSV row 18: "Kurang membantu...", "Terbatas...", "Mau membantu", "Memegang peranan dalam tim". It seems 1 is "Kerjasama..." title? No.
-            // CSV Row 16: P2 Team Work. Row 18: 1="Kurang membantu...", 2="Terbatas...", 3="Mau membantu", 4="Memegang peranan dalam tim". 5 is missing in CSV snippet provided?
-            // Let's look at CSV again.
-            // Row 18: ... "Kurang membantu, berdalih, tidak mengambil peran", "Terbatas...", "Mau membantu", "Memegang peranan dalam tim". Col 5 seems empty or merged.
-            // I will extrapolate 5 as "Role Model Teamwork" or similar if missing, or check if I missed it.
-            // Actually looking at row 18 in CSV provided: "Kerjasama\nKemauan bekerja sama ", "Kurang membantu...", "Terbatas...", "Mau membantu", "Memegang peranan dalam tim". It seems to have 4 values?
-            // Ah, looking at cols: Unnamed:6 (1), ... Unnamed:10 (5).
-            // Row 18 col 6 (1): "Kurang membantu..."
-            // Row 18 col 7 (2): "Terbatas..."
-            // Row 18 col 8 (3): "Mau membantu"
-            // Row 18 col 9 (4): "Memegang peranan dalam tim"
-            // Row 18 col 10 (5): EMPTY in standard view? Or maybe "Sangat..."
-            // I will use a placeholder for 5 or assume 4 is high enough/mapped differently. I'll put a generic "Excellent" for 5.
+            1: 'Tidak ada kemauan bekerjasama',
+            2: 'Kurang membantu, berdalih, tidak mengambil peran',
+            3: 'Terbatas dalam memberikan bantuan',
+            4: 'Mau membantu dan kooperatif',
+            5: 'Memegang peranan penting dalam tim'
+        },
+        peerReviewConfig: {
+            questions: [
+                'Apakah ybs menunjukkan kemauan untuk bekerja sama dengan anggota tim?',
+                'Apakah ybs responsif dan mudah dihubungi selama project berlangsung?',
+                'Apakah ybs terbuka terhadap masukan dan feedback?',
+                'Apakah ybs aktif berkontribusi dalam diskusi dan penyelesaian masalah?',
+                'Apakah ybs membantu anggota tim lain ketika dibutuhkan?',
+                'Apakah ybs menyelesaikan tugas sesuai timeline yang disepakati?',
+                'Apakah ybs dapat diandalkan dalam menjalankan tanggung jawabnya?',
+                'Apakah ybs menunjukkan inisiatif ketika ada kendala dalam project?',
+                'Apakah ybs menjaga komunikasi dan suasana kerja yang profesional?',
+                'Secara keseluruhan, ybs berperan positif terhadap keberhasilan tim.',
+            ],
+            scale: {
+                1: 'Tidak ada kemauan bekerjasama',
+                2: 'Kurang membantu, berdalih, tidak mengambil peran',
+                3: 'Terbatas dalam memberikan bantuan',
+                4: 'Mau membantu dan kooperatif',
+                5: 'Memegang peranan penting dalam tim'
+            }
         }
     },
     {
@@ -301,12 +321,34 @@ export const KPI_METRICS_DEFINITION: KPIMetric[] = [
         method: 'Spv Review, Peer Review',
         weight: 0,
         criteria: 'Accuracy and quality of deliverables',
+        isPeerReview: true,
         scoring_criteria: {
             1: 'Ceroboh, jarang memenuhi standar',
             2: 'Kadang-kadang masih perlu perbaikan',
             3: 'Memenuhi apa yang diharapkan',
             4: 'Hasil kerja memuaskan',
             5: 'Hasil kerja sangat memuaskan'
+        },
+        peerReviewConfig: {
+            questions: [
+                'Apakah ybs menghasilkan pekerjaan dengan tingkat akurasi data yang tinggi?',
+                'Apakah ybs menunjukkan ketelitian dalam analisis dan pengolahan informasi?',
+                'Apakah ybs minim kesalahan teknis maupun substansi?',
+                'Apakah ybs mampu menyusun analisis yang logis dan sistematis?',
+                'Insight atau rekomendasi yang diberikan relevan dengan kebutuhan project?',
+                'Apakah ybs mampu memahami konteks project sebelum menyusun output?',
+                'Apakah ybs menyelesaikan tugas sesuai timeline yang disepakati?',
+                'Apakah ybs mampu mengelola beban kerja dengan baik selama project berlangsung?',
+                'Output (laporan, presentasi, materi) tersusun rapi dan profesional?',
+                'Secara keseluruhan, kualitas kerja Analyst memenuhi atau melampaui ekspektasi Anda sebagai rekan kerja.',
+            ],
+            scale: {
+                1: 'Ceroboh, jarang memenuhi standar (Poor)',
+                2: 'Kadang-kadang masih perlu perbaikan (Need Improvement)',
+                3: 'Memenuhi apa yang diharapkan (Good)',
+                4: 'Hasil kerja memuaskan (Very Good)',
+                5: 'Hasil kerja sangat memuaskan (Excellent)'
+            }
         }
     },
     {
@@ -331,15 +373,33 @@ export const KPI_METRICS_DEFINITION: KPIMetric[] = [
         name: 'Penampilan',
         description: 'Rapi, bersih, wangi dan menggunakan atribut kantor',
         type: 'Qualitative',
-        method: 'Observation',
+        method: 'Peer Review',
         weight: 0,
         criteria: 'Professional attire and grooming',
+        isPeerReview: true,
         scoring_criteria: {
-            1: 'Secara umum penampilan kurang',
-            2: 'Kadang-kadang dibawah standar penampilan',
-            3: 'Penampilan cukup',
-            4: 'Penampilan baik sesuai standar',
-            5: 'Penampilan sangat baik dan sesuai standar'
+            1: 'Tidak memenuhi standar (tidak rapi/tidak profesional)',
+            2: 'Kurang konsisten menjaga standar',
+            3: 'Memenuhi standar minimum',
+            4: 'Rapi dan profesional secara konsisten',
+            5: 'Sangat profesional dan merepresentasikan perusahaan dengan sangat baik'
+        },
+        peerReviewConfig: {
+            questions: [
+                'Staff berpenampilan rapi dan bersih saat bertemu pihak eksternal.',
+                'Staff menggunakan atribut resmi perusahaan (ID card, seragam, blazer, dll.) sesuai ketentuan.',
+                'Staf menjaga kebersihan diri dan kerapihan secara konsisten selama project berlangsung.',
+                'Penampilan Staf sesuai dengan konteks kegiatan (meeting formal, FGD, site visit, dll.).',
+                'Staf menunjukkan sikap, bahasa tubuh, dan etika profesional saat mewakili perusahaan.',
+                'Secara keseluruhan, penampilan Staf mencerminkan citra profesional perusahaan.',
+            ],
+            scale: {
+                1: 'Tidak memenuhi standar (tidak rapi/tidak profesional)',
+                2: 'Kurang konsisten menjaga standar',
+                3: 'Memenuhi standar minimum',
+                4: 'Rapi dan profesional secara konsisten',
+                5: 'Sangat profesional dan merepresentasikan perusahaan dengan sangat baik'
+            }
         }
     },
 
@@ -387,6 +447,7 @@ export const KPI_METRICS_DEFINITION: KPIMetric[] = [
         weight: 0,
         unit: '% conversion',
         criteria: 'Won deals / Submitted proposals',
+        isSystemCalculated: true,
         scoring_criteria: {
             1: '< 15% (Tidak efektif)',
             2: '15% – < 30% (Perlu perbaikan)',
@@ -404,6 +465,7 @@ export const KPI_METRICS_DEFINITION: KPIMetric[] = [
         weight: 0,
         unit: '% late',
         criteria: 'Auto-calculated from attendance logs',
+        isSystemCalculated: true,
         scoring_criteria: {
             1: '> 20% Terlambat',
             2: '> 10% – ≤ 20%',
@@ -419,15 +481,38 @@ export const KPI_METRICS_DEFINITION: KPIMetric[] = [
         name: 'Kemampuan Kepemimpinan dan Managerial',
         description: 'People Development, Project Management, Decision Making',
         type: 'Qualitative',
-        method: 'Supervisor & Team Review',
+        method: 'Peer Review',
         weight: 0,
         criteria: 'Effectiveness in leading team',
+        isPeerReview: true,
+        peerReviewRoleLock: ['analyst_supervisor', 'bisdev'],
         scoring_criteria: {
-            1: 'Tidak membina, arah tidak jelas, tidak bertanggung jawab',
-            2: 'Jarang membina, arah sering berubah, target meleset',
-            3: 'Membina sesekali, arah cukup jelas, target sebagian tercapai',
-            4: 'Rutin membina, arah jelas, target tercapai',
-            5: 'Aktif membina, arah sangat jelas, target tercapai konsisten'
+            1: 'Ceroboh, jarang memenuhi standar (Poor)',
+            2: 'Kadang-kadang masih perlu perbaikan (Need Improvement)',
+            3: 'Memenuhi apa yang diharapkan (Good)',
+            4: 'Hasil kerja memuaskan (Very Good)',
+            5: 'Hasil kerja sangat memuaskan (Excellent)'
+        },
+        peerReviewConfig: {
+            questions: [
+                'Apakah ybs menghasilkan pekerjaan dengan tingkat akurasi data yang tinggi?',
+                'Apakah ybs menunjukkan ketelitian dalam analisis dan pengolahan informasi?',
+                'Apakah ybs minim kesalahan teknis maupun substansi?',
+                'Apakah ybs mampu menyusun analisis yang logis dan sistematis?',
+                'Insight atau rekomendasi yang diberikan relevan dengan kebutuhan project?',
+                'Apakah ybs mampu memahami konteks project sebelum menyusun output?',
+                'Apakah ybs menyelesaikan tugas sesuai timeline yang disepakati?',
+                'Apakah ybs mampu mengelola beban kerja dengan baik selama project berlangsung?',
+                'Output (laporan, presentasi, materi) tersusun rapi dan profesional?',
+                'Secara keseluruhan, kualitas kerja memenuhi atau melampaui ekspektasi Anda sebagai Supervisor.',
+            ],
+            scale: {
+                1: 'Ceroboh, jarang memenuhi standar (Poor)',
+                2: 'Kadang-kadang masih perlu perbaikan (Need Improvement)',
+                3: 'Memenuhi apa yang diharapkan (Good)',
+                4: 'Hasil kerja memuaskan (Very Good)',
+                5: 'Hasil kerja sangat memuaskan (Excellent)'
+            }
         }
     }
 ];
