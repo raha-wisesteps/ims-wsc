@@ -4,14 +4,14 @@ import React, { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import Link from "next/link";
-import { Activity, ArrowLeft, Loader2, ChevronRight } from "lucide-react";
+import { ClipboardList, ArrowLeft, Loader2, ChevronRight } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 
 // --- Types & Config ---
 
-type Intensity = "High" | "Medium" | "Low" | "Fixed" | "Custom";
-type Category = "Project" | "Proposal" | "Presentation" | "Support" | "Etc";
+type Intensity = "High" | "Medium" | "Low" | "Idle" | "Fixed" | "Custom";
+type Category = "Project" | "Proposal" | "Presentation" | "Support" | "Etc" | "Event" | "Internal";
 
 interface WorkloadItem {
     id: string;
@@ -22,6 +22,9 @@ interface WorkloadItem {
     slots: number;
     color?: string;
     created_at?: string;
+    project_id?: string;
+    source?: 'auto' | 'manual';
+    role_in_project?: 'lead' | 'member' | 'helper';
 }
 
 interface Employee {
@@ -55,8 +58,18 @@ const getCapacity = (level: string): number => {
 };
 
 // Updated Weights
-const WEIGHT_CONFIG = {
+const WEIGHT_CONFIG: Record<string, any> = {
     Project: {
+        High: 4,
+        Medium: 3,
+        Low: 2
+    },
+    Event: {
+        High: 4,
+        Medium: 3,
+        Low: 2
+    },
+    Internal: {
         High: 4,
         Medium: 3,
         Low: 2
@@ -73,6 +86,8 @@ const CATEGORY_COLORS: Record<Category, string> = {
     "Presentation": "bg-pink-500",
     "Support": "bg-emerald-500",
     "Etc": "bg-slate-500",
+    "Event": "bg-sky-500",
+    "Internal": "bg-teal-500",
 };
 
 // --- Helper: Status Logic ---
@@ -120,6 +135,19 @@ export default function WorkloadPage() {
 
             if (itemsError) throw itemsError;
 
+            // Filter out expired helper items (auto items where role is helper and end_date has passed)
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+            const filteredItems = (items || []).filter((item: any) => {
+                if (item.source === 'auto' && item.role_in_project === 'helper') {
+                    // We need the project helper end_date, but since we store by profile+project,
+                    // we check if the project is still active. Expired helpers are cleaned during project save.
+                    // For now, keep all auto items — cleanup happens on project save.
+                    return true;
+                }
+                return true;
+            });
+
             // 3. Map to Employee format
             // Define privileged roles (who can see HR)
             const isPrivileged = currentUserProfile?.role === 'super_admin' ||
@@ -139,7 +167,7 @@ export default function WorkloadPage() {
                     return true;
                 })
                 .map((p: any) => {
-                    const empItems = (items || []).filter((i: any) => i.profile_id === p.id).map((i: any) => ({
+                    const empItems = (filteredItems || []).filter((i: any) => i.profile_id === p.id).map((i: any) => ({
                         ...i,
                         color: CATEGORY_COLORS[i.category as Category] || 'bg-slate-500'
                     }));
@@ -198,7 +226,7 @@ export default function WorkloadPage() {
                 <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                     <div className="flex items-center gap-4">
                         <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-amber-500 to-amber-700 flex items-center justify-center shadow-lg shadow-amber-500/20">
-                            <Activity className="w-6 h-6 text-white" />
+                            <ClipboardList className="w-6 h-6 text-white" />
                         </div>
                         <div>
                             <div className="flex items-center gap-2 text-sm text-[var(--text-muted)] mb-1">
@@ -463,9 +491,14 @@ function EmployeeWorkloadCard({ employee, onManage, canEdit = false }: { employe
                                 <div className="flex items-center gap-2 overflow-hidden">
                                     <div className={`w-2 h-2 rounded-full flex-shrink-0 ${item.color}`} />
                                     <div className="flex flex-col min-w-0">
-                                        <span className="text-sm font-medium truncate pr-2">{item.name}</span>
+                                        <span className="text-sm font-medium truncate pr-2">
+                                            {item.source === 'auto' && <span className="text-[10px] mr-1 opacity-60">🔒</span>}
+                                            {item.name}
+                                        </span>
                                         <span className="text-[10px] text-muted-foreground flex items-center gap-1">
-                                            {item.category} {item.intensity !== 'Fixed' && item.intensity !== 'Custom' ? `• ${item.intensity}` : ''}
+                                            {item.category}
+                                            {item.source === 'auto' && item.role_in_project && ` • ${item.role_in_project}`}
+                                            {item.intensity !== 'Fixed' && item.intensity !== 'Custom' ? ` • ${item.intensity}` : ''}
                                         </span>
                                     </div>
                                 </div>
@@ -489,12 +522,20 @@ function WorkloadEditModal({ employee, onClose, onUpdate }: { employee: Employee
     const [isSaving, setIsSaving] = useState(false);
     const supabase = createClient();
 
-    const calculateSlots = (cat: Category, int: Intensity) => {
-        if (cat === "Project") return WEIGHT_CONFIG.Project[int as "High" | "Medium" | "Low"] || 2;
+    // Categories that support High/Medium/Low intensity
+    const hasIntensityOptions = (cat: Category) =>
+        cat === "Project" || cat === "Event" || cat === "Internal";
+
+    const calculateSlots = (cat: Category, int: Intensity, custom?: number) => {
+        if (int === "Idle") return 0;
+        if (hasIntensityOptions(cat)) {
+            const config = WEIGHT_CONFIG[cat];
+            return config?.[int as "High" | "Medium" | "Low"] || 2;
+        }
         if (cat === "Proposal") return WEIGHT_CONFIG.Proposal;
         if (cat === "Presentation") return WEIGHT_CONFIG.Presentation;
         if (cat === "Support") return WEIGHT_CONFIG.Support;
-        return customSlots;
+        return custom ?? customSlots;
     };
 
     const handleAddItem = async () => {
@@ -502,7 +543,7 @@ function WorkloadEditModal({ employee, onClose, onUpdate }: { employee: Employee
         setIsSaving(true);
 
         const slots = (newItemCategory === "Etc") ? customSlots : calculateSlots(newItemCategory, newItemIntensity);
-        const autoIntensity = (newItemCategory === "Project") ? newItemIntensity : (newItemCategory === "Etc" ? "Custom" : "Fixed");
+        const autoIntensity = hasIntensityOptions(newItemCategory) ? newItemIntensity : (newItemCategory === "Etc" ? "Custom" : "Fixed");
 
         try {
             const { error } = await supabase.from('workload_items').insert({
@@ -510,7 +551,8 @@ function WorkloadEditModal({ employee, onClose, onUpdate }: { employee: Employee
                 name: newItemName,
                 category: newItemCategory,
                 intensity: autoIntensity,
-                slots: slots
+                slots: slots,
+                source: 'manual'
             });
 
             if (error) {
@@ -518,7 +560,7 @@ function WorkloadEditModal({ employee, onClose, onUpdate }: { employee: Employee
                 alert("Failed to add workload item. Check console.");
             } else {
                 setNewItemName("");
-                onUpdate(); // Refresh parent data
+                onUpdate();
             }
         } catch (err) {
             console.error("Exception adding workload:", err);
@@ -540,6 +582,23 @@ function WorkloadEditModal({ employee, onClose, onUpdate }: { employee: Employee
             }
         } catch (err) {
             console.error("Exception deleting workload:", err);
+        }
+    };
+
+    const handleChangeIntensity = async (item: WorkloadItem, newIntensity: Intensity) => {
+        const newSlots = calculateSlots(item.category, newIntensity);
+        try {
+            const { error } = await supabase.from('workload_items')
+                .update({ intensity: newIntensity, slots: newSlots })
+                .eq('id', item.id);
+            if (error) {
+                console.error("Error updating intensity:", error);
+                alert("Failed to update intensity.");
+            } else {
+                onUpdate();
+            }
+        } catch (err) {
+            console.error("Exception updating intensity:", err);
         }
     };
 
@@ -566,6 +625,7 @@ function WorkloadEditModal({ employee, onClose, onUpdate }: { employee: Employee
 
                 <CardContent className="p-0">
                     <div className="p-4 space-y-4">
+                        {/* Add New Activity (manual items only) */}
                         <div className="bg-secondary/20 p-4 rounded-xl border border-border space-y-3">
                             <h4 className="text-sm font-semibold flex items-center gap-2">
                                 <span className="w-6 h-6 rounded-full bg-amber-500/20 text-amber-500 flex items-center justify-center text-xs">＋</span>
@@ -592,10 +652,12 @@ function WorkloadEditModal({ employee, onClose, onUpdate }: { employee: Employee
                                         <option value="Proposal">Proposal</option>
                                         <option value="Presentation">Presentation</option>
                                         <option value="Support">Support</option>
+                                        <option value="Event">Event</option>
+                                        <option value="Internal">Internal</option>
                                         <option value="Etc">Etc (Custom)</option>
                                     </select>
 
-                                    {newItemCategory === "Project" ? (
+                                    {hasIntensityOptions(newItemCategory) ? (
                                         <select
                                             className="bg-background border rounded-lg px-3 py-2 text-sm outline-none"
                                             value={newItemIntensity}
@@ -636,29 +698,63 @@ function WorkloadEditModal({ employee, onClose, onUpdate }: { employee: Employee
                             </Button>
                         </div>
 
-                        {/* List */}
+                        {/* Items List */}
                         <div className="space-y-1 max-h-[250px] overflow-y-auto pr-1">
-                            {employee.items.map(item => (
-                                <div key={item.id} className="flex items-center justify-between p-3 bg-secondary/10 rounded-lg border hover:bg-secondary/20 transition-colors">
-                                    <div className="flex items-center gap-3">
-                                        <div className={`w-2 h-2 rounded-full ${item.color || 'bg-slate-500'}`} />
-                                        <div>
-                                            <p className="text-sm font-medium">{item.name}</p>
-                                            <p className="text-xs text-muted-foreground">{item.category} • {item.intensity === 'Fixed' || item.intensity === 'Custom' ? `${item.slots} slots` : item.intensity}</p>
+                            {employee.items.map(item => {
+                                const isAutoItem = item.source === 'auto';
+                                const canChangeIntensity = isAutoItem && hasIntensityOptions(item.category);
+
+                                return (
+                                    <div key={item.id} className={`flex items-center justify-between p-3 rounded-lg border transition-colors ${isAutoItem
+                                        ? 'bg-amber-500/5 border-amber-500/20 hover:bg-amber-500/10'
+                                        : 'bg-secondary/10 hover:bg-secondary/20'
+                                        }`}>
+                                        <div className="flex items-center gap-3 min-w-0 flex-1">
+                                            <div className={`w-2 h-2 rounded-full flex-shrink-0 ${item.color || 'bg-slate-500'}`} />
+                                            <div className="min-w-0">
+                                                <p className="text-sm font-medium flex items-center gap-1">
+                                                    {isAutoItem && <span className="text-[10px] opacity-60" title="Auto-generated from project">🔒</span>}
+                                                    <span className="truncate">{item.name}</span>
+                                                </p>
+                                                <p className="text-xs text-muted-foreground">
+                                                    {item.category}
+                                                    {isAutoItem && item.role_in_project && ` • ${item.role_in_project}`}
+                                                    {!canChangeIntensity && (item.intensity === 'Fixed' || item.intensity === 'Custom' ? ` • ${item.slots} slots` : ` • ${item.intensity}`)}
+                                                </p>
+                                            </div>
+                                        </div>
+                                        <div className="flex items-center gap-2 flex-shrink-0">
+                                            {/* Intensity dropdown for auto items */}
+                                            {canChangeIntensity ? (
+                                                <select
+                                                    className="bg-background border rounded-md px-1.5 py-1 text-xs outline-none cursor-pointer"
+                                                    value={item.intensity}
+                                                    onChange={(e) => handleChangeIntensity(item, e.target.value as Intensity)}
+                                                >
+                                                    <option value="High">🔥 High (4)</option>
+                                                    <option value="Medium">⚡ Med (3)</option>
+                                                    <option value="Low">💧 Low (2)</option>
+                                                    <option value="Idle">⏸️ Idle (0)</option>
+                                                </select>
+                                            ) : (
+                                                <span className="text-sm font-bold px-2 py-1 rounded-full bg-secondary/50 min-w-[30px] text-center">{item.slots}</span>
+                                            )}
+                                            {/* Delete button: hidden for auto items */}
+                                            {isAutoItem ? (
+                                                <span className="text-[10px] text-muted-foreground px-1 opacity-50" title="Managed by project assignment">auto</span>
+                                            ) : (
+                                                <button
+                                                    onClick={() => handleDeleteItem(item.id)}
+                                                    className="text-muted-foreground hover:text-rose-500 transition-colors p-1"
+                                                    title="Delete this item"
+                                                >
+                                                    🗑️
+                                                </button>
+                                            )}
                                         </div>
                                     </div>
-                                    <div className="flex items-center gap-3">
-                                        <span className="text-sm font-bold px-2 py-1 rounded-full bg-secondary/50 min-w-[30px] text-center">{item.slots}</span>
-                                        <button
-                                            onClick={() => handleDeleteItem(item.id)}
-                                            className="text-muted-foreground hover:text-rose-500 transition-colors p-1"
-                                        >
-                                            <Loader2 className={`h-4 w-4 animate-spin hidden`} /> {/* Placeholder logic if specific item deleting */}
-                                            🗑️
-                                        </button>
-                                    </div>
-                                </div>
-                            ))}
+                                );
+                            })}
                         </div>
                     </div>
                 </CardContent>

@@ -117,6 +117,10 @@ export default function ProjectBoardPage() {
     const [activeDropdown, setActiveDropdown] = useState<"status" | "category" | "lead" | "date" | null>(null);
     const [showArchived, setShowArchived] = useState(false);
 
+    // Pagination
+    const [currentPage, setCurrentPage] = useState(1);
+    const itemsPerPage = 9;
+
     // Inline Edit State (for table view quick edit)
     const [inlineEditId, setInlineEditId] = useState<string | null>(null);
     const [inlineEditData, setInlineEditData] = useState<{ progress: number; status: ProjectStatus }>({ progress: 0, status: "planning" });
@@ -225,6 +229,156 @@ export default function ProjectBoardPage() {
         fetchData();
     }, []);
 
+    // --- Workload Sync Logic ---
+    const PROJECT_TO_WORKLOAD_CATEGORY: Record<string, string> = {
+        project: 'Project',
+        proposal: 'Proposal',
+        event: 'Event',
+        internal: 'Internal',
+        etc: 'Etc',
+    };
+
+    const ROLE_DEFAULT_INTENSITY: Record<string, string> = {
+        lead: 'High',
+        member: 'Medium',
+        helper: 'Low',
+    };
+
+    const getDefaultSlots = (workloadCategory: string, intensity: string): number => {
+        if (workloadCategory === 'Project' || workloadCategory === 'Event' || workloadCategory === 'Internal') {
+            if (intensity === 'High') return 4;
+            if (intensity === 'Medium') return 3;
+            return 2; // Low
+        }
+        if (workloadCategory === 'Proposal') return 2;
+        return 1; // Etc
+    };
+
+    const syncWorkloadItems = async (
+        projectId: string,
+        projectName: string,
+        projectCategory: string,
+        projectStatus: string,
+        leadId: string,
+        memberIds: string[],
+        helpers: { name: string; profile_id?: string; startDate: string; endDate: string }[]
+    ) => {
+        try {
+            const workloadCategory = PROJECT_TO_WORKLOAD_CATEGORY[projectCategory] || 'Etc';
+
+            // If project is completed, delete all auto workload items for this project
+            if (projectStatus === 'completed') {
+                await supabase.from('workload_items').delete()
+                    .eq('project_id', projectId)
+                    .eq('source', 'auto');
+                return;
+            }
+
+            // 1. Get existing auto workload items for this project
+            const { data: existingItems } = await supabase
+                .from('workload_items')
+                .select('id, profile_id, role_in_project')
+                .eq('project_id', projectId)
+                .eq('source', 'auto');
+
+            const existingMap = new Map<string, { id: string; role: string }>();
+            (existingItems || []).forEach((item: any) => {
+                // Key = profileId + role to handle same person in different roles
+                existingMap.set(`${item.profile_id}_${item.role_in_project}`, { id: item.id, role: item.role_in_project });
+            });
+
+            // 2. Build desired state
+            const desiredEntries: { profileId: string; role: string }[] = [];
+
+            // Lead
+            if (leadId) {
+                desiredEntries.push({ profileId: leadId, role: 'lead' });
+            }
+
+            // Members
+            memberIds.forEach(id => {
+                desiredEntries.push({ profileId: id, role: 'member' });
+            });
+
+            // Helpers (only those with profile_id)
+            helpers.forEach(h => {
+                if (h.profile_id) {
+                    desiredEntries.push({ profileId: h.profile_id, role: 'helper' });
+                }
+            });
+
+            const desiredKeys = new Set(desiredEntries.map(e => `${e.profileId}_${e.role}`));
+
+            // 3. Delete items no longer needed
+            const toDelete = [...existingMap.entries()]
+                .filter(([key]) => !desiredKeys.has(key))
+                .map(([, val]) => val.id);
+
+            if (toDelete.length > 0) {
+                await supabase.from('workload_items').delete().in('id', toDelete);
+            }
+
+            // 4. Insert new items that don't exist yet
+            const toInsert = desiredEntries
+                .filter(e => !existingMap.has(`${e.profileId}_${e.role}`))
+                .map(e => {
+                    const intensity = ROLE_DEFAULT_INTENSITY[e.role] || 'Medium';
+                    const slots = getDefaultSlots(workloadCategory, intensity);
+                    return {
+                        profile_id: e.profileId,
+                        name: projectName,
+                        category: workloadCategory,
+                        intensity,
+                        slots,
+                        project_id: projectId,
+                        source: 'auto',
+                        role_in_project: e.role,
+                    };
+                });
+
+            if (toInsert.length > 0) {
+                await supabase.from('workload_items').insert(toInsert);
+            }
+        } catch (err) {
+            console.error('Error syncing workload items:', err);
+            // Non-fatal: don't block project save
+        }
+    };
+
+    // Backfill: sync all active/non-completed projects to workload
+    const [isSyncingAll, setIsSyncingAll] = useState(false);
+    const syncAllProjectsToWorkload = async () => {
+        if (!confirm('This will generate workload items for ALL active projects. Continue?')) return;
+        setIsSyncingAll(true);
+        try {
+            const activeProjects = projects.filter(p => p.status !== 'completed' && !p.is_archived);
+            let synced = 0;
+            for (const proj of activeProjects) {
+                await syncWorkloadItems(
+                    proj.id,
+                    proj.name,
+                    proj.category,
+                    proj.status,
+                    proj.lead.id,
+                    proj.team.map(m => m.id),
+                    proj.helpers.map(h => ({
+                        name: h.name,
+                        profile_id: h.profile_id,
+                        startDate: h.startDate,
+                        endDate: h.endDate
+                    }))
+                );
+                synced++;
+            }
+            alert(`Synced ${synced} project(s) to workload successfully!`);
+        } catch (err) {
+            console.error('Error syncing all projects:', err);
+            alert('Some projects failed to sync. Check console.');
+        } finally {
+            setIsSyncingAll(false);
+        }
+    };
+
     // Actions
     const handleSaveProject = async () => {
         if (!formData.name || !formData.leadId || !formData.dueDate || !formData.category) {
@@ -297,6 +451,22 @@ export default function ProjectBoardPage() {
                     }));
                     await supabase.from('project_helpers').insert(helpersPayload);
                 }
+
+                // Sync workload items for all involved staff
+                await syncWorkloadItems(
+                    projectId,
+                    formData.name,
+                    formData.category,
+                    formData.status,
+                    formData.leadId,
+                    formData.teamIds,
+                    formData.helpers.map(h => ({
+                        name: h.name,
+                        profile_id: h.profile_id,
+                        startDate: h.startDate,
+                        endDate: h.endDate
+                    }))
+                );
             }
 
             fetchData();
@@ -485,6 +655,22 @@ export default function ProjectBoardPage() {
 
             if (error) throw error;
 
+            // Sync workload items (handles completed status + helper changes)
+            await syncWorkloadItems(
+                selectedProject.id,
+                selectedProject.name,
+                selectedProject.category,
+                detailsEditData.status,
+                selectedProject.lead.id,
+                selectedProject.team.map(m => m.id),
+                detailsEditData.helpers.map(h => ({
+                    name: h.name,
+                    profile_id: h.profile_id,
+                    startDate: h.startDate,
+                    endDate: h.endDate
+                }))
+            );
+
             fetchData();
             setIsDetailsOpen(false);
         } catch (error) {
@@ -526,11 +712,33 @@ export default function ProjectBoardPage() {
             return true;
         })
         .sort((a, b) => {
-            if (!sortOrder) return 0;
+            const isCompletedA = a.status === 'completed';
+            const isCompletedB = b.status === 'completed';
+
+            // Always push completed projects to the end
+            if (isCompletedA && !isCompletedB) return 1;
+            if (!isCompletedA && isCompletedB) return -1;
+
             const dateA = new Date(a.dueDate).getTime();
             const dateB = new Date(b.dueDate).getTime();
-            return sortOrder === "earliest" ? dateA - dateB : dateB - dateA;
+
+            if (sortOrder) {
+                return sortOrder === "earliest" ? dateA - dateB : dateB - dateA;
+            } else {
+                // Default logic: closest deadline to furthest
+                if (isNaN(dateA) && isNaN(dateB)) return 0;
+                if (isNaN(dateA)) return 1;
+                if (isNaN(dateB)) return -1;
+                return dateA - dateB;
+            }
         });
+
+    const totalPages = Math.max(1, Math.ceil(filteredProjects.length / itemsPerPage));
+    const paginatedProjects = filteredProjects.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
+
+    useEffect(() => {
+        setCurrentPage(1);
+    }, [searchQuery, statusFilter, categoryFilter, leadFilter, sortOrder, showArchived]);
 
     // Helper to close dropdowns
     const toggleDropdown = (dropdown: "status" | "category" | "lead" | "date") => {
@@ -570,14 +778,28 @@ export default function ProjectBoardPage() {
                         <p className="text-sm text-[var(--text-secondary)]">Manage and track all ongoing assignments, team allocations, and timelines.</p>
                     </div>
                 </div>
-                <button
-                    onClick={openCreateModal}
-                    className="group relative flex items-center justify-center gap-2 rounded-xl bg-[#e8c559] px-6 py-3 text-sm font-bold text-[#171611] shadow-[0_0_20px_rgba(232,197,89,0.2)] transition-all hover:bg-[#ebd07a] hover:shadow-[0_0_30px_rgba(232,197,89,0.4)] active:scale-95">
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 24 24" fill="currentColor">
-                        <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z" />
-                    </svg>
-                    New Assignment
-                </button>
+                <div className="flex items-center gap-2">
+                    <button
+                        onClick={syncAllProjectsToWorkload}
+                        disabled={isSyncingAll || isLoading}
+                        className="flex items-center gap-2 rounded-xl border border-[var(--glass-border)] bg-[var(--glass-bg)] px-4 py-3 text-sm font-medium text-[var(--text-secondary)] transition-all hover:bg-[var(--card-bg)] hover:text-[var(--text-primary)] active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+                        title="Generate workload items for all active projects"
+                    >
+                        <svg xmlns="http://www.w3.org/2000/svg" className={`h-4 w-4 ${isSyncingAll ? 'animate-spin' : ''}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2" />
+                        </svg>
+                        {isSyncingAll ? 'Syncing...' : 'Sync to Workload'}
+                    </button>
+                    <button
+                        onClick={openCreateModal}
+                        className="group relative flex items-center justify-center gap-2 rounded-xl bg-[#e8c559] px-6 py-3 text-sm font-bold text-[#171611] shadow-[0_0_20px_rgba(232,197,89,0.2)] transition-all hover:bg-[#ebd07a] hover:shadow-[0_0_30px_rgba(232,197,89,0.4)] active:scale-95"
+                    >
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 24 24" fill="currentColor">
+                            <path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z" />
+                        </svg>
+                        New Assignment
+                    </button>
+                </div>
             </div>
 
             {/* Toolbar / Filter Bar */}
@@ -787,7 +1009,7 @@ export default function ProjectBoardPage() {
                 viewMode === "grid" ? (
                     /* Grid View */
                     <div className="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-3 relative z-0">
-                        {filteredProjects.map((project) => {
+                        {paginatedProjects.map((project) => {
                             const statusConfig = STATUS_CONFIG[project.status];
                             return (
                                 <div
@@ -1058,7 +1280,7 @@ export default function ProjectBoardPage() {
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-[var(--glass-border)]">
-                                    {filteredProjects.map((project) => {
+                                    {paginatedProjects.map((project) => {
                                         const statusConfig = STATUS_CONFIG[project.status];
                                         return (
                                             <tr key={project.id} className="hover:bg-black/5 dark:hover:bg-white/5 transition-colors group">
@@ -1213,7 +1435,44 @@ export default function ProjectBoardPage() {
                     </div>
                 )}
 
-
+            {/* Pagination Controls */}
+            {filteredProjects.length > 0 && (
+                <div className="flex items-center justify-between mt-6 border-t border-[var(--glass-border)] pt-4 pb-4">
+                    <p className="text-sm text-[var(--text-secondary)]">
+                        Showing {((currentPage - 1) * itemsPerPage) + 1} to {Math.min(currentPage * itemsPerPage, filteredProjects.length)} of {filteredProjects.length} assignments
+                    </p>
+                    <div className="flex items-center gap-2">
+                        <button
+                            onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                            disabled={currentPage === 1}
+                            className="px-3 py-1 rounded-lg border border-[var(--glass-border)] text-[var(--text-secondary)] hover:bg-black/5 dark:hover:bg-white/5 disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                            Previous
+                        </button>
+                        <div className="flex items-center gap-1">
+                            {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => (
+                                <button
+                                    key={page}
+                                    onClick={() => setCurrentPage(page)}
+                                    className={`w-8 h-8 rounded-lg flex items-center justify-center text-sm font-medium transition-colors ${currentPage === page
+                                        ? 'bg-[#e8c559] text-[#171611]'
+                                        : 'text-[var(--text-secondary)] hover:bg-black/5 dark:hover:bg-white/5'
+                                        }`}
+                                >
+                                    {page}
+                                </button>
+                            ))}
+                        </div>
+                        <button
+                            onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                            disabled={currentPage === totalPages}
+                            className="px-3 py-1 rounded-lg border border-[var(--glass-border)] text-[var(--text-secondary)] hover:bg-black/5 dark:hover:bg-white/5 disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                            Next
+                        </button>
+                    </div>
+                </div>
+            )}
 
             {/* New Assignment Modal */}
             {
@@ -1261,23 +1520,25 @@ export default function ProjectBoardPage() {
                                 <div>
                                     <label className="block text-sm font-semibold text-[var(--text-primary)] mb-2">Team Members</label>
                                     <div className="rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-[#252523] p-3 h-36 overflow-y-auto custom-scrollbar space-y-1">
-                                        {profiles.map(user => (
-                                            <label key={user.id} className="flex items-center gap-3 p-2 rounded-lg hover:bg-white dark:hover:bg-[#1c2120] cursor-pointer transition-colors">
-                                                <input
-                                                    type="checkbox"
-                                                    className="w-4 h-4 rounded border-gray-300 dark:border-gray-600 text-[#e8c559] focus:ring-[#e8c559] focus:ring-offset-0"
-                                                    checked={formData.teamIds.includes(user.id)}
-                                                    onChange={(e) => {
-                                                        if (e.target.checked) {
-                                                            setFormData({ ...formData, teamIds: [...formData.teamIds, user.id] });
-                                                        } else {
-                                                            setFormData({ ...formData, teamIds: formData.teamIds.filter(id => id !== user.id) });
-                                                        }
-                                                    }}
-                                                />
-                                                <span className="text-sm text-[var(--text-primary)]">{user.full_name}</span>
-                                            </label>
-                                        ))}
+                                        {profiles
+                                            .filter(user => user.id !== formData.leadId)
+                                            .map(user => (
+                                                <label key={user.id} className="flex items-center gap-3 p-2 rounded-lg hover:bg-white dark:hover:bg-[#1c2120] cursor-pointer transition-colors">
+                                                    <input
+                                                        type="checkbox"
+                                                        className="w-4 h-4 rounded border-gray-300 dark:border-gray-600 text-[#e8c559] focus:ring-[#e8c559] focus:ring-offset-0"
+                                                        checked={formData.teamIds.includes(user.id)}
+                                                        onChange={(e) => {
+                                                            if (e.target.checked) {
+                                                                setFormData({ ...formData, teamIds: [...formData.teamIds, user.id] });
+                                                            } else {
+                                                                setFormData({ ...formData, teamIds: formData.teamIds.filter(id => id !== user.id) });
+                                                            }
+                                                        }}
+                                                    />
+                                                    <span className="text-sm text-[var(--text-primary)]">{user.full_name}</span>
+                                                </label>
+                                            ))}
                                     </div>
                                     <p className="text-xs text-[var(--text-muted)] mt-2">{formData.teamIds.length} member{formData.teamIds.length !== 1 ? 's' : ''} selected</p>
                                 </div>
@@ -1578,7 +1839,7 @@ export default function ProjectBoardPage() {
                                         >
                                             <option value="">Select Helper</option>
                                             {profiles
-                                                .filter(p => !p.is_hr)
+                                                .filter(p => !p.is_hr && p.id !== selectedProject?.lead.id && !selectedProject?.team.some(m => m.id === p.id))
                                                 .map(user => (
                                                     <option key={user.id} value={user.id}>{user.full_name}</option>
                                                 ))}

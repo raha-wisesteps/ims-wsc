@@ -1772,13 +1772,13 @@ export default function DashboardPage() {
                                     {/* Right: Quick Access Grid */}
                                     <div className="flex flex-col gap-3 h-full">
                                         <div className="grid grid-cols-3 gap-3 flex-1">
-                                            {/* My Request - Hidden for CEO and HR */}
+                                            {/* Workload - Hidden for CEO and HR */}
                                             {profile?.role !== 'ceo' && profile?.role !== 'hr' && (
-                                                <Link href="/dashboard/my-request" className="group flex flex-col items-center justify-center gap-2 p-2 rounded-xl backdrop-blur-md transition-all hover:scale-105 active:scale-95 border bg-amber-500/10 border-amber-500/20 hover:bg-amber-500/20 dark:bg-white/5 dark:border-white/10 dark:hover:bg-white/10">
+                                                <Link href="/dashboard/workload" className="group flex flex-col items-center justify-center gap-2 p-2 rounded-xl backdrop-blur-md transition-all hover:scale-105 active:scale-95 border bg-amber-500/10 border-amber-500/20 hover:bg-amber-500/20 dark:bg-white/5 dark:border-white/10 dark:hover:bg-white/10">
                                                     <div className="w-8 h-8 rounded-lg bg-indigo-500/20 flex items-center justify-center group-hover:bg-indigo-500/30 transition-colors">
-                                                        <FileText className="h-4 w-4 text-indigo-300" />
+                                                        <ClipboardList className="h-4 w-4 text-indigo-300" />
                                                     </div>
-                                                    <span className="text-[10px] font-bold text-white uppercase tracking-wider text-center">My Request</span>
+                                                    <span className="text-[10px] font-bold text-white uppercase tracking-wider text-center">Workload</span>
                                                 </Link>
                                             )}
 
