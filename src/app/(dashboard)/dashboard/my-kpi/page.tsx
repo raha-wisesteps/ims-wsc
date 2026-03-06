@@ -21,6 +21,10 @@ import {
     MessageSquare,
     BarChart3,
     Lock,
+    Clock,
+    Eye,
+    Check,
+    X,
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { createClient } from "@/lib/supabase/client";
@@ -42,73 +46,91 @@ interface PeerReviewAgg {
     comments: string[];
 }
 
+interface ProposalItem {
+    id: string;
+    name: string;
+    proposal_status: 'success' | 'fail' | null;
+    proposal_reason: string | null;
+}
+
 export default function MyKPIPage() {
     const { profile, isLoading: authLoading } = useAuth();
     const supabase = createClient();
 
     const [kpiData, setKpiData] = useState<any>(null); // Store raw DB data
     const [loading, setLoading] = useState(true);
-    const [unsavedChanges, setUnsavedChanges] = useState(false);
     const [expandedCriteria, setExpandedCriteria] = useState<Record<string, boolean>>({});
+
+    // Notes tracking
+    const [localNotes, setLocalNotes] = useState<Record<string, string>>({});
+    const [savingNoteId, setSavingNoteId] = useState<string | null>(null);
 
     // Peer review + conversion rate state
     const [peerAggregates, setPeerAggregates] = useState<PeerReviewAgg[]>([]);
+    const [proposals, setProposals] = useState<ProposalItem[]>([]);
     const [conversionRate, setConversionRate] = useState<{ rate: number; won: number; total: number }>({ rate: 0, won: 0, total: 0 });
+    const [attendanceStats, setAttendanceStats] = useState({ latePercentage: 0, lateDays: 0, totalDays: 0 });
     const [expandedPeerFeedback, setExpandedPeerFeedback] = useState<Record<string, boolean>>({});
+    const [expandedSysRec, setExpandedSysRec] = useState<Record<string, boolean>>({});
 
     const toggleCriteria = (id: string) => {
         setExpandedCriteria(prev => ({ ...prev, [id]: !prev[id] }));
     };
 
     const handleNoteChange = (subAspectId: string, note: string) => {
-        setKpiData((prev: any) => {
-            const newScores = [...(prev.kpi_sub_aspect_scores || [])];
-            const idx = newScores.findIndex((s: any) => s.sub_aspect_id === subAspectId);
-
-            if (idx >= 0) {
-                newScores[idx] = { ...newScores[idx], employee_note: note };
-            } else {
-                // If no score record exists yet (unlikely if pre-filled, but possible), create a temp one
-                // Actually for my-kpi usually we read existing. If it doesn't exist, we might need to handle insert.
-                // But typically scores are initialized. If not, we push a new obj.
-                newScores.push({ sub_aspect_id: subAspectId, employee_note: note, kpi_score_id: prev.id });
-            }
-
-            return { ...prev, kpi_sub_aspect_scores: newScores };
-        });
-        setUnsavedChanges(true);
+        setLocalNotes(prev => ({ ...prev, [subAspectId]: note }));
     };
 
-    const saveNotes = async () => {
+    const saveSingleNote = async (subAspectId: string) => {
         if (!kpiData || !profile) return;
+        const noteToSave = localNotes[subAspectId];
+        if (noteToSave === undefined) return;
 
+        setSavingNoteId(subAspectId);
         try {
-            // Filter out only changed notes to upsert? 
-            // Or just upsert all that have notes.
-            // We need kpi_score_id.
-
-            const updates = kpiData.kpi_sub_aspect_scores
-                .filter((s: any) => s.employee_note !== undefined && s.employee_note !== null)
-                .map((s: any) => ({
-                    kpi_score_id: kpiData.id,
-                    sub_aspect_id: s.sub_aspect_id,
-                    employee_note: s.employee_note
-                }));
-
-            if (updates.length === 0) return;
-
             const { error } = await supabase
                 .from('kpi_sub_aspect_scores')
-                .upsert(updates, { onConflict: 'kpi_score_id,sub_aspect_id' });
+                .upsert({
+                    kpi_score_id: kpiData.id,
+                    sub_aspect_id: subAspectId,
+                    employee_note: noteToSave
+                }, { onConflict: 'kpi_score_id,sub_aspect_id' });
 
             if (error) throw error;
 
-            setUnsavedChanges(false);
-            alert("Notes saved successfully!");
+            // Update kpiData state so the saved note becomes the baseline
+            setKpiData((prev: any) => {
+                const newScores = [...(prev.kpi_sub_aspect_scores || [])];
+                const idx = newScores.findIndex((s: any) => s.sub_aspect_id === subAspectId);
+                if (idx >= 0) {
+                    newScores[idx] = { ...newScores[idx], employee_note: noteToSave };
+                } else {
+                    newScores.push({ sub_aspect_id: subAspectId, employee_note: noteToSave, kpi_score_id: prev.id });
+                }
+                return { ...prev, kpi_sub_aspect_scores: newScores };
+            });
+
+            // Clear from local tracking
+            setLocalNotes(prev => {
+                const updated = { ...prev };
+                delete updated[subAspectId];
+                return updated;
+            });
+
         } catch (err: any) {
-            console.error("Error saving notes:", err);
-            alert("Failed to save notes: " + err.message);
+            console.error("Error saving note:", err);
+            alert("Failed to save note: " + err.message);
+        } finally {
+            setSavingNoteId(null);
         }
+    };
+
+    const cancelNoteChange = (subAspectId: string) => {
+        setLocalNotes(prev => {
+            const updated = { ...prev };
+            delete updated[subAspectId];
+            return updated;
+        });
     };
 
     // Fetch KPI Data
@@ -150,20 +172,73 @@ export default function MyKPIPage() {
                     })));
                 }
 
-                // Fetch B3 conversion rate (projects where user is lead)
-                const { data: staffProposals } = await supabase
+                // Fetch B3 conversion rate (projects where user is lead, member, or helper)
+                const { data: leadProjects } = await supabase
                     .from('projects')
-                    .select('id, name, proposal_status')
+                    .select('id, name, category, proposal_status, proposal_reason')
                     .eq('lead_id', profile.id)
+                    .eq('is_archived', false)
                     .eq('category', 'proposal');
 
-                if (staffProposals) {
-                    const total = staffProposals.length;
-                    const won = staffProposals.filter((p: any) => p.proposal_status === 'success').length;
-                    setConversionRate({
-                        rate: total > 0 ? (won / total) * 100 : 0,
-                        won,
-                        total,
+                const { data: memberData } = await supabase
+                    .from('project_members')
+                    .select('project:projects(id, name, category, proposal_status, proposal_reason)')
+                    .eq('profile_id', profile.id);
+
+                const { data: helperData } = await supabase
+                    .from('project_helpers')
+                    .select('project:projects(id, name, category, proposal_status, proposal_reason)')
+                    .eq('profile_id', profile.id);
+
+                const combinedMap = new Map<string, any>();
+
+                // Add Leads
+                leadProjects?.forEach((p: any) => combinedMap.set(p.id, p));
+
+                // Add Members
+                memberData?.forEach((m: any) => {
+                    const p = m.project;
+                    if (p && p.category === 'proposal' && !combinedMap.has(p.id)) {
+                        combinedMap.set(p.id, p);
+                    }
+                });
+
+                // Add Helpers
+                helperData?.forEach((h: any) => {
+                    const p = h.project;
+                    if (p && p.category === 'proposal' && !combinedMap.has(p.id)) {
+                        combinedMap.set(p.id, p);
+                    }
+                });
+
+                const allProposals = Array.from(combinedMap.values());
+                const decidedProposals = allProposals.filter((p: any) => p.proposal_status === 'success' || p.proposal_status === 'fail');
+                setProposals(decidedProposals);
+
+                const successProposals = decidedProposals.filter((p: any) => p.proposal_status === 'success').length;
+                const totalDecided = decidedProposals.length;
+
+                setConversionRate({
+                    rate: totalDecided > 0 ? Math.round((successProposals / totalDecided) * 100) : 0,
+                    won: successProposals,
+                    total: totalDecided,
+                });
+
+                // Fetch attendance stats for B4
+                const { data: attendanceData } = await supabase
+                    .from('daily_checkins')
+                    .select('id, is_late')
+                    .eq('profile_id', profile.id)
+                    .gte('checkin_date', '2026-01-01');
+
+                if (attendanceData) {
+                    const totalDays = attendanceData.length;
+                    const lateDays = attendanceData.filter((a: any) => a.is_late).length;
+
+                    setAttendanceStats({
+                        totalDays,
+                        lateDays,
+                        latePercentage: totalDays > 0 ? (lateDays / totalDays) * 100 : 0
                     });
                 }
 
@@ -295,15 +370,6 @@ export default function MyKPIPage() {
                     </div>
                 </div>
                 <div className="flex items-center gap-2">
-                    {unsavedChanges && (
-                        <button
-                            onClick={saveNotes}
-                            className="px-4 py-2 rounded-lg bg-emerald-500 hover:bg-emerald-600 text-white font-bold transition-colors flex items-center gap-2 shadow-lg animate-pulse"
-                        >
-                            <Save className="w-4 h-4" />
-                            Save Notes
-                        </button>
-                    )}
                     <Link
                         href="/dashboard"
                         className="px-4 py-2 rounded-lg bg-[var(--glass-bg)] hover:bg-[var(--glass-border)] text-[var(--text-secondary)] font-medium transition-colors flex items-center gap-2"
@@ -386,151 +452,223 @@ export default function MyKPIPage() {
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-[var(--glass-border)]">
-                                    {pillar.metrics.map((metric: any, idx: number) => (
-                                        <tr key={idx} className="hover:bg-[var(--glass-bg-hover)] transition-colors">
-                                            <td className="px-6 py-4 font-medium text-[var(--text-primary)] max-w-xs align-top">
-                                                <div>{metric.name}</div>
-                                                <div className="text-[10px] text-[var(--text-muted)] font-normal mt-1">{metric.criteria}</div>
+                                    {pillar.metrics.map((metric: any, idx: number) => {
+                                        const originalNote = metric.employee_note || '';
+                                        const currentNote = localNotes[metric.id] !== undefined ? localNotes[metric.id] : originalNote;
+                                        const isEditing = currentNote !== originalNote;
 
-                                                {/* Scoring Criteria Toggle */}
-                                                {metric.scoring_criteria && (
-                                                    <div className="mt-2">
-                                                        <button
-                                                            onClick={() => toggleCriteria(metric.id)}
-                                                            className="flex items-center gap-1 text-[10px] text-blue-400 hover:text-blue-300 transition-colors"
-                                                        >
-                                                            {expandedCriteria[metric.id] ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
-                                                            {expandedCriteria[metric.id] ? "Hide Guidelines" : "Show Scoring Guidelines"}
-                                                        </button>
+                                        return (
+                                            <tr key={idx} className="hover:bg-[var(--glass-bg-hover)] transition-colors">
+                                                <td className="px-6 py-4 font-medium text-[var(--text-primary)] max-w-xs align-top">
+                                                    <div>{metric.name}</div>
+                                                    <div className="text-[10px] text-[var(--text-muted)] font-normal mt-1">{metric.criteria}</div>
 
-                                                        {expandedCriteria[metric.id] && (
-                                                            <div className="mt-2 p-2 rounded bg-black/20 border border-white/5 text-[10px] space-y-1">
-                                                                {Object.entries(metric.scoring_criteria).map(([score, desc]: any) => (
-                                                                    <div key={score} className="flex gap-2">
-                                                                        <span className={`font-bold w-3 shrink-0 ${score >= 4 ? 'text-emerald-400' :
-                                                                            score >= 3 ? 'text-amber-400' : 'text-rose-400'
-                                                                            }`}>{score}:</span>
-                                                                        <span className="text-gray-400">{desc}</span>
+                                                    {/* Scoring Criteria Toggle */}
+                                                    {metric.scoring_criteria && (
+                                                        <div className="mt-2">
+                                                            <button
+                                                                onClick={() => toggleCriteria(metric.id)}
+                                                                className="flex items-center gap-1 text-[10px] text-blue-400 hover:text-blue-300 transition-colors"
+                                                            >
+                                                                {expandedCriteria[metric.id] ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                                                                {expandedCriteria[metric.id] ? "Hide Guidelines" : "Show Scoring Guidelines"}
+                                                            </button>
+
+                                                            {expandedCriteria[metric.id] && (
+                                                                <div className="mt-2 p-2 rounded bg-black/20 border border-white/5 text-[10px] space-y-1">
+                                                                    {Object.entries(metric.scoring_criteria).map(([score, desc]: any) => (
+                                                                        <div key={score} className="flex gap-2">
+                                                                            <span className={`font-bold w-3 shrink-0 ${score >= 4 ? 'text-emerald-400' :
+                                                                                score >= 3 ? 'text-amber-400' : 'text-rose-400'
+                                                                                }`}>{score}:</span>
+                                                                            <span className="text-gray-400">{desc}</span>
+                                                                        </div>
+                                                                    ))}
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    )}
+
+                                                    {metric.id === 'B4' && (
+                                                        <div className="mt-2 space-y-2">
+                                                            <span className="inline-flex items-center gap-1 text-[10px] text-blue-500 dark:text-blue-400 mt-1">
+                                                                <Info className="w-3 h-3" /> System Calculated
+                                                            </span>
+                                                            {attendanceStats.totalDays > 0 && (
+                                                                <div className="p-2.5 rounded-lg bg-sky-500/10 border border-sky-500/20">
+                                                                    <div className="flex items-center gap-1.5 mb-1">
+                                                                        <Clock className="w-3 h-3 text-sky-400" />
+                                                                        <span className="text-[10px] font-bold text-sky-400">Kehadiran (YTD)</span>
                                                                     </div>
-                                                                ))}
+                                                                    <p className="text-[10px] text-gray-300">
+                                                                        Lateness Rate: <span className="text-white font-bold">{attendanceStats.latePercentage.toFixed(1)}%</span>
+                                                                        <span className="text-gray-500 ml-1">({attendanceStats.lateDays}/{attendanceStats.totalDays} hari)</span>
+                                                                    </p>
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    )}
+
+                                                    {/* Peer Review Badge & Feedback */}
+                                                    {metric.isPeerReview && (() => {
+                                                        const agg = peerAggregates.find(a => a.kpi_metric_id === metric.id);
+                                                        const isExpanded = expandedPeerFeedback[metric.id] || false;
+
+                                                        return (
+                                                            <div className="mt-2 p-2.5 rounded-lg bg-indigo-500/10 border border-indigo-500/20">
+                                                                <div className="flex items-center gap-1.5 mb-1">
+                                                                    <Lock className="w-3 h-3 text-indigo-400" />
+                                                                    <span className="text-[10px] font-bold text-indigo-400">Peer Reviewed</span>
+                                                                </div>
+                                                                {agg ? (
+                                                                    <>
+                                                                        <p className="text-[10px] text-gray-300">
+                                                                            Dinilai oleh <span className="text-white font-bold">{agg.reviewer_count}</span> rekan kerja
+                                                                        </p>
+                                                                        <div className="flex items-center gap-2 mt-1">
+                                                                            <span className="text-xs text-gray-400">Avg:</span>
+                                                                            <span className="text-xs font-bold text-white">{agg.avg_score.toFixed(1)}/5.0</span>
+                                                                            <div className="flex-1 h-1 bg-black/30 rounded-full overflow-hidden">
+                                                                                <div className="h-full bg-indigo-400" style={{ width: `${(agg.avg_score / 5) * 100}%` }} />
+                                                                            </div>
+                                                                        </div>
+
+                                                                        {agg.comments.length > 0 && (
+                                                                            <>
+                                                                                <button
+                                                                                    onClick={() => setExpandedPeerFeedback(p => ({ ...p, [metric.id]: !p[metric.id] }))}
+                                                                                    className="flex items-center gap-1 text-[10px] text-indigo-400 hover:text-indigo-300 mt-1.5"
+                                                                                >
+                                                                                    <MessageSquare className="w-3 h-3" />
+                                                                                    {isExpanded ? 'Sembunyikan' : `${agg.comments.length} Komentar Anonim`}
+                                                                                </button>
+                                                                                {isExpanded && (
+                                                                                    <div className="mt-1.5 space-y-1 animate-in fade-in slide-in-from-top-2 duration-200">
+                                                                                        {agg.comments.map((c, i) => (
+                                                                                            <p key={i} className="text-[10px] text-gray-300 italic pl-2 border-l border-indigo-500/30">
+                                                                                                "{c}"
+                                                                                            </p>
+                                                                                        ))}
+                                                                                    </div>
+                                                                                )}
+                                                                            </>
+                                                                        )}
+                                                                    </>
+                                                                ) : (
+                                                                    <p className="text-[10px] text-gray-500 italic">Belum ada review dari rekan kerja.</p>
+                                                                )}
+                                                                <p className="text-[9px] text-gray-600 mt-1">Skor final ditentukan oleh CEO</p>
+                                                            </div>
+                                                        );
+                                                    })()}
+
+                                                    {/* B3 Conversion Rate Badge */}
+                                                    {metric.id === 'B3' && (
+                                                        <div className="mt-2 p-2.5 rounded-lg bg-purple-500/10 border border-purple-500/20">
+                                                            <div className="flex items-center gap-1.5 mb-1">
+                                                                <BarChart3 className="w-3 h-3 text-purple-400" />
+                                                                <span className="text-[10px] font-bold text-purple-400">System Calculated</span>
+                                                            </div>
+                                                            <p className="text-[10px] text-gray-300">
+                                                                Conversion Rate: <span className="text-white font-bold">{conversionRate.rate.toFixed(0)}%</span>
+                                                                <span className="text-gray-500 ml-1">({conversionRate.won}/{conversionRate.total} proposals)</span>
+                                                            </p>
+                                                            <div className="h-1 bg-black/30 rounded-full overflow-hidden mt-1 mb-2">
+                                                                <div className="h-full bg-purple-400" style={{ width: `${Math.min(100, conversionRate.rate)}%` }} />
+                                                            </div>
+
+                                                            <button
+                                                                onClick={() => setExpandedSysRec(p => ({ ...p, B3: !p.B3 }))}
+                                                                className="flex items-center gap-1 text-[10px] text-purple-400 hover:text-purple-300 transition-colors"
+                                                            >
+                                                                {expandedSysRec.B3 ? <ChevronUp className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
+                                                                {expandedSysRec.B3 ? 'Hide Detail' : 'View Detail'}
+                                                            </button>
+
+                                                            {expandedSysRec.B3 && proposals.length > 0 && (
+                                                                <div className="mt-2 space-y-1 max-h-40 overflow-y-auto animate-in fade-in slide-in-from-top-2 duration-200">
+                                                                    {proposals.map(p => (
+                                                                        <div key={p.id} className="flex items-center gap-2 text-[10px] p-1.5 rounded bg-black/20 border border-white/5">
+                                                                            <span className={`w-4 text-center ${p.proposal_status === 'success' ? 'text-emerald-400' : p.proposal_status === 'fail' ? 'text-rose-400' : 'text-gray-500'}`}>
+                                                                                {p.proposal_status === 'success' ? '✅' : p.proposal_status === 'fail' ? '❌' : '⏳'}
+                                                                            </span>
+                                                                            <div className="flex flex-col flex-1 overflow-hidden min-w-0">
+                                                                                <span className="text-gray-300 truncate w-full">{p.name}</span>
+                                                                                {p.proposal_reason && (
+                                                                                    <span className="text-gray-500 text-[9px] truncate w-full">{p.proposal_reason}</span>
+                                                                                )}
+                                                                            </div>
+                                                                        </div>
+                                                                    ))}
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    )}
+                                                </td>
+                                                <td className="px-6 py-4 text-center text-[var(--text-secondary)]">
+                                                    {metric.weight}%
+                                                </td>
+                                                <td className="px-6 py-4 text-center">
+                                                    <div className="inline-block relative">
+                                                        {/* Visual score bar background */}
+                                                        <div className="w-16 h-1.5 bg-gray-200 dark:bg-gray-700/50 rounded-full mb-1">
+                                                            <div
+                                                                className={`h-full rounded-full ${metric.score >= 4 ? 'bg-emerald-500' :
+                                                                    metric.score >= 3 ? 'bg-amber-500' :
+                                                                        metric.score > 0 ? 'bg-rose-500' : 'bg-gray-400'
+                                                                    }`}
+                                                                style={{ width: `${(metric.score / 5) * 100}%` }}
+                                                            />
+                                                        </div>
+                                                        <span className={`font-bold ${metric.score >= 4 ? 'text-emerald-600 dark:text-emerald-400' :
+                                                            metric.score >= 3 ? 'text-amber-600 dark:text-amber-400' :
+                                                                metric.score > 0 ? 'text-rose-600 dark:text-rose-400' : 'text-[var(--text-muted)]'
+                                                            }`}>
+                                                            {metric.score || '-'}
+                                                        </span>
+                                                    </div>
+                                                </td>
+                                                <td className="px-6 py-4 align-top">
+                                                    <div className="relative">
+                                                        <textarea
+                                                            value={currentNote}
+                                                            onChange={(e) => handleNoteChange(metric.id, e.target.value)}
+                                                            placeholder="Add your note/justification here..."
+                                                            className="w-full bg-black/20 border border-white/10 rounded-lg p-2 text-xs text-gray-300 focus:border-blue-500 outline-none transition-all resize-none h-[80px]"
+                                                            disabled={kpiData.status === 'final'}
+                                                        />
+                                                        {isEditing && (
+                                                            <div className="flex items-center gap-2 mt-2 justify-end">
+                                                                <button
+                                                                    onClick={() => cancelNoteChange(metric.id)}
+                                                                    className="p-1 rounded bg-rose-500/20 text-rose-400 hover:bg-rose-500/30 transition-colors"
+                                                                    title="Cancel"
+                                                                    disabled={savingNoteId === metric.id}
+                                                                >
+                                                                    <X className="w-4 h-4" />
+                                                                </button>
+                                                                <button
+                                                                    onClick={() => saveSingleNote(metric.id)}
+                                                                    className="p-1 rounded bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30 transition-colors"
+                                                                    title="Save"
+                                                                    disabled={savingNoteId === metric.id}
+                                                                >
+                                                                    {savingNoteId === metric.id ? (
+                                                                        <div className="w-4 h-4 border-2 border-emerald-400/30 border-t-emerald-400 rounded-full animate-spin" />
+                                                                    ) : (
+                                                                        <Check className="w-4 h-4" />
+                                                                    )}
+                                                                </button>
                                                             </div>
                                                         )}
                                                     </div>
-                                                )}
-
-                                                {metric.id === 'B4' && (
-                                                    <span className="inline-flex items-center gap-1 text-[10px] text-blue-500 dark:text-blue-400 mt-1">
-                                                        <Info className="w-3 h-3" /> System Calculated
-                                                    </span>
-                                                )}
-
-                                                {/* Peer Review Badge & Feedback */}
-                                                {metric.isPeerReview && (() => {
-                                                    const agg = peerAggregates.find(a => a.kpi_metric_id === metric.id);
-                                                    const isExpanded = expandedPeerFeedback[metric.id] || false;
-
-                                                    return (
-                                                        <div className="mt-2 p-2.5 rounded-lg bg-indigo-500/10 border border-indigo-500/20">
-                                                            <div className="flex items-center gap-1.5 mb-1">
-                                                                <Lock className="w-3 h-3 text-indigo-400" />
-                                                                <span className="text-[10px] font-bold text-indigo-400">Peer Reviewed</span>
-                                                            </div>
-                                                            {agg ? (
-                                                                <>
-                                                                    <p className="text-[10px] text-gray-300">
-                                                                        Dinilai oleh <span className="text-white font-bold">{agg.reviewer_count}</span> rekan kerja
-                                                                    </p>
-                                                                    <div className="flex items-center gap-2 mt-1">
-                                                                        <span className="text-xs text-gray-400">Avg:</span>
-                                                                        <span className="text-xs font-bold text-white">{agg.avg_score.toFixed(1)}/5.0</span>
-                                                                        <div className="flex-1 h-1 bg-black/30 rounded-full overflow-hidden">
-                                                                            <div className="h-full bg-indigo-400" style={{ width: `${(agg.avg_score / 5) * 100}%` }} />
-                                                                        </div>
-                                                                    </div>
-
-                                                                    {agg.comments.length > 0 && (
-                                                                        <>
-                                                                            <button
-                                                                                onClick={() => setExpandedPeerFeedback(p => ({ ...p, [metric.id]: !p[metric.id] }))}
-                                                                                className="flex items-center gap-1 text-[10px] text-indigo-400 hover:text-indigo-300 mt-1.5"
-                                                                            >
-                                                                                <MessageSquare className="w-3 h-3" />
-                                                                                {isExpanded ? 'Sembunyikan' : `${agg.comments.length} Komentar Anonim`}
-                                                                            </button>
-                                                                            {isExpanded && (
-                                                                                <div className="mt-1.5 space-y-1 animate-in fade-in slide-in-from-top-2 duration-200">
-                                                                                    {agg.comments.map((c, i) => (
-                                                                                        <p key={i} className="text-[10px] text-gray-300 italic pl-2 border-l border-indigo-500/30">
-                                                                                            "{c}"
-                                                                                        </p>
-                                                                                    ))}
-                                                                                </div>
-                                                                            )}
-                                                                        </>
-                                                                    )}
-                                                                </>
-                                                            ) : (
-                                                                <p className="text-[10px] text-gray-500 italic">Belum ada review dari rekan kerja.</p>
-                                                            )}
-                                                            <p className="text-[9px] text-gray-600 mt-1">Skor final ditentukan oleh CEO</p>
-                                                        </div>
-                                                    );
-                                                })()}
-
-                                                {/* B3 Conversion Rate Badge */}
-                                                {metric.id === 'B3' && conversionRate.total > 0 && (
-                                                    <div className="mt-2 p-2.5 rounded-lg bg-purple-500/10 border border-purple-500/20">
-                                                        <div className="flex items-center gap-1.5 mb-1">
-                                                            <BarChart3 className="w-3 h-3 text-purple-400" />
-                                                            <span className="text-[10px] font-bold text-purple-400">System Calculated</span>
-                                                        </div>
-                                                        <p className="text-[10px] text-gray-300">
-                                                            Conversion Rate: <span className="text-white font-bold">{conversionRate.rate.toFixed(0)}%</span>
-                                                            <span className="text-gray-500 ml-1">({conversionRate.won}/{conversionRate.total} proposals)</span>
-                                                        </p>
-                                                        <div className="h-1 bg-black/30 rounded-full overflow-hidden mt-1">
-                                                            <div className="h-full bg-purple-400" style={{ width: `${Math.min(100, conversionRate.rate)}%` }} />
-                                                        </div>
-                                                    </div>
-                                                )}
-                                            </td>
-                                            <td className="px-6 py-4 text-center text-[var(--text-secondary)]">
-                                                {metric.weight}%
-                                            </td>
-                                            <td className="px-6 py-4 text-center">
-                                                <div className="inline-block relative">
-                                                    {/* Visual score bar background */}
-                                                    <div className="w-16 h-1.5 bg-gray-200 dark:bg-gray-700/50 rounded-full mb-1">
-                                                        <div
-                                                            className={`h-full rounded-full ${metric.score >= 4 ? 'bg-emerald-500' :
-                                                                metric.score >= 3 ? 'bg-amber-500' :
-                                                                    metric.score > 0 ? 'bg-rose-500' : 'bg-gray-400'
-                                                                }`}
-                                                            style={{ width: `${(metric.score / 5) * 100}%` }}
-                                                        />
-                                                    </div>
-                                                    <span className={`font-bold ${metric.score >= 4 ? 'text-emerald-600 dark:text-emerald-400' :
-                                                        metric.score >= 3 ? 'text-amber-600 dark:text-amber-400' :
-                                                            metric.score > 0 ? 'text-rose-600 dark:text-rose-400' : 'text-[var(--text-muted)]'
-                                                        }`}>
-                                                        {metric.score || '-'}
-                                                    </span>
-                                                </div>
-                                            </td>
-                                            <td className="px-6 py-4 align-top">
-                                                <textarea
-                                                    value={metric.employee_note || ''}
-                                                    onChange={(e) => handleNoteChange(metric.id, e.target.value)}
-                                                    placeholder="Add your note/justification here..."
-                                                    className="w-full bg-black/20 border border-white/10 rounded-lg p-2 text-xs text-gray-300 focus:border-blue-500 outline-none transition-all resize-none h-[80px]"
-                                                    disabled={kpiData.status === 'final'}
-                                                />
-                                            </td>
-                                            <td className="px-6 py-4 text-[var(--text-muted)] text-xs italic align-top">
-                                                {metric.ceo_note || metric.note || '-'}
-                                            </td>
-                                        </tr>
-                                    ))}
+                                                </td>
+                                                <td className="px-6 py-4 text-[var(--text-muted)] text-xs italic align-top">
+                                                    {metric.ceo_note || metric.note || '-'}
+                                                </td>
+                                            </tr>
+                                        );
+                                    })}
                                 </tbody>
                             </table>
                         </div>

@@ -24,7 +24,7 @@ export const HERO_MESSAGES = {
         { text: "WFH = Work From Happiness kan? Semangat!", emoji: "😄", subtext: "Enjoy your home office." },
         { text: "Awas kasur di belakang memanggil... Kuatkan iman!", emoji: "🛏️", subtext: "Resist the temptation!" },
         { text: "Sudah cek sisa kuota WFH minggu ini? Manfaatkan sebaiknya!", emoji: "🏠", subtext: "Remote work life." },
-        { text: "Atas kemeja, bawah celana pendek? Kita rahasia-rahamiaan aja", emoji: "🤫", subtext: "Zoom meeting ready." },
+        { text: "Atas kemeja, bawah celana pendek? Kita rahasia-rahasiaan aja", emoji: "🤫", subtext: "Zoom meeting ready." },
         { text: "Pastikan internet stabil, biar nggak putus-putus pas meeting", emoji: "📶", subtext: "Check your ping!" },
         { text: "Sudah mandi belum? Biar makin segar ide-idenya!", emoji: "🚿", subtext: "Fresh mind, fresh ideas." },
         { text: "Enaknya WFH bisa sambil nyemil sepuasnya. Awas timbangan naik!", emoji: "⚖️", subtext: "Snack responsibly." },

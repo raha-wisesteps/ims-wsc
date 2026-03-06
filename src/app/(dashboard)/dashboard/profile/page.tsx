@@ -78,7 +78,7 @@ export default function ProfilePage() {
                     method: 'PATCH',
                     headers: {
                         'apikey': supabaseKey!,
-                        'Authorization': `Bearer ${supabaseKey}`,
+                        'Authorization': `Bearer ${session?.access_token || supabaseKey}`,
                         'Content-Type': 'application/json',
                         'Prefer': 'return=minimal'
                     },
@@ -592,29 +592,29 @@ export default function ProfilePage() {
                         </div>
                     </div>
 
-                {/* Layanan Pengaduan Section - Moved directly below Profile Card */}
-                <div className="glass-panel p-6 rounded-2xl border border-[var(--glass-border)]">
-                    <div className="flex items-center gap-3 mb-4">
-                        <div className="p-2 bg-yellow-500/10 rounded-lg">
-                            <AlertCircle className="w-5 h-5 text-yellow-500" />
+                    {/* Layanan Pengaduan Section - Moved directly below Profile Card */}
+                    <div className="glass-panel p-6 rounded-2xl border border-[var(--glass-border)]">
+                        <div className="flex items-center gap-3 mb-4">
+                            <div className="p-2 bg-yellow-500/10 rounded-lg">
+                                <AlertCircle className="w-5 h-5 text-yellow-500" />
+                            </div>
+                            <h3 className="text-lg font-bold text-[var(--text-primary)]">Layanan Pengaduan</h3>
                         </div>
-                        <h3 className="text-lg font-bold text-[var(--text-primary)]">Layanan Pengaduan</h3>
+
+                        <p className="text-sm text-[var(--text-secondary)] mb-6">
+                            Jika Anda memiliki keluhan, kritik, saran, atau ingin melaporkan tindakan indikasi kecurangan/pelanggaran,
+                            silakan sampaikan melalui formulir pengaduan.
+                        </p>
+
+                        <button
+                            onClick={() => router.push('/dashboard/profile/report')}
+                            className="px-6 py-2.5 rounded-xl bg-[#e8c559] text-black font-bold hover:bg-[#d6b54e] shadow-lg shadow-[#e8c559]/20 flex items-center gap-2 transition-all w-full justify-center"
+                        >
+                            <AlertCircle className="w-4 h-4" />
+                            Buat Laporan
+                        </button>
                     </div>
-
-                    <p className="text-sm text-[var(--text-secondary)] mb-6">
-                        Jika Anda memiliki keluhan, kritik, saran, atau ingin melaporkan tindakan indikasi kecurangan/pelanggaran,
-                        silakan sampaikan melalui formulir pengaduan.
-                    </p>
-
-                    <button
-                        onClick={() => router.push('/dashboard/profile/report')}
-                        className="px-6 py-2.5 rounded-xl bg-[#e8c559] text-black font-bold hover:bg-[#d6b54e] shadow-lg shadow-[#e8c559]/20 flex items-center gap-2 transition-all w-full justify-center"
-                    >
-                        <AlertCircle className="w-4 h-4" />
-                        Buat Laporan
-                    </button>
                 </div>
-            </div>
 
                 {showCropper && imageSrc && (
                     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in duration-200">
@@ -811,14 +811,13 @@ export default function ProfilePage() {
                                 <div className="flex gap-2">
                                     <div className="relative w-24">
                                         <select
-                                            value={formData.birthDate ? new Date(formData.birthDate).getDate() : ""}
+                                            value={formData.birthDate && formData.birthDate.includes('-') ? parseInt(formData.birthDate.split('-')[2], 10) : ""}
                                             onChange={(e) => {
-                                                const day = parseInt(e.target.value);
-                                                const currentDate = formData.birthDate ? new Date(formData.birthDate) : new Date(2000, 0, 1);
-                                                currentDate.setDate(day);
-                                                currentDate.setFullYear(2000); // Enforce year 2000
-                                                const newDate = new Date(Date.UTC(2000, currentDate.getMonth(), day));
-                                                setFormData({ ...formData, birthDate: newDate.toISOString().split('T')[0] });
+                                                const dayStr = e.target.value.padStart(2, '0');
+                                                const parts = formData.birthDate && formData.birthDate.includes('-')
+                                                    ? formData.birthDate.split('-')
+                                                    : ['2000', '01', '01'];
+                                                setFormData({ ...formData, birthDate: `2000-${parts[1]}-${dayStr}` });
                                             }}
                                             className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white appearance-none focus:outline-none focus:border-[#e8c559]/50 transition-colors cursor-pointer"
                                         >
@@ -833,15 +832,18 @@ export default function ProfilePage() {
                                     </div>
                                     <div className="relative flex-1">
                                         <select
-                                            value={formData.birthDate ? new Date(formData.birthDate).getMonth() : ""}
+                                            value={formData.birthDate && formData.birthDate.includes('-') ? parseInt(formData.birthDate.split('-')[1], 10) - 1 : ""}
                                             onChange={(e) => {
-                                                const month = parseInt(e.target.value);
-                                                const currentDate = formData.birthDate ? new Date(formData.birthDate) : new Date(2000, 0, 1);
-                                                currentDate.setMonth(month);
-                                                currentDate.setFullYear(2000); // Enforce year 2000
-                                                const currentDay = currentDate.getDate();
-                                                const newDate = new Date(Date.UTC(2000, month, currentDay));
-                                                setFormData({ ...formData, birthDate: newDate.toISOString().split('T')[0] });
+                                                const monthRaw = parseInt(e.target.value, 10);
+                                                const monthStr = (monthRaw + 1).toString().padStart(2, '0');
+                                                const parts = formData.birthDate && formData.birthDate.includes('-')
+                                                    ? formData.birthDate.split('-')
+                                                    : ['2000', '01', '01'];
+                                                let dayNum = parseInt(parts[2], 10);
+                                                const daysInMonth = new Date(2000, monthRaw + 1, 0).getDate();
+                                                if (dayNum > daysInMonth) dayNum = daysInMonth;
+                                                const dayStr = dayNum.toString().padStart(2, '0');
+                                                setFormData({ ...formData, birthDate: `2000-${monthStr}-${dayStr}` });
                                             }}
                                             className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white appearance-none focus:outline-none focus:border-[#e8c559]/50 transition-colors cursor-pointer"
                                         >
