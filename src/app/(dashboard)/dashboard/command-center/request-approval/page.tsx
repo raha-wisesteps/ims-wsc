@@ -293,15 +293,15 @@ export default function RequestApprovalPage() {
                 reason: request.reason || "",
             });
 
-            // Send email notification to HR for izin/sakit types
+            // Send email notification to HR for izin/sakit/cuti types
             const HR_NOTIFY_TYPES = [
                 "sick_leave", "self_marriage", "child_marriage", "paternity",
                 "wife_miscarriage", "child_event", "family_death", "household_death",
                 "sibling_death", "hajj", "government", "disaster", "other_permission",
-                "menstrual_leave", "maternity", "miscarriage", "overtime",
+                "menstrual_leave", "maternity", "miscarriage", "overtime", "annual_leave", "extra_leave"
             ];
             if (HR_NOTIFY_TYPES.includes(request.leave_type)) {
-                sendEmailNotification({
+                await sendEmailNotification({
                     type: "approved_leave",
                     request_id: request.id,
                     profile_id: request.profile.id,
