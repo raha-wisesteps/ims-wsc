@@ -5,6 +5,8 @@ import Link from "next/link";
 import { Plus, Clock, CheckCircle, XCircle, AlertCircle, ChevronRight, Calendar, Home, Thermometer, GraduationCap, DollarSign, Users, Package, Loader2, RefreshCw, Briefcase, ClipboardList } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
+import { useCompanyHolidays } from "@/hooks/useCompanyHolidays";
+import { calculateWorkingDays } from "@/lib/utils/working-days";
 
 // Request type definitions with icons and colors
 const REQUEST_TYPES = [
@@ -99,6 +101,7 @@ export default function MyRequestPage() {
     const { user, profile, leaveQuota } = useAuth();
     const supabase = createClient();
     const isIntern = profile?.job_type === 'intern';
+    const { holidayDates } = useCompanyHolidays();
 
     const [requests, setRequests] = useState<LeaveRequest[]>([]);
     const [isLoading, setIsLoading] = useState(true);
@@ -205,6 +208,16 @@ export default function MyRequestPage() {
     // Helper: Format date
     const formatDate = (dateStr: string) => {
         return new Date(dateStr).toLocaleDateString("id-ID", { day: "numeric", month: "short" });
+    };
+
+    // Helper: Calculate days
+    const calculateDays = (start: string, end: string, leaveType: string) => {
+        if (leaveType === 'business_trip' || leaveType === 'overtime') {
+            const s = new Date(start);
+            const e = new Date(end);
+            return Math.ceil((e.getTime() - s.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+        }
+        return calculateWorkingDays(start, end, holidayDates);
     };
 
     // Helper: Get dedicated page URL from leave_type
@@ -636,8 +649,11 @@ export default function MyRequestPage() {
                                             </span>
                                         </div>
                                         <p className="text-sm text-[var(--text-secondary)] truncate">{request.reason}</p>
-                                        <div className="flex items-center gap-3 text-xs text-[var(--text-muted)] mt-1">
+                                        <div className="flex items-center gap-3 text-xs text-[var(--text-muted)] mt-1 flex-wrap">
                                             <span>📅 {formatDate(request.start_date)}{request.start_date !== request.end_date && ` - ${formatDate(request.end_date)}`}</span>
+                                            <span className="px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-400 font-medium">
+                                                {calculateDays(request.start_date, request.end_date, request.leave_type)} hari
+                                            </span>
                                             {request.total_hours && <span>⏰ {request.total_hours} jam</span>}
                                             <span className="opacity-60">• Diajukan {formatDate(request.created_at)}</span>
                                         </div>
