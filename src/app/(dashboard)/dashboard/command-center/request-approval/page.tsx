@@ -6,6 +6,8 @@ import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { CheckCircle, XCircle, Loader2, RefreshCw, ClipboardCheck, ChevronRight } from "lucide-react";
 import { sendEmailNotification } from "@/lib/email-notification";
+import { useCompanyHolidays } from "@/hooks/useCompanyHolidays";
+import { calculateWorkingDays } from "@/lib/utils/working-days";
 
 // Request type config for display - aligned with my-request page
 const REQUEST_TYPE_CONFIG: Record<string, { label: string; icon: string; color: string }> = {
@@ -86,6 +88,7 @@ interface PendingRequest {
 export default function RequestApprovalPage() {
     const { user, profile, canAccessCommandCenter } = useAuth();
     const supabase = createClient();
+    const { holidayDates } = useCompanyHolidays();
 
     const [requests, setRequests] = useState<PendingRequest[]>([]);
     const [isLoading, setIsLoading] = useState(true);
@@ -421,10 +424,13 @@ export default function RequestApprovalPage() {
     };
 
     // Helper: Calculate days
-    const calculateDays = (start: string, end: string) => {
-        const s = new Date(start);
-        const e = new Date(end);
-        return Math.ceil((e.getTime() - s.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+    const calculateDays = (start: string, end: string, leaveType: string) => {
+        if (leaveType === 'business_trip' || leaveType === 'overtime') {
+            const s = new Date(start);
+            const e = new Date(end);
+            return Math.ceil((e.getTime() - s.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+        }
+        return calculateWorkingDays(start, end, holidayDates);
     };
 
     return (
@@ -565,7 +571,7 @@ export default function RequestApprovalPage() {
                     <div className="space-y-4">
                         {filteredRequests.map(req => {
                             const typeConfig = REQUEST_TYPE_CONFIG[req.leave_type] || { label: req.leave_type, icon: "📋", color: "bg-gray-500" };
-                            const days = calculateDays(req.start_date, req.end_date);
+                            const days = calculateDays(req.start_date, req.end_date, req.leave_type);
                             const isProcessing = processingId === req.id;
 
                             return (

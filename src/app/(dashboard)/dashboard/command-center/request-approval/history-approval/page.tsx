@@ -5,6 +5,8 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { Loader2, RefreshCw, Download } from "lucide-react";
+import { useCompanyHolidays } from "@/hooks/useCompanyHolidays";
+import { calculateWorkingDays } from "@/lib/utils/working-days";
 
 // Request type config for display - aligned with my-request page
 const REQUEST_TYPE_CONFIG: Record<string, { label: string; icon: string; color: string }> = {
@@ -88,6 +90,7 @@ interface HistoryRequest {
 export default function HistoryApprovalPage() {
     const { canAccessCommandCenter } = useAuth();
     const supabase = createClient();
+    const { holidayDates } = useCompanyHolidays();
 
     const [history, setHistory] = useState<HistoryRequest[]>([]);
     const [isLoading, setIsLoading] = useState(true);
@@ -230,6 +233,16 @@ export default function HistoryApprovalPage() {
     // Helper: Format date
     const formatDate = (dateStr: string) => {
         return new Date(dateStr).toLocaleDateString("id-ID", { day: "numeric", month: "short", year: "numeric" });
+    };
+
+    // Helper: Calculate days
+    const calculateDays = (start: string, end: string, leaveType: string) => {
+        if (leaveType === 'business_trip' || leaveType === 'overtime') {
+            const s = new Date(start);
+            const e = new Date(end);
+            return Math.ceil((e.getTime() - s.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+        }
+        return calculateWorkingDays(start, end, holidayDates);
     };
 
     // Leave types that can be downloaded as Excel
@@ -499,6 +512,9 @@ export default function HistoryApprovalPage() {
                                             <span>👤 {request.profile?.full_name}</span>
                                             <span className="opacity-60">• {request.profile?.job_type}</span>
                                             <span>📅 {formatDate(request.start_date)}{request.start_date !== request.end_date && ` - ${formatDate(request.end_date)}`}</span>
+                                            <span className="px-2 py-0.5 rounded-full bg-amber-500/10 text-amber-600 dark:text-amber-400 font-medium">
+                                                {calculateDays(request.start_date, request.end_date, request.leave_type)} hari
+                                            </span>
                                             {request.total_hours && <span>⏰ {request.total_hours} jam</span>}
                                         </div>
                                         <p className={`text-xs mt-2 ${request.status === "approved" ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"}`}>
