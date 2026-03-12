@@ -101,7 +101,9 @@ export default function PettyCashPage() {
         if (!profile) return false;
         return ['super_admin', 'ceo'].includes(profile.role) ||
             ['Office Manager', 'Head of Operations'].includes(profile.job_title || "") ||
-            profile.department === 'Finance';
+            profile.department === 'Finance' ||
+            profile.is_office_manager ||
+            profile.is_hr;
     }, [profile]);
 
     // --- FETCH DATA ---

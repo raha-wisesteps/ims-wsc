@@ -58,6 +58,14 @@ const STATUS_CONFIG: Record<string, { label: string; color: string }> = {
     disposed: { label: "Disposed", color: "bg-gray-500" },
 };
 
+// Statuses that can be manually selected (in_use is assignment-only)
+const MANUAL_STATUS_OPTIONS = [
+    { value: 'available', label: 'Available' },
+    { value: 'maintenance', label: 'Maintenance' },
+    { value: 'lost', label: 'Lost' },
+    { value: 'disposed', label: 'Disposed' },
+];
+
 // --- TYPES ---
 
 interface Asset {
@@ -113,7 +121,9 @@ export default function AssetDetailPage() {
     // Inline Editing State
     const [isEditingCondition, setIsEditingCondition] = useState(false);
     const [isEditingValues, setIsEditingValues] = useState(false);
+    const [isEditingStatus, setIsEditingStatus] = useState(false);
     const [tempCondition, setTempCondition] = useState("");
+    const [tempStatus, setTempStatus] = useState("");
     const [tempValues, setTempValues] = useState({ purchase_value: 0, existing_value: 0 });
 
     // Modals
@@ -370,6 +380,40 @@ export default function AssetDetailPage() {
         }
     };
 
+    const handleSaveStatus = async () => {
+        if (!profile || !tempStatus || !asset) return;
+
+        try {
+            const updatePayload: any = {
+                status: tempStatus,
+                updated_at: new Date().toISOString()
+            };
+
+            // If changing away from in_use, clear holder
+            if (asset.status === 'in_use' && tempStatus !== 'in_use') {
+                updatePayload.current_holder_id = null;
+            }
+
+            const { error: assetError } = await supabase
+                .from("operational_assets")
+                .update(updatePayload)
+                .eq("id", assetId);
+            if (assetError) throw assetError;
+
+            await supabase.from("operational_asset_logs").insert({
+                asset_id: assetId,
+                action_type: 'status_change',
+                actor_id: profile.id,
+                notes: `Status changed from ${asset.status} to ${tempStatus}`
+            });
+
+            setIsEditingStatus(false);
+            fetchAssetDetails();
+        } catch (error) {
+            console.error("Error updating status:", error);
+            alert("Failed to update status.");
+        }
+    };
 
     if (authLoading || isLoading) {
         return (
@@ -406,9 +450,51 @@ export default function AssetDetailPage() {
                         <div>
                             <h1 className="text-3xl font-bold text-[var(--text-primary)] flex items-center gap-3">
                                 {asset.name}
-                                <span className={`text-sm px-3 py-1 rounded-full font-bold text-white ${STATUS_CONFIG[asset.status]?.color}`}>
-                                    {STATUS_CONFIG[asset.status]?.label}
-                                </span>
+                                {isEditingStatus ? (
+                                    <div className="flex items-center gap-2">
+                                        <select
+                                            value={tempStatus}
+                                            onChange={(e) => setTempStatus(e.target.value)}
+                                            className="text-sm px-3 py-1 rounded-full border border-[var(--glass-border)] bg-[var(--glass-bg)] text-[var(--text-primary)] focus:outline-none focus:ring-2 focus:ring-[#e8c559]"
+                                        >
+                                            {MANUAL_STATUS_OPTIONS.map(opt => (
+                                                <option key={opt.value} value={opt.value}>{opt.label}</option>
+                                            ))}
+                                        </select>
+                                        <button
+                                            onClick={handleSaveStatus}
+                                            className="p-1 rounded-full bg-green-500/20 text-green-500 hover:bg-green-500/30 transition-colors"
+                                            title="Save"
+                                        >
+                                            <CheckCircle2 className="h-4 w-4" />
+                                        </button>
+                                        <button
+                                            onClick={() => setIsEditingStatus(false)}
+                                            className="p-1 rounded-full bg-red-500/20 text-red-500 hover:bg-red-500/30 transition-colors"
+                                            title="Cancel"
+                                        >
+                                            <X className="h-4 w-4" />
+                                        </button>
+                                    </div>
+                                ) : (
+                                    <div className="flex items-center gap-1">
+                                        <span className={`text-sm px-3 py-1 rounded-full font-bold text-white ${STATUS_CONFIG[asset.status]?.color}`}>
+                                            {STATUS_CONFIG[asset.status]?.label}
+                                        </span>
+                                        {canEdit && asset.status !== 'in_use' && (
+                                            <button
+                                                onClick={() => {
+                                                    setTempStatus(asset.status);
+                                                    setIsEditingStatus(true);
+                                                }}
+                                                className="p-1 text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"
+                                                title="Change Status"
+                                            >
+                                                <Edit3 className="h-3.5 w-3.5" />
+                                            </button>
+                                        )}
+                                    </div>
+                                )}
                             </h1>
                             <p className="font-mono text-[var(--text-secondary)] mt-1">{asset.code}</p>
                         </div>
@@ -675,6 +761,9 @@ export default function AssetDetailPage() {
                                             )}
                                             {log.action_type === 'update' && (
                                                 <span>Details updated by {log.actor?.full_name}</span>
+                                            )}
+                                            {log.action_type === 'status_change' && (
+                                                <span>Status changed by {log.actor?.full_name}</span>
                                             )}
                                         </div>
 

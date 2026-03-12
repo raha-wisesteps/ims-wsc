@@ -21,7 +21,8 @@ import {
     MessageSquare,
     BarChart3,
     Eye,
-    Lock
+    Lock,
+    ExternalLink
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -66,6 +67,13 @@ interface ProposalItem {
     proposal_reason: string | null;
 }
 
+interface SharingSessionItem {
+    id: string;
+    title: string;
+    session_date: string;
+    session_type: 'internal_training' | 'sharing_session';
+}
+
 
 
 export default function AssessmentPage() {
@@ -89,6 +97,15 @@ export default function AssessmentPage() {
     const [conversionRate, setConversionRate] = useState<{ rate: number; won: number; total: number }>({ rate: 0, won: 0, total: 0 });
     const [expandedSysRec, setExpandedSysRec] = useState<Record<string, boolean>>({});
     const [totalEligibleReviewers, setTotalEligibleReviewers] = useState<Record<string, number>>({});
+
+    // K2 & K3 Sharing Session / Internal Training state
+    const [k2Sessions, setK2Sessions] = useState<SharingSessionItem[]>([]);
+    const [k2Count, setK2Count] = useState(0);
+    const [k3Stats, setK3Stats] = useState<{ attended: number; total: number; percentage: number }>({ attended: 0, total: 0, percentage: 0 });
+    const [k3Sessions, setK3Sessions] = useState<SharingSessionItem[]>([]);
+
+    // K1 Blog Links state
+    const [k1BlogLinks, setK1BlogLinks] = useState<any[]>([]);
 
     // Modal states for frontend dialogs
     const [modalOpen, setModalOpen] = useState(false);
@@ -133,6 +150,12 @@ export default function AssessmentPage() {
                 if (existingKPI) {
                     setKpiScoreId(existingKPI.id);
                     setDocStatus(existingKPI.status || 'draft');
+
+                    // Load K1 blog links from sub aspect scores
+                    const k1SubAspect = existingKPI.kpi_sub_aspect_scores?.find((s: any) => s.sub_aspect_id === 'K1');
+                    if (k1SubAspect?.blog_links && Array.isArray(k1SubAspect.blog_links)) {
+                        setK1BlogLinks(k1SubAspect.blog_links);
+                    }
                 }
 
                 // 3. Fetch Attendance for Recommendation
@@ -231,6 +254,55 @@ export default function AssessmentPage() {
                         rate: total > 0 ? (won / total) * 100 : 0,
                         won,
                         total,
+                    });
+                }
+
+                // 7b. Fetch K2 Sharing Sessions (where user is speaker, type = sharing_session)
+                const { data: speakerSessions } = await supabase
+                    .from('sharing_sessions')
+                    .select('id, title, session_date, session_type')
+                    .eq('speaker_id', profileId)
+                    .eq('session_type', 'sharing_session')
+                    .gte('session_date', '2026-01-01')
+                    .order('session_date', { ascending: false });
+
+                if (speakerSessions) {
+                    setK2Sessions(speakerSessions);
+                    setK2Count(speakerSessions.length);
+                }
+
+                // 7c. Fetch K3 Internal Training Attendance
+                // Total internal trainings in the period
+                const { data: allInternalTrainings } = await supabase
+                    .from('sharing_sessions')
+                    .select('id, title, session_date, session_type')
+                    .eq('session_type', 'internal_training')
+                    .gte('session_date', '2026-01-01')
+                    .order('session_date', { ascending: false });
+
+                const totalTrainings = allInternalTrainings?.length || 0;
+
+                if (totalTrainings > 0) {
+                    // Check which ones the user attended
+                    const trainingIds = allInternalTrainings!.map((t: any) => t.id);
+                    const { data: participationData } = await supabase
+                        .from('sharing_session_participants')
+                        .select('session_id, participation_status')
+                        .eq('profile_id', profileId)
+                        .in('session_id', trainingIds)
+                        .eq('participation_status', 'full');
+
+                    const attendedCount = participationData?.length || 0;
+                    const attendedSessionIds = new Set(participationData?.map((p: any) => p.session_id) || []);
+
+                    setK3Sessions(allInternalTrainings!.map((t: any) => ({
+                        ...t,
+                        _attended: attendedSessionIds.has(t.id)
+                    })));
+                    setK3Stats({
+                        attended: attendedCount,
+                        total: totalTrainings,
+                        percentage: (attendedCount / totalTrainings) * 100
                     });
                 }
 
@@ -801,10 +873,102 @@ export default function AssessmentPage() {
                                                 </div>
                                             )}
 
-                                            {/* SPECIAL RENDER FOR B4 (ATTENDANCE) */}
-                                            {metric.id === 'B4' && (
+                                            {/* SYSTEM RECOMMENDATION FOR K2 (KNOWLEDGE SHARING) */}
+                                            {metric.id === 'K2' && (
                                                 <div className="mt-2 p-3 rounded-lg bg-blue-500/10 border border-blue-500/20">
                                                     <p className="text-[10px] text-blue-300 font-bold mb-1 flex items-center gap-1">
+                                                        <BarChart3 className="w-3 h-3" /> SYSTEM RECOMMENDATION (IMS Data)
+                                                    </p>
+                                                    <div className="flex justify-between items-end mb-1">
+                                                        <span className="text-xs text-gray-300">Sharing Sessions Diadakan:</span>
+                                                        <span className="text-sm font-bold text-white">
+                                                            {k2Count} sesi
+                                                            <span className="text-xs font-normal text-gray-400 ml-1">
+                                                                (per 6 bulan)
+                                                            </span>
+                                                        </span>
+                                                    </div>
+                                                    <div className="h-1.5 w-full bg-black/40 rounded-full overflow-hidden mb-1">
+                                                        <div className="h-full bg-blue-500 transition-all" style={{ width: `${Math.min(100, (k2Count / 4) * 100)}%` }} />
+                                                    </div>
+                                                    <p className="text-[9px] text-gray-500 mb-2">
+                                                        → Score: {k2Count >= 4 ? '5' : k2Count >= 3 ? '4' : k2Count >= 2 ? '3' : k2Count >= 1 ? '2' : '1'}
+                                                        {' '}({k2Count >= 4 ? 'Sangat aktif' : k2Count >= 3 ? 'Aktif' : k2Count >= 2 ? 'Cukup' : k2Count >= 1 ? 'Minimal' : 'Tidak ada'})
+                                                    </p>
+
+                                                    <button
+                                                        onClick={() => setExpandedSysRec(p => ({ ...p, K2: !p.K2 }))}
+                                                        className="flex items-center gap-1 text-[10px] text-blue-400 hover:text-blue-300"
+                                                    >
+                                                        {expandedSysRec.K2 ? <ChevronUp className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
+                                                        {expandedSysRec.K2 ? 'Hide Detail' : 'View Detail'}
+                                                    </button>
+
+                                                    {expandedSysRec.K2 && k2Sessions.length > 0 && (
+                                                        <div className="mt-2 space-y-1 max-h-40 overflow-y-auto animate-in fade-in slide-in-from-top-2 duration-200">
+                                                            {k2Sessions.map(s => (
+                                                                <div key={s.id} className="flex items-center gap-2 text-[10px] p-1.5 rounded bg-black/20">
+                                                                    <span className="text-blue-400">📢</span>
+                                                                    <span className="text-gray-300 flex-1 truncate">{s.title}</span>
+                                                                    <span className="text-gray-500 text-[9px] shrink-0">{new Date(s.session_date).toLocaleDateString('id-ID', { day: 'numeric', month: 'short' })}</span>
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            )}
+
+                                            {/* SYSTEM RECOMMENDATION FOR K3 (INTERNAL TRAINING ATTENDANCE) */}
+                                            {metric.id === 'K3' && (
+                                                <div className="mt-2 p-3 rounded-lg bg-blue-500/10 border border-blue-500/20">
+                                                    <p className="text-[10px] text-blue-300 font-bold mb-1 flex items-center gap-1">
+                                                        <BarChart3 className="w-3 h-3" /> SYSTEM RECOMMENDATION (IMS Data)
+                                                    </p>
+                                                    <div className="flex justify-between items-end mb-1">
+                                                        <span className="text-xs text-gray-300">Kehadiran Training:</span>
+                                                        <span className="text-sm font-bold text-white">
+                                                            {k3Stats.percentage.toFixed(0)}%
+                                                            <span className="text-xs font-normal text-gray-400 ml-1">
+                                                                ({k3Stats.attended}/{k3Stats.total} sesi)
+                                                            </span>
+                                                        </span>
+                                                    </div>
+                                                    <div className="h-1.5 w-full bg-black/40 rounded-full overflow-hidden mb-1">
+                                                        <div className="h-full bg-blue-500 transition-all" style={{ width: `${Math.min(100, k3Stats.percentage)}%` }} />
+                                                    </div>
+                                                    <p className="text-[9px] text-gray-500 mb-2">
+                                                        → Score: {k3Stats.percentage > 80 ? '5' : k3Stats.percentage > 60 ? '4' : k3Stats.percentage > 40 ? '3' : k3Stats.percentage > 20 ? '2' : '1'}
+                                                        {' '}({k3Stats.percentage > 80 ? 'Sangat disiplin' : k3Stats.percentage > 60 ? 'Disiplin' : k3Stats.percentage > 40 ? 'Cukup' : k3Stats.percentage > 20 ? 'Kurang' : 'Sangat kurang'})
+                                                    </p>
+
+                                                    <button
+                                                        onClick={() => setExpandedSysRec(p => ({ ...p, K3: !p.K3 }))}
+                                                        className="flex items-center gap-1 text-[10px] text-blue-400 hover:text-blue-300"
+                                                    >
+                                                        {expandedSysRec.K3 ? <ChevronUp className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
+                                                        {expandedSysRec.K3 ? 'Hide Detail' : 'View Detail'}
+                                                    </button>
+
+                                                    {expandedSysRec.K3 && k3Sessions.length > 0 && (
+                                                        <div className="mt-2 space-y-1 max-h-40 overflow-y-auto animate-in fade-in slide-in-from-top-2 duration-200">
+                                                            {k3Sessions.map((s: any) => (
+                                                                <div key={s.id} className="flex items-center gap-2 text-[10px] p-1.5 rounded bg-black/20">
+                                                                    <span className={`w-4 text-center ${s._attended ? 'text-emerald-400' : 'text-gray-500'}`}>
+                                                                        {s._attended ? '✅' : '❌'}
+                                                                    </span>
+                                                                    <span className="text-gray-300 flex-1 truncate">{s.title}</span>
+                                                                    <span className="text-gray-500 text-[9px] shrink-0">{new Date(s.session_date).toLocaleDateString('id-ID', { day: 'numeric', month: 'short' })}</span>
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            )}
+
+                                            {/* SPECIAL RENDER FOR B4 (ATTENDANCE) */}
+                                            {metric.id === 'B4' && (
+                                                <div className="mt-2 p-3 rounded-lg bg-purple-500/10 border border-purple-500/20">
+                                                    <p className="text-[10px] text-purple-300 font-bold mb-1 flex items-center gap-1">
                                                         <Info className="w-3 h-3" /> SYSTEM RECOMMENDATION
                                                     </p>
                                                     <div className="flex justify-between items-end mb-1">
@@ -819,17 +983,49 @@ export default function AssessmentPage() {
                                                     <p className="text-[9px] text-gray-500 mb-1">Formula: Hari Terlambat / Total Kehadiran × 100%</p>
                                                     <div className="h-1.5 w-full bg-black/40 rounded-full overflow-hidden mb-2">
                                                         <div
-                                                            className="h-full bg-blue-500 transition-all"
+                                                            className="h-full bg-purple-500 transition-all"
                                                             style={{ width: `${Math.max(0, 100 - (attendancePercent * 5))}%` }}
                                                         ></div>
                                                     </div>
                                                     <Link
                                                         href={`/dashboard/attendance?id=${staff.id}`}
                                                         target="_blank"
-                                                        className="text-[10px] text-blue-400 hover:text-blue-300 underline block text-right"
+                                                        className="text-[10px] text-purple-400 hover:text-purple-300 underline block text-right"
                                                     >
                                                         Check Attendance Log &gt;
                                                     </Link>
+                                                </div>
+                                            )}
+
+                                            {/* K1 BLOG/NEWS LINKS (read-only for CEO) */}
+                                            {metric.id === 'K1' && k1BlogLinks.length > 0 && (
+                                                <div className="mt-2 p-3 rounded-lg bg-blue-500/10 border border-blue-500/20">
+                                                    <p className="text-[10px] text-blue-300 font-bold mb-2 flex items-center gap-1">
+                                                        <ExternalLink className="w-3 h-3" /> EMPLOYEE BLOG/NEWS LINKS
+                                                    </p>
+                                                    <div className="space-y-1.5 overflow-hidden">
+                                                        {k1BlogLinks.map((link, idx) => {
+                                                            const url = typeof link === 'string' ? link : (link.url || '');
+                                                            const title = typeof link === 'string' ? link : (link.title || link.url || '');
+                                                            return (
+                                                                <div key={idx} className="flex items-center gap-2 text-[10px] p-1.5 rounded bg-black/20">
+                                                                    <span className="text-blue-400 shrink-0">📝</span>
+                                                                    <a
+                                                                        href={url}
+                                                                        target="_blank"
+                                                                        rel="noopener noreferrer"
+                                                                        className="text-blue-400 hover:text-blue-300 underline flex-1 truncate"
+                                                                    >
+                                                                        {title}
+                                                                    </a>
+                                                                    <ExternalLink className="w-3 h-3 text-gray-500 shrink-0" />
+                                                                </div>
+                                                            );
+                                                        })}
+                                                    </div>
+                                                    <p className="text-[9px] text-gray-500 mt-2">
+                                                        {k1BlogLinks.length} artikel disubmit oleh karyawan
+                                                    </p>
                                                 </div>
                                             )}
                                         </div>

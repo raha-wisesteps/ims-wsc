@@ -97,7 +97,8 @@ export default function MaintenancePage() {
     // Access Control
     const canManage = useMemo(() => {
         if (!profile) return false;
-        return ['super_admin', 'ceo', 'office_manager', 'hr_admin'].includes(profile.role) ||
+        return ['super_admin', 'ceo', 'hr'].includes(profile.role) ||
+            profile.is_office_manager === true ||
             ['Office Manager', 'Head of Operations'].includes(profile.job_title || "") ||
             profile.department === 'Finance';
     }, [profile]);

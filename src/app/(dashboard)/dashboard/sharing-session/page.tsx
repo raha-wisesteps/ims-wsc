@@ -13,7 +13,7 @@ interface Participant {
     id: string; // sharing_session_participants.id
     profile_id: string;
     name: string;
-    participation_status: 'full' | 'half' | 'none';
+    participation_status: 'full' | 'none';
 }
 
 interface SharingSession {
@@ -27,6 +27,7 @@ interface SharingSession {
     speaker_id: string | null;
     speaker_name?: string;
     created_by: string;
+    session_type: 'internal_training' | 'sharing_session';
     participants: Participant[];
 }
 
@@ -225,18 +226,7 @@ export default function SharingSessionPage() {
                 </div>
 
                 {/* View Controls & Fast Links */}
-                <div className="flex justify-between items-center border-t pt-4">
-                    <div className="flex items-center">
-                        <a
-                            href="https://meet.google.com/icq-krif-vug?pli=1"
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="flex items-center gap-2 px-4 py-2 rounded-lg bg-[#e8c559] hover:bg-[#d4b44e] transition-colors text-sm font-bold text-[#171611] shadow-sm"
-                        >
-                            <span>Join Sharing session</span>
-                        </a>
-                    </div>
-
+                <div className="flex justify-end items-center border-t pt-4">
                     <div className="flex items-center gap-4">
                         <div className="flex bg-secondary/30 p-1 rounded-lg border border-white/5">
                             <button
@@ -291,7 +281,7 @@ export default function SharingSessionPage() {
                                         <th className="px-6 py-4">When</th>
                                         <th className="px-6 py-4">Speaker</th>
                                         <th className="px-6 py-4 text-center">Participants</th>
-                                        <th className="px-6 py-4">Recording</th>
+                                        <th className="px-6 py-4">Meeting/Recording</th>
                                         <th className="px-6 py-4 text-right">Actions</th>
                                     </tr>
                                 </thead>
@@ -335,9 +325,11 @@ function SessionCard({ session, onManage, canManage, onDelete, canDelete }: { se
     const isPast = sessionDateTime < new Date();
 
     // Check participant counts
-    const fullCount = session.participants.filter(p => p.participation_status === 'full').length;
-    const halfCount = session.participants.filter(p => p.participation_status === 'half').length;
+    const joinCount = session.participants.filter(p => p.participation_status === 'full').length;
     const totalParticipants = session.participants.length;
+
+    // Session type badge
+    const isInternalTraining = session.session_type === 'internal_training';
 
     return (
         <Card className={`relative overflow-hidden transition-all duration-300 hover:shadow-lg border hover:border-amber-500/50 ${isPast ? 'opacity-80' : ''}`}>
@@ -347,9 +339,12 @@ function SessionCard({ session, onManage, canManage, onDelete, canDelete }: { se
                         <CardTitle className="text-base font-bold truncate text-[var(--text-primary)]" title={session.title}>
                             {session.title}
                         </CardTitle>
-                        <div className="flex items-center gap-2 mt-1">
+                        <div className="flex items-center gap-2 mt-1 flex-wrap">
                             <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${isPast ? 'bg-secondary text-muted-foreground' : 'bg-emerald-500/10 text-emerald-500 border border-emerald-500/20'}`}>
                                 {isPast ? 'Selesai' : 'Akan Datang'}
+                            </span>
+                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${isInternalTraining ? 'bg-violet-500/10 text-violet-500 border border-violet-500/20' : 'bg-amber-500/10 text-amber-500 border border-amber-500/20'}`}>
+                                {isInternalTraining ? 'Internal Training' : 'Sharing Session'}
                             </span>
                         </div>
                     </div>
@@ -382,7 +377,7 @@ function SessionCard({ session, onManage, canManage, onDelete, canDelete }: { se
                     {/* Participants Summary */}
                     <div className="flex items-center gap-2 text-[var(--text-muted)]">
                         <Users className="h-4 w-4 shrink-0 text-indigo-400" />
-                        <span className="font-medium text-[var(--text-primary)]">{fullCount} Full / {halfCount} Half</span>
+                        <span className="font-medium text-[var(--text-primary)]">{joinCount} Join</span>
                     </div>
 
                     {/* DateTime */}
@@ -416,7 +411,7 @@ function SessionCard({ session, onManage, canManage, onDelete, canDelete }: { se
                             rel="noopener noreferrer"
                             className="flex items-center justify-between gap-2 p-2 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/20 text-emerald-600 dark:text-emerald-400 text-xs font-bold transition-colors group"
                         >
-                            <span className="truncate flex-1 text-center">Lihat Rekaman</span>
+                            <span className="truncate flex-1 text-center">Link Meeting/Recording</span>
                             <ExternalLink className="w-3 h-3 group-hover:-translate-y-0.5 group-hover:translate-x-0.5 transition-transform" />
                         </a>
                     )}
@@ -430,8 +425,10 @@ function SessionRow({ session, onManage, canManage, onDelete, canDelete }: { ses
     const sessionDateTime = new Date(`${session.session_date}T${session.session_time}`);
     const isPast = sessionDateTime < new Date();
 
-    const fullCount = session.participants.filter(p => p.participation_status === 'full').length;
-    const halfCount = session.participants.filter(p => p.participation_status === 'half').length;
+    const joinCount = session.participants.filter(p => p.participation_status === 'full').length;
+
+    // Session type badge
+    const isInternalTraining = session.session_type === 'internal_training';
 
     return (
         <tr className={`hover:bg-white/5 transition-colors ${isPast ? 'opacity-80' : ''}`}>
@@ -445,9 +442,14 @@ function SessionRow({ session, onManage, canManage, onDelete, canDelete }: { ses
                             </span>
                         )}
                     </p>
-                    <span className={`inline-block mt-0.5 text-[9px] font-bold px-1.5 py-0.5 rounded-sm ${isPast ? 'bg-secondary text-muted-foreground' : 'bg-emerald-500/10 text-emerald-500'}`}>
-                        {isPast ? 'Selesai' : 'Akan Datang'}
-                    </span>
+                    <div className="flex items-center gap-1.5 mt-0.5">
+                        <span className={`inline-block text-[9px] font-bold px-1.5 py-0.5 rounded-sm ${isPast ? 'bg-secondary text-muted-foreground' : 'bg-emerald-500/10 text-emerald-500'}`}>
+                            {isPast ? 'Selesai' : 'Akan Datang'}
+                        </span>
+                        <span className={`inline-block text-[9px] font-bold px-1.5 py-0.5 rounded-sm ${isInternalTraining ? 'bg-violet-500/10 text-violet-500' : 'bg-amber-500/10 text-amber-500'}`}>
+                            {isInternalTraining ? 'Internal Training' : 'Sharing Session'}
+                        </span>
+                    </div>
                 </div>
             </td>
             <td className="px-6 py-4">
@@ -463,8 +465,7 @@ function SessionRow({ session, onManage, canManage, onDelete, canDelete }: { ses
             </td>
             <td className="px-6 py-4 text-center">
                 <div className="flex justify-center gap-3 text-xs font-medium">
-                    <span title="Full Participation" className="flex items-center gap-1 text-emerald-500"><div className="w-2 h-2 rounded-full bg-emerald-500" /> {fullCount}</span>
-                    <span title="Half Participation" className="flex items-center gap-1 text-amber-500"><div className="w-2 h-2 rounded-full bg-amber-500" /> {halfCount}</span>
+                    <span title="Join Participation" className="flex items-center gap-1 text-emerald-500"><div className="w-2 h-2 rounded-full bg-emerald-500" /> {joinCount}</span>
                 </div>
             </td>
             <td className="px-6 py-4">

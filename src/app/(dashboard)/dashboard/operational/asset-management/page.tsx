@@ -84,6 +84,12 @@ export default function AssetManagementPage() {
     const supabase = createClient();
     const { profile, isLoading: authLoading } = useAuth(); // Assuming profile has necessary role info
 
+    // Access Control
+    const canManage = profile && (
+        ['ceo', 'super_admin', 'hr'].includes(profile.role) ||
+        profile.is_office_manager
+    );
+
     // State
     const [assets, setAssets] = useState<Asset[]>([]);
     const [employees, setEmployees] = useState<Employee[]>([]);
@@ -305,6 +311,7 @@ export default function AssetManagementPage() {
                         <FileDown className="h-4 w-4" />
                         <span className="hidden sm:inline">Export</span>
                     </button>
+                    {canManage && (
                     <button
                         onClick={() => setShowAddModal(true)}
                         className="flex items-center gap-2 px-4 py-2 rounded-xl bg-[#e8c559] text-[#171611] font-bold hover:bg-[#d4b44e] transition-colors shadow-lg shadow-amber-500/20"
@@ -312,6 +319,7 @@ export default function AssetManagementPage() {
                         <Plus className="h-4 w-4" />
                         Add Asset
                     </button>
+                    )}
                 </div>
             </div>
 

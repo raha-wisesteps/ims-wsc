@@ -14,7 +14,7 @@ interface Participant {
     id: string;
     profile_id: string;
     name: string;
-    participation_status: 'full' | 'half' | 'none';
+    participation_status: 'full' | 'none';
 }
 
 interface SharingSession {
@@ -28,6 +28,7 @@ interface SharingSession {
     speaker_id: string | null;
     speaker_name?: string;
     created_by: string;
+    session_type: 'internal_training' | 'sharing_session';
     participants: Participant[];
 }
 
@@ -67,9 +68,10 @@ export default function SharingSessionModal({
     const [speakerNotes, setSpeakerNotes] = useState("");
     const [recordingLink, setRecordingLink] = useState("");
     const [speakerId, setSpeakerId] = useState<string>("");
+    const [sessionType, setSessionType] = useState<'internal_training' | 'sharing_session'>('sharing_session');
 
     // Participant State - Array of { profile_id, status }
-    const [participantStatuses, setParticipantStatuses] = useState<Record<string, 'full' | 'half' | 'none'>>({});
+    const [participantStatuses, setParticipantStatuses] = useState<Record<string, 'full' | 'none'>>({});
 
     const [isSaving, setIsSaving] = useState(false);
     const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -101,9 +103,10 @@ export default function SharingSessionModal({
                 setSpeakerNotes(sessionToEdit.speaker_notes || "");
                 setRecordingLink(sessionToEdit.recording_link || "");
                 setSpeakerId(sessionToEdit.speaker_id || "");
+                setSessionType(sessionToEdit.session_type || 'sharing_session');
 
                 // Initialize participant statuses
-                const initialStatuses: Record<string, 'full' | 'half' | 'none'> = {};
+                const initialStatuses: Record<string, 'full' | 'none'> = {};
 
                 // Set default 'none' for all eligible participants
                 participantOptions.forEach(p => {
@@ -112,7 +115,7 @@ export default function SharingSessionModal({
 
                 // Override with actual data
                 sessionToEdit.participants.forEach(p => {
-                    initialStatuses[p.profile_id] = p.participation_status;
+                    initialStatuses[p.profile_id] = p.participation_status as 'full' | 'none';
                 });
 
                 setParticipantStatuses(initialStatuses);
@@ -129,12 +132,13 @@ export default function SharingSessionModal({
                 setSessionEndTime(`${nextTwoHour}:00`);
                 setSpeakerNotes("");
                 setRecordingLink("");
+                setSessionType('sharing_session');
 
                 // Default speaker depends on role
                 setSpeakerId(isAdmin ? "" : currentUser.id);
 
                 // Initialize participants to 'none'
-                const initialStatuses: Record<string, 'full' | 'half' | 'none'> = {};
+                const initialStatuses: Record<string, 'full' | 'none'> = {};
                 participantOptions.forEach(p => {
                     initialStatuses[p.id] = 'none';
                 });
@@ -193,7 +197,7 @@ export default function SharingSessionModal({
         );
     };
 
-    const handleParticipantChange = (profileId: string, status: 'full' | 'half' | 'none') => {
+    const handleParticipantChange = (profileId: string, status: 'full' | 'none') => {
         if (!canEdit) return;
         setParticipantStatuses(prev => ({
             ...prev,
@@ -237,6 +241,7 @@ export default function SharingSessionModal({
                         speaker_notes: speakerNotes.trim() || null,
                         recording_link: recordingLink.trim() || null,
                         speaker_id: speakerId || null,
+                        session_type: sessionType,
                     })
                     .eq('id', sessionId);
 
@@ -254,6 +259,7 @@ export default function SharingSessionModal({
                         speaker_notes: speakerNotes.trim() || null,
                         recording_link: recordingLink.trim() || null,
                         speaker_id: speakerId || null,
+                        session_type: sessionType,
                         created_by: currentUser.id
                     })
                     .select('id')
@@ -305,8 +311,7 @@ export default function SharingSessionModal({
 
 
     // Calculate totals for UI
-    const totalFull = Object.values(participantStatuses).filter(s => s === 'full').length;
-    const totalHalf = Object.values(participantStatuses).filter(s => s === 'half').length;
+    const totalJoin = Object.values(participantStatuses).filter(s => s === 'full').length;
 
     return (
         <Dialog open={isOpen} onOpenChange={(open: boolean) => !open && onClose()}>
@@ -343,6 +348,29 @@ export default function SharingSessionModal({
                                         className="bg-background"
                                         required
                                     />
+                                </div>
+
+                                {/* Session Type */}
+                                <div className="space-y-2">
+                                    <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Jenis Sesi *</Label>
+                                    <div className="flex bg-secondary/30 rounded-lg border border-border p-1 overflow-hidden">
+                                        <button
+                                            type="button"
+                                            disabled={!canEdit || isSaving}
+                                            onClick={() => setSessionType('internal_training')}
+                                            className={`flex-1 px-3 py-2 text-xs rounded-md font-medium transition-colors ${sessionType === 'internal_training' ? 'bg-violet-500 text-white shadow-sm' : 'text-muted-foreground hover:bg-muted/50'} ${(!canEdit || isSaving) && 'cursor-not-allowed opacity-70'}`}
+                                        >
+                                            Internal Training
+                                        </button>
+                                        <button
+                                            type="button"
+                                            disabled={!canEdit || isSaving}
+                                            onClick={() => setSessionType('sharing_session')}
+                                            className={`flex-1 px-3 py-2 text-xs rounded-md font-medium transition-colors ${sessionType === 'sharing_session' ? 'bg-amber-500 text-black shadow-sm' : 'text-muted-foreground hover:bg-muted/50'} ${(!canEdit || isSaving) && 'cursor-not-allowed opacity-70'}`}
+                                        >
+                                            Sharing Session
+                                        </button>
+                                    </div>
                                 </div>
 
                                 <div className="grid grid-cols-3 gap-4">
@@ -390,7 +418,7 @@ export default function SharingSessionModal({
                                 </div>
 
                                 <div className="space-y-2">
-                                    <Label htmlFor="link" className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Link Rekaman (Opsional)</Label>
+                                    <Label htmlFor="link" className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Link Meeting/Recording</Label>
                                     <Input
                                         id="link"
                                         type="url"
@@ -420,8 +448,7 @@ export default function SharingSessionModal({
                                 <div className="flex justify-between items-center mb-1">
                                     <Label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Partisipasi Staff</Label>
                                     <div className="text-[10px] space-x-2 font-bold bg-secondary/30 px-2 py-1 rounded">
-                                        <span className="text-emerald-500">{totalFull} Full</span>
-                                        <span className="text-amber-500">{totalHalf} Half</span>
+                                        <span className="text-emerald-500">{totalJoin} Join</span>
                                     </div>
                                 </div>
 
@@ -450,18 +477,10 @@ export default function SharingSessionModal({
                                                             <button
                                                                 type="button"
                                                                 disabled={!canEdit}
-                                                                onClick={() => handleParticipantChange(p.id, 'half')}
-                                                                className={`px-2 py-0.5 text-[10px] rounded-full font-medium transition-colors ${currentStatus === 'half' ? 'bg-amber-500 text-black shadow-sm' : 'text-muted-foreground hover:bg-muted/50'} ${!canEdit && 'cursor-not-allowed opacity-70'}`}
-                                                            >
-                                                                Half
-                                                            </button>
-                                                            <button
-                                                                type="button"
-                                                                disabled={!canEdit}
                                                                 onClick={() => handleParticipantChange(p.id, 'full')}
                                                                 className={`px-2 py-0.5 text-[10px] rounded-full font-medium transition-colors ${currentStatus === 'full' ? 'bg-emerald-500 text-black shadow-sm' : 'text-muted-foreground hover:bg-muted/50'} ${!canEdit && 'cursor-not-allowed opacity-70'}`}
                                                             >
-                                                                Full
+                                                                Join
                                                             </button>
                                                         </div>
                                                     </div>

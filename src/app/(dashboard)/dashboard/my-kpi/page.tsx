@@ -25,6 +25,9 @@ import {
     Eye,
     Check,
     X,
+    LinkIcon,
+    ExternalLink,
+    Plus,
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { createClient } from "@/lib/supabase/client";
@@ -65,6 +68,10 @@ export default function MyKPIPage() {
     const [localNotes, setLocalNotes] = useState<Record<string, string>>({});
     const [savingNoteId, setSavingNoteId] = useState<string | null>(null);
 
+    // Blog links tracking for K1
+    const [blogLinks, setBlogLinks] = useState<string[]>([]);
+    const [newBlogLink, setNewBlogLink] = useState('');
+
     // Peer review + conversion rate state
     const [peerAggregates, setPeerAggregates] = useState<PeerReviewAgg[]>([]);
     const [proposals, setProposals] = useState<ProposalItem[]>([]);
@@ -72,6 +79,12 @@ export default function MyKPIPage() {
     const [attendanceStats, setAttendanceStats] = useState({ latePercentage: 0, lateDays: 0, totalDays: 0 });
     const [expandedPeerFeedback, setExpandedPeerFeedback] = useState<Record<string, boolean>>({});
     const [expandedSysRec, setExpandedSysRec] = useState<Record<string, boolean>>({});
+
+    // K2 & K3 Sharing Session / Internal Training state
+    const [k2Count, setK2Count] = useState(0);
+    const [k2Sessions, setK2Sessions] = useState<{ id: string; title: string; session_date: string }[]>([]);
+    const [k3Stats, setK3Stats] = useState<{ attended: number; total: number; percentage: number }>({ attended: 0, total: 0, percentage: 0 });
+    const [k3Sessions, setK3Sessions] = useState<any[]>([]);
 
     const toggleCriteria = (id: string) => {
         setExpandedCriteria(prev => ({ ...prev, [id]: !prev[id] }));
@@ -81,6 +94,42 @@ export default function MyKPIPage() {
         setLocalNotes(prev => ({ ...prev, [subAspectId]: note }));
     };
 
+    const addBlogLink = async () => {
+        const url = newBlogLink.trim();
+        if (!url) return;
+        if (blogLinks.includes(url)) { setNewBlogLink(''); return; }
+        const newLinks = [...blogLinks, url];
+        setBlogLinks(newLinks);
+        setNewBlogLink('');
+        await saveBlogLinksToDB(newLinks);
+    };
+
+    const removeBlogLink = async (url: string) => {
+        const newLinks = blogLinks.filter(l => l !== url);
+        setBlogLinks(newLinks);
+        await saveBlogLinksToDB(newLinks);
+    };
+
+    const saveBlogLinksToDB = async (links: string[]) => {
+        if (!kpiData || !profile) return;
+        setSavingNoteId('K1_blog');
+        try {
+            const { error } = await supabase
+                .from('kpi_sub_aspect_scores')
+                .upsert({
+                    kpi_score_id: kpiData.id,
+                    sub_aspect_id: 'K1',
+                    blog_links: links
+                }, { onConflict: 'kpi_score_id,sub_aspect_id' });
+            if (error) throw error;
+        } catch (err: any) {
+            console.error("Error saving blog links:", err);
+            alert("Failed to save blog links: " + err.message);
+        } finally {
+            setSavingNoteId(null);
+        }
+    };
+
     const saveSingleNote = async (subAspectId: string) => {
         if (!kpiData || !profile) return;
         const noteToSave = localNotes[subAspectId];
@@ -88,13 +137,18 @@ export default function MyKPIPage() {
 
         setSavingNoteId(subAspectId);
         try {
+            const upsertData: any = {
+                kpi_score_id: kpiData.id,
+                sub_aspect_id: subAspectId,
+                employee_note: noteToSave
+            };
+            // Also persist blog links when saving K1 note
+            if (subAspectId === 'K1') {
+                upsertData.blog_links = blogLinks;
+            }
             const { error } = await supabase
                 .from('kpi_sub_aspect_scores')
-                .upsert({
-                    kpi_score_id: kpiData.id,
-                    sub_aspect_id: subAspectId,
-                    employee_note: noteToSave
-                }, { onConflict: 'kpi_score_id,sub_aspect_id' });
+                .upsert(upsertData, { onConflict: 'kpi_score_id,sub_aspect_id' });
 
             if (error) throw error;
 
@@ -155,6 +209,12 @@ export default function MyKPIPage() {
                 }
 
                 setKpiData(data);
+
+                // Initialize blog links from K1 score data
+                const k1Score = data?.kpi_sub_aspect_scores?.find((s: any) => s.sub_aspect_id === 'K1');
+                if (k1Score?.blog_links && Array.isArray(k1Score.blog_links)) {
+                    setBlogLinks(k1Score.blog_links);
+                }
 
                 // Fetch peer review aggregates for this user
                 const { data: aggData } = await supabase
@@ -242,6 +302,49 @@ export default function MyKPIPage() {
                     });
                 }
 
+                // Fetch K2: Sharing Sessions where user is speaker
+                const { data: speakerSessions } = await supabase
+                    .from('sharing_sessions')
+                    .select('id, title, session_date, session_type')
+                    .eq('speaker_id', profile.id)
+                    .eq('session_type', 'sharing_session')
+                    .gte('session_date', '2026-01-01')
+                    .order('session_date', { ascending: false });
+
+                if (speakerSessions) {
+                    setK2Sessions(speakerSessions);
+                    setK2Count(speakerSessions.length);
+                }
+
+                // Fetch K3: Internal Training attendance
+                const { data: allTrainings } = await supabase
+                    .from('sharing_sessions')
+                    .select('id, title, session_date, session_type')
+                    .eq('session_type', 'internal_training')
+                    .gte('session_date', '2026-01-01')
+                    .order('session_date', { ascending: false });
+
+                const totalTrainings = allTrainings?.length || 0;
+                if (totalTrainings > 0) {
+                    const trainingIds = allTrainings!.map((t: any) => t.id);
+                    const { data: participationData } = await supabase
+                        .from('sharing_session_participants')
+                        .select('session_id, participation_status')
+                        .eq('profile_id', profile.id)
+                        .in('session_id', trainingIds)
+                        .eq('participation_status', 'full');
+
+                    const attendedCount = participationData?.length || 0;
+                    const attendedIds = new Set(participationData?.map((p: any) => p.session_id) || []);
+
+                    setK3Sessions(allTrainings!.map((t: any) => ({ ...t, _attended: attendedIds.has(t.id) })));
+                    setK3Stats({
+                        attended: attendedCount,
+                        total: totalTrainings,
+                        percentage: (attendedCount / totalTrainings) * 100
+                    });
+                }
+
             } catch (err) {
                 console.error("KPI fetch error:", err);
             } finally {
@@ -299,7 +402,7 @@ export default function MyKPIPage() {
     // kpiData.kpi_sub_aspect_scores is an array of { sub_aspect_id, score, note }
     const getScoreForMetric = (metricId: string) => {
         const scoreRec = kpiData.kpi_sub_aspect_scores?.find((s: any) => s.sub_aspect_id === metricId);
-        return scoreRec || { score: 0, note: '-', employee_note: '' };
+        return scoreRec || { score: 0, note: '-', employee_note: '', blog_links: [] };
     };
 
     const pillars = [
@@ -312,8 +415,8 @@ export default function MyKPIPage() {
         // Filter metrics that have weight > 0 (already done in getGroupedMetrics, but safe to verify)
         // And merge scores
         const metricsWithScores = p.metrics.map(m => {
-            const { score, note, employee_note } = getScoreForMetric(m.id);
-            return { ...m, score, note, employee_note };
+            const { score, note, employee_note, blog_links: savedBlogLinks } = getScoreForMetric(m.id);
+            return { ...m, score, note, employee_note, blog_links: savedBlogLinks || [] };
         });
 
         // Calculate Pillar Average Score (if needed for display)
@@ -491,14 +594,14 @@ export default function MyKPIPage() {
 
                                                     {metric.id === 'B4' && (
                                                         <div className="mt-2 space-y-2">
-                                                            <span className="inline-flex items-center gap-1 text-[10px] text-blue-500 dark:text-blue-400 mt-1">
+                                                            <span className="inline-flex items-center gap-1 text-[10px] text-purple-500 dark:text-purple-400 mt-1">
                                                                 <Info className="w-3 h-3" /> System Calculated
                                                             </span>
                                                             {attendanceStats.totalDays > 0 && (
-                                                                <div className="p-2.5 rounded-lg bg-sky-500/10 border border-sky-500/20">
+                                                                <div className="p-2.5 rounded-lg bg-purple-500/10 border border-purple-500/20">
                                                                     <div className="flex items-center gap-1.5 mb-1">
-                                                                        <Clock className="w-3 h-3 text-sky-400" />
-                                                                        <span className="text-[10px] font-bold text-sky-400">Kehadiran (YTD)</span>
+                                                                        <Clock className="w-3 h-3 text-purple-400" />
+                                                                        <span className="text-[10px] font-bold text-purple-400">Kehadiran (YTD)</span>
                                                                     </div>
                                                                     <p className="text-[10px] text-gray-300">
                                                                         Lateness Rate: <span className="text-white font-bold">{attendanceStats.latePercentage.toFixed(1)}%</span>
@@ -562,6 +665,65 @@ export default function MyKPIPage() {
                                                         );
                                                     })()}
 
+                                                    {/* K1 Blog Links Badge */}
+                                                    {metric.id === 'K1' && (
+                                                        <div className="mt-2 p-2.5 rounded-lg bg-blue-500/10 border border-blue-500/20">
+                                                            <div className="flex items-center gap-1.5 mb-1">
+                                                                <LinkIcon className="w-3 h-3 text-blue-400" />
+                                                                <span className="text-[10px] font-bold text-blue-400">Blog/News Links</span>
+                                                                {blogLinks.length > 0 && (
+                                                                    <span className="text-[9px] text-gray-500 ml-auto">{blogLinks.length} artikel terlampir</span>
+                                                                )}
+                                                            </div>
+
+                                                            {/* Existing links */}
+                                                            {blogLinks.length > 0 && (
+                                                                <div className="space-y-1 mb-2 max-h-32 overflow-y-auto">
+                                                                    {blogLinks.map((link, i) => (
+                                                                        <div key={i} className="flex items-center gap-2 text-[10px] p-1.5 rounded bg-black/20 border border-white/5 group">
+                                                                            <ExternalLink className="w-3 h-3 text-blue-400 shrink-0" />
+                                                                            <a href={link} target="_blank" rel="noopener noreferrer" className="text-blue-300 hover:text-blue-200 truncate flex-1" title={link}>
+                                                                                {link}
+                                                                            </a>
+                                                                            {kpiData.status !== 'final' && (
+                                                                                <button onClick={() => removeBlogLink(link)} className="text-gray-600 hover:text-rose-400 transition-colors shrink-0 opacity-0 group-hover:opacity-100">
+                                                                                    <X className="w-3 h-3" />
+                                                                                </button>
+                                                                            )}
+                                                                        </div>
+                                                                    ))}
+                                                                </div>
+                                                            )}
+
+                                                            {/* Add new link */}
+                                                            {kpiData.status !== 'final' && (
+                                                                <div className="flex items-center gap-1.5">
+                                                                    <input
+                                                                        type="url"
+                                                                        value={newBlogLink}
+                                                                        onChange={e => setNewBlogLink(e.target.value)}
+                                                                        onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addBlogLink(); } }}
+                                                                        placeholder="Paste blog/news URL..."
+                                                                        className="flex-1 bg-black/30 border border-white/10 rounded px-2 py-1 text-[10px] text-gray-300 placeholder:text-gray-600 focus:outline-none focus:border-blue-500/50"
+                                                                        disabled={savingNoteId === 'K1_blog'}
+                                                                    />
+                                                                    <button
+                                                                        onClick={addBlogLink}
+                                                                        disabled={savingNoteId === 'K1_blog' || !newBlogLink.trim()}
+                                                                        className="p-1 rounded bg-blue-500/20 text-blue-400 hover:bg-blue-500/30 transition-colors disabled:opacity-50"
+                                                                        title="Add link"
+                                                                    >
+                                                                        {savingNoteId === 'K1_blog' ? <span className="w-3 h-3 block animate-spin">⏳</span> : <Plus className="w-3 h-3" />}
+                                                                    </button>
+                                                                </div>
+                                                            )}
+
+                                                            {blogLinks.length === 0 && kpiData.status === 'final' && (
+                                                                <p className="text-[10px] text-gray-500 italic">Tidak ada link blog yang dilampirkan.</p>
+                                                            )}
+                                                        </div>
+                                                    )}
+
                                                     {/* B3 Conversion Rate Badge */}
                                                     {metric.id === 'B3' && (
                                                         <div className="mt-2 p-2.5 rounded-lg bg-purple-500/10 border border-purple-500/20">
@@ -598,6 +760,90 @@ export default function MyKPIPage() {
                                                                                     <span className="text-gray-500 text-[9px] truncate w-full">{p.proposal_reason}</span>
                                                                                 )}
                                                                             </div>
+                                                                        </div>
+                                                                    ))}
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    )}
+
+                                                    {/* K2 Sharing Session Badge */}
+                                                    {metric.id === 'K2' && (
+                                                        <div className="mt-2 p-2.5 rounded-lg bg-blue-500/10 border border-blue-500/20">
+                                                            <div className="flex items-center gap-1.5 mb-1">
+                                                                <BarChart3 className="w-3 h-3 text-blue-400" />
+                                                                <span className="text-[10px] font-bold text-blue-400">System Calculated (IMS)</span>
+                                                            </div>
+                                                            <p className="text-[10px] text-gray-300">
+                                                                Sharing Sessions: <span className="text-white font-bold">{k2Count} sesi</span>
+                                                                <span className="text-gray-500 ml-1">(per 6 bulan)</span>
+                                                            </p>
+                                                            <div className="h-1 bg-black/30 rounded-full overflow-hidden mt-1 mb-1">
+                                                                <div className="h-full bg-blue-400" style={{ width: `${Math.min(100, (k2Count / 4) * 100)}%` }} />
+                                                            </div>
+                                                            <p className="text-[9px] text-gray-500 mb-2">
+                                                                → Score: {k2Count >= 4 ? '5' : k2Count >= 3 ? '4' : k2Count >= 2 ? '3' : k2Count >= 1 ? '2' : '1'}
+                                                                {' '}({k2Count >= 4 ? 'Sangat aktif' : k2Count >= 3 ? 'Aktif' : k2Count >= 2 ? 'Cukup' : k2Count >= 1 ? 'Minimal' : 'Tidak ada'})
+                                                            </p>
+
+                                                            <button
+                                                                onClick={() => setExpandedSysRec(p => ({ ...p, K2: !p.K2 }))}
+                                                                className="flex items-center gap-1 text-[10px] text-blue-400 hover:text-blue-300 transition-colors"
+                                                            >
+                                                                {expandedSysRec.K2 ? <ChevronUp className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
+                                                                {expandedSysRec.K2 ? 'Hide Detail' : 'View Detail'}
+                                                            </button>
+
+                                                            {expandedSysRec.K2 && k2Sessions.length > 0 && (
+                                                                <div className="mt-2 space-y-1 max-h-40 overflow-y-auto animate-in fade-in slide-in-from-top-2 duration-200">
+                                                                    {k2Sessions.map(s => (
+                                                                        <div key={s.id} className="flex items-center gap-2 text-[10px] p-1.5 rounded bg-black/20">
+                                                                            <span className="text-blue-400">📢</span>
+                                                                            <span className="text-gray-300 flex-1 truncate">{s.title}</span>
+                                                                            <span className="text-gray-500 text-[9px] shrink-0">{new Date(s.session_date).toLocaleDateString('id-ID', { day: 'numeric', month: 'short' })}</span>
+                                                                        </div>
+                                                                    ))}
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    )}
+
+                                                    {/* K3 Internal Training Attendance Badge */}
+                                                    {metric.id === 'K3' && (
+                                                        <div className="mt-2 p-2.5 rounded-lg bg-blue-500/10 border border-blue-500/20">
+                                                            <div className="flex items-center gap-1.5 mb-1">
+                                                                <BarChart3 className="w-3 h-3 text-blue-400" />
+                                                                <span className="text-[10px] font-bold text-blue-400">System Calculated (IMS)</span>
+                                                            </div>
+                                                            <p className="text-[10px] text-gray-300">
+                                                                Kehadiran Training: <span className="text-white font-bold">{k3Stats.percentage.toFixed(0)}%</span>
+                                                                <span className="text-gray-500 ml-1">({k3Stats.attended}/{k3Stats.total} sesi)</span>
+                                                            </p>
+                                                            <div className="h-1 bg-black/30 rounded-full overflow-hidden mt-1 mb-1">
+                                                                <div className="h-full bg-blue-400" style={{ width: `${Math.min(100, k3Stats.percentage)}%` }} />
+                                                            </div>
+                                                            <p className="text-[9px] text-gray-500 mb-2">
+                                                                → Score: {k3Stats.percentage > 80 ? '5' : k3Stats.percentage > 60 ? '4' : k3Stats.percentage > 40 ? '3' : k3Stats.percentage > 20 ? '2' : '1'}
+                                                                {' '}({k3Stats.percentage > 80 ? 'Sangat disiplin' : k3Stats.percentage > 60 ? 'Disiplin' : k3Stats.percentage > 40 ? 'Cukup' : k3Stats.percentage > 20 ? 'Kurang' : 'Sangat kurang'})
+                                                            </p>
+
+                                                            <button
+                                                                onClick={() => setExpandedSysRec(p => ({ ...p, K3: !p.K3 }))}
+                                                                className="flex items-center gap-1 text-[10px] text-blue-400 hover:text-blue-300 transition-colors"
+                                                            >
+                                                                {expandedSysRec.K3 ? <ChevronUp className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
+                                                                {expandedSysRec.K3 ? 'Hide Detail' : 'View Detail'}
+                                                            </button>
+
+                                                            {expandedSysRec.K3 && k3Sessions.length > 0 && (
+                                                                <div className="mt-2 space-y-1 max-h-40 overflow-y-auto animate-in fade-in slide-in-from-top-2 duration-200">
+                                                                    {k3Sessions.map((s: any) => (
+                                                                        <div key={s.id} className="flex items-center gap-2 text-[10px] p-1.5 rounded bg-black/20">
+                                                                            <span className={`w-4 text-center ${s._attended ? 'text-emerald-400' : 'text-gray-500'}`}>
+                                                                                {s._attended ? '✅' : '❌'}
+                                                                            </span>
+                                                                            <span className="text-gray-300 flex-1 truncate">{s.title}</span>
+                                                                            <span className="text-gray-500 text-[9px] shrink-0">{new Date(s.session_date).toLocaleDateString('id-ID', { day: 'numeric', month: 'short' })}</span>
                                                                         </div>
                                                                     ))}
                                                                 </div>

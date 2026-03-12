@@ -199,11 +199,11 @@ export const KPI_METRICS_DEFINITION: KPIMetric[] = [
         unit: 'skills',
         criteria: 'Based on verified skill acquisition',
         scoring_criteria: {
-            1: 'Tidak ada sama sekali',
-            2: '1 Sharing Session / 6 bulan',
-            3: '2 Sharing Session / 6 bulan',
-            4: '3 Sharing Session / 6 bulan',
-            5: '4 Sharing Session / 6 bulan'
+            1: 'Hadir < 20% sharing session,\nTidak pernah jadi pemateri,\nSharing session tim terlaksana < 20%',
+            2: 'Hadir 20–39% sharing session,\nTidak pernah jadi pemateri,\nSharing session tim terlaksana 20–39%',
+            3: 'Hadir 60–79% sharing session,\nTidak pernah jadi pemateri,\nSharing session tim terlaksana 60–79%',
+            4: 'Hadir ≥ 80% sharing session,\nBelum pernah jadi pemateri,\nSharing session tim terlaksana ≥ 80%',
+            5: 'Hadir ≥ 80% sharing session,\nMinimal 1x jadi pemateri,\nSharing session tim terlaksana ≥ 80%'
         }
     },
     {
