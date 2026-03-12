@@ -7,6 +7,7 @@ import {
     ChevronRight,
     Calendar as CalendarIcon,
     LayoutList,
+    LayoutGrid,
     Filter,
 } from "lucide-react";
 
@@ -158,7 +159,7 @@ const STATUS_CONFIG: Record<string, { label: string; icon: string; bgClass: stri
 // --- Components ---
 
 const StatusBadge = ({ status }: { status: StatusType | null | undefined }) => {
-    if (!status || status === 'office') return null; // Hide office status in cells
+    if (!status || status === 'office' || status === 'remote') return null; // Hide office and remote status in cells
 
     const config = STATUS_CONFIG[status];
     if (!config) return null;
@@ -177,6 +178,7 @@ export default function WeeklyBoardPage() {
     const [currentDate, setCurrentDate] = useState(new Date());
     const [selectedDate, setSelectedDate] = useState<Date | null>(null);
     const [searchQuery, setSearchQuery] = useState("");
+    const [viewMode, setViewMode] = useState<'week' | 'month'>('week');
 
     // Data State
     const [employees, setEmployees] = useState<any[]>([]);
@@ -195,7 +197,7 @@ export default function WeeklyBoardPage() {
             // 1. Fetch Employees
             const { data: profiles, error: profileError } = await supabase
                 .from('profiles')
-                .select('id, full_name, role, job_type, job_level, is_active, avatar_url')
+                .select('id, full_name, role, job_type, employee_type, job_level, is_active, avatar_url')
                 .eq('is_active', true)
                 .order('full_name');
 
@@ -225,6 +227,15 @@ export default function WeeklyBoardPage() {
                 .gte('request_date', startStr)
                 .lte('request_date', endStr);
 
+            // 3. Fetch ALL daily_checkins (CEO schedule plans, web check-ins, quick-sets, system auto)
+            const viewStartStr = new Date(currentDate.getFullYear(), currentDate.getMonth() - 1, 1).toISOString().split('T')[0];
+            const viewEndStr = new Date(currentDate.getFullYear(), currentDate.getMonth() + 2, 1).toISOString().split('T')[0];
+            const { data: checkins } = await supabase
+                .from('daily_checkins')
+                .select('profile_id, checkin_date, status, source')
+                .gte('checkin_date', viewStartStr)
+                .lte('checkin_date', viewEndStr);
+
             // Process Requests into a Lookup Map: { [userId]: { [dateStr]: 'status' } }
             const newMap: Record<string, Record<string, StatusType>> = {};
 
@@ -237,26 +248,39 @@ export default function WeeklyBoardPage() {
                 newMap[uid][dateStr] = status;
             };
 
-            // 1. Map Leaves (Range)
+            // 0. Map ALL daily_checkins first (lowest priority — will be overwritten by leave/other)
+            checkins?.forEach((c: any) => {
+                const dStr = c.checkin_date; // YYYY-MM-DD
+                const status = (c.status as StatusType) || 'office';
+                setStatus(c.profile_id, dStr, status);
+            });
+
+            // 1. Map Leaves (Range) — skip holidays & weekends
             leaves?.forEach((l: any) => {
                 let curr = new Date(l.start_date);
                 const end = new Date(l.end_date);
                 while (curr <= end) {
+                    const dayOfWeek = curr.getDay();
+                    const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
                     const dStr = curr.toISOString().split('T')[0];
-                    // Map leave_type to StatusType
-                    let status: StatusType = 'office'; // Default fallback temp
-                    const type = l.leave_type?.toLowerCase() || 'annual';
+                    const isHoliday = !!holidayMap[dStr];
 
-                    if (type.includes('sakit') || type.includes('sick')) status = 'sick';
-                    else if (type.includes('cuti') || type.includes('annual') || type.includes('maternity')) status = 'cuti';
-                    else if (type.includes('izin') || type.includes('permission')) status = 'izin';
-                    else if (type.includes('dinas') || type.includes('trip')) status = 'dinas';
-                    else if (type.includes('wfh')) status = 'wfh';
-                    else if (type.includes('wfa')) status = 'wfa';
+                    // Skip weekends & holidays — cuti should not overlap
+                    if (!isWeekend && !isHoliday) {
+                        let status: StatusType = 'office';
+                        const type = l.leave_type?.toLowerCase() || 'annual';
 
-                    if (l.status === 'pending') status = 'pending';
+                        if (type.includes('sakit') || type.includes('sick')) status = 'sick';
+                        else if (type.includes('cuti') || type.includes('annual') || type.includes('maternity')) status = 'cuti';
+                        else if (type.includes('izin') || type.includes('permission')) status = 'izin';
+                        else if (type.includes('dinas') || type.includes('trip')) status = 'dinas';
+                        else if (type.includes('wfh')) status = 'wfh';
+                        else if (type.includes('wfa')) status = 'wfa';
 
-                    setStatus(l.profile_id, dStr, status);
+                        if (l.status === 'pending') status = 'pending';
+
+                        setStatus(l.profile_id, dStr, status);
+                    }
                     curr.setDate(curr.getDate() + 1);
                 }
             });
@@ -268,15 +292,16 @@ export default function WeeklyBoardPage() {
                 const type = o.request_type?.toLowerCase() || '';
 
                 if (type === 'wfh') status = 'wfh';
-                if (type === 'wfa') status = 'wfa';
-                if (type === 'overtime' || type === 'lembur') status = 'overtime';
-                if (type === 'dinas' || type === 'business_trip') status = 'dinas';
+                else if (type === 'wfa') status = 'wfa';
+                else if (type === 'remote') status = 'remote';
+                else if (type === 'overtime' || type === 'lembur') status = 'lembur';
+                else if (type === 'dinas' || type === 'business_trip') status = 'dinas';
 
                 if (o.status === 'pending') status = 'pending';
 
-                // Only set if not already 'leave' or 'sick' (leaves take precedence)
+                // Only set if not already 'cuti' or 'sakit' (leaves take precedence)
                 const existing = newMap[o.profile_id]?.[dStr];
-                if (existing !== 'leave' && existing !== 'sick') {
+                if (existing !== 'cuti' && existing !== 'sakit' && existing !== 'izin') {
                     setStatus(o.profile_id, dStr, status);
                 }
             });
@@ -296,6 +321,8 @@ export default function WeeklyBoardPage() {
                     name: p.full_name,
                     role: p.job_title || p.role,
                     avatar: p.avatar_url,
+                    job_type: p.job_type,
+                    employee_type: p.employee_type,
                     isOnline: false
                 }));
             setEmployees(mapped);
@@ -320,13 +347,21 @@ export default function WeeklyBoardPage() {
 
     const handlePrev = () => {
         const newDate = new Date(currentDate);
-        newDate.setDate(currentDate.getDate() - 7);
+        if (viewMode === 'week') {
+            newDate.setDate(currentDate.getDate() - 7);
+        } else {
+            newDate.setMonth(currentDate.getMonth() - 1);
+        }
         setCurrentDate(newDate);
     };
 
     const handleNext = () => {
         const newDate = new Date(currentDate);
-        newDate.setDate(currentDate.getDate() + 7);
+        if (viewMode === 'week') {
+            newDate.setDate(currentDate.getDate() + 7);
+        } else {
+            newDate.setMonth(currentDate.getMonth() + 1);
+        }
         setCurrentDate(newDate);
     };
 
@@ -350,7 +385,30 @@ export default function WeeklyBoardPage() {
         });
     }, [currentDate]);
 
+    // Generate days for Monthly Calendar View
+    const monthDays = useMemo(() => {
+        const year = currentDate.getFullYear();
+        const month = currentDate.getMonth();
+        const firstDay = new Date(year, month, 1);
+        const lastDay = new Date(year, month + 1, 0);
+        // Start from Monday of the first week
+        const startOffset = (firstDay.getDay() + 6) % 7; // Mon=0
+        const calStart = new Date(firstDay);
+        calStart.setDate(calStart.getDate() - startOffset);
+        // 6 weeks grid
+        const days: Date[] = [];
+        for (let i = 0; i < 42; i++) {
+            const d = new Date(calStart);
+            d.setDate(calStart.getDate() + i);
+            days.push(d);
+        }
+        return { days, month, year };
+    }, [currentDate]);
+
     const formatDateRange = () => {
+        if (viewMode === 'month') {
+            return currentDate.toLocaleString('default', { month: 'long', year: 'numeric' });
+        }
         const start = weekDays[0];
         const end = weekDays[6]; // Sunday
         return `${start.getDate()} ${start.toLocaleString('default', { month: 'short' })} - ${end.getDate()} ${end.toLocaleString('default', { month: 'short' })} ${end.getFullYear()}`;
@@ -372,19 +430,24 @@ export default function WeeklyBoardPage() {
     };
 
     // REAL STATUS GETTER
-    const getRealStatus = (empId: string, date: Date): StatusType | null => {
+    const getRealStatus = (emp: any, date: Date): StatusType | null => {
         const dStr = date.toISOString().split('T')[0];
         const holiday = getHolidayForDate(date);
         const day = date.getDay();
         const isWeekend = day === 0 || day === 6;
 
-        // 1. Check Requests Map
-        if (requestsMap[empId] && requestsMap[empId][dStr]) {
-            return requestsMap[empId][dStr];
+        // 1. Holidays & weekends always take priority — hide all perizinan on tanggal merah
+        if (isWeekend || holiday) return null;
+
+        // 2. Check Requests Map
+        if (requestsMap[emp.id] && requestsMap[emp.id][dStr]) {
+            return requestsMap[emp.id][dStr];
         }
 
-        // 2. Fallbacks
-        if (isWeekend || holiday) return null; // Off
+        // 3. Fallback to default status based on employee type
+        if (emp.employee_type && emp.employee_type.toLowerCase() === 'remote_employee') {
+            return 'remote';
+        }
 
         return 'office'; // Default to Office
     };
@@ -412,19 +475,42 @@ export default function WeeklyBoardPage() {
             {/* --- Filters & Search Row --- */}
             <div className="flex flex-col md:flex-row justify-between gap-4">
                 {/* Date Navigator */}
-                <div className="glass-panel p-1 rounded-xl border border-white/10 flex items-center gap-2 w-fit">
-                    <button onClick={handlePrev} className="p-2 hover:bg-white/5 rounded-lg text-gray-400 hover:text-white transition-colors">
-                        <ChevronLeft className="w-5 h-5" />
-                    </button>
-                    <div className="px-4 font-bold min-w-[200px] text-center">
-                        {formatDateRange()}
+                <div className="flex items-center gap-2 flex-wrap">
+                    <div className="glass-panel p-1 rounded-xl border border-white/10 flex items-center gap-2 w-fit">
+                        <button onClick={handlePrev} className="p-2 hover:bg-white/5 rounded-lg text-gray-400 hover:text-white transition-colors">
+                            <ChevronLeft className="w-5 h-5" />
+                        </button>
+                        <div className="px-4 font-bold min-w-[200px] text-center">
+                            {formatDateRange()}
+                        </div>
+                        <button onClick={handleNext} className="p-2 hover:bg-white/5 rounded-lg text-gray-400 hover:text-white transition-colors">
+                            <ChevronRight className="w-5 h-5" />
+                        </button>
+                        <Button onClick={handleToday} variant="secondary" size="sm" className="ml-2">
+                            Today
+                        </Button>
                     </div>
-                    <button onClick={handleNext} className="p-2 hover:bg-white/5 rounded-lg text-gray-400 hover:text-white transition-colors">
-                        <ChevronRight className="w-5 h-5" />
-                    </button>
-                    <Button onClick={handleToday} variant="secondary" size="sm" className="ml-2">
-                        Today
-                    </Button>
+                    {/* View Mode Toggle */}
+                    <div className="flex items-center gap-1 p-1 rounded-lg border bg-muted/30">
+                        <button
+                            onClick={() => setViewMode('week')}
+                            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
+                                viewMode === 'week' ? 'bg-background text-foreground shadow-sm border' : 'text-muted-foreground hover:text-foreground'
+                            }`}
+                        >
+                            <LayoutList className="w-3.5 h-3.5" />
+                            Mingguan
+                        </button>
+                        <button
+                            onClick={() => setViewMode('month')}
+                            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
+                                viewMode === 'month' ? 'bg-background text-foreground shadow-sm border' : 'text-muted-foreground hover:text-foreground'
+                            }`}
+                        >
+                            <LayoutGrid className="w-3.5 h-3.5" />
+                            Bulanan
+                        </button>
+                    </div>
                 </div>
 
                 {/* Search */}
@@ -441,6 +527,7 @@ export default function WeeklyBoardPage() {
             </div>
 
             {/* --- MAIN CONTENT AREA --- */}
+            {viewMode === 'week' ? (
             <Card className="flex-1 overflow-hidden flex flex-col shadow-sm border-border/50">
                 <CardContent className="p-0 flex-1 overflow-hidden flex flex-col">
                     <div className="flex-1 overflow-auto relative">
@@ -496,16 +583,21 @@ export default function WeeklyBoardPage() {
                                             let i = 0;
                                             while (i < weekDays.length) {
                                                 const day = weekDays[i];
-                                                const status = getRealStatus(emp.id, day);
-                                                const isSpecial = status && status !== 'office' && status !== 'pending'; // Statuses to merge
+                                                const holiday = getHolidayForDate(day);
+                                                const isWeekend = day.getDay() === 0 || day.getDay() === 6;
+                                                const status = getRealStatus(emp, day);
+                                                const isSpecial = status && status !== 'office' && status !== 'remote' && status !== 'pending';
 
                                                 let span = 1;
 
-                                                // Calculate span if it's a special status
-                                                if (isSpecial) {
+                                                // Calculate span — break at holidays/weekends
+                                                if (isSpecial && !isWeekend && !holiday) {
                                                     for (let j = i + 1; j < weekDays.length; j++) {
                                                         const nextDay = weekDays[j];
-                                                        const nextStatus = getRealStatus(emp.id, nextDay);
+                                                        const nextHoliday = getHolidayForDate(nextDay);
+                                                        const nextWeekend = nextDay.getDay() === 0 || nextDay.getDay() === 6;
+                                                        if (nextHoliday || nextWeekend) break; // Stop at holiday/weekend
+                                                        const nextStatus = getRealStatus(emp, nextDay);
                                                         if (nextStatus === status) {
                                                             span++;
                                                         } else {
@@ -514,13 +606,9 @@ export default function WeeklyBoardPage() {
                                                     }
                                                 }
 
-                                                // Render Cell
-                                                const holiday = getHolidayForDate(day);
-                                                const isWeekend = day.getDay() === 0 || day.getDay() === 6;
                                                 const config = status ? STATUS_CONFIG[status] : null;
 
-                                                if (isSpecial && config && span > 1) {
-                                                    // MERGED BLOCK RENDER
+                                                if (isSpecial && config && span > 1 && !isWeekend && !holiday) {
                                                     cells.push(
                                                         <TableCell key={i} colSpan={span} className="p-1 align-middle h-[60px] border-r last:border-0 relative">
                                                             <div
@@ -530,12 +618,11 @@ export default function WeeklyBoardPage() {
                                                                 `}
                                                             >
                                                                 <span className="text-lg">{config.icon}</span>
-                                                                <span className="font-semibold text-sm truncate">{config.label} ({span} days)</span>
+                                                                <span className="font-semibold text-sm truncate">{config.label} ({span} hari)</span>
                                                             </div>
                                                         </TableCell>
                                                     );
                                                 } else {
-                                                    // SINGLE CELL RENDER (Normal)
                                                     cells.push(
                                                         <TableCell key={i} className={`text-center p-2 h-[60px] border-r last:border-0 align-middle ${isToday(day) ? "bg-muted/30" : ""} ${isWeekend || holiday ? "bg-muted/10" : ""}`}>
                                                             <div className="flex justify-center min-h-[24px]">
@@ -556,6 +643,95 @@ export default function WeeklyBoardPage() {
                     </div>
                 </CardContent>
             </Card>
+            ) : (
+            /* --- MONTHLY CALENDAR VIEW --- */
+            <Card className="flex-1 overflow-hidden flex flex-col shadow-sm border-border/50">
+                <CardContent className="p-4 flex-1 overflow-auto">
+                    {/* Calendar Header */}
+                    <div className="grid grid-cols-7 gap-1 mb-2">
+                        {['Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab', 'Min'].map((d) => (
+                            <div key={d} className="text-center text-xs font-bold uppercase tracking-wider text-muted-foreground py-2">
+                                {d}
+                            </div>
+                        ))}
+                    </div>
+                    {/* Calendar Grid */}
+                    <div className="grid grid-cols-7 gap-1">
+                        {monthDays.days.map((day, idx) => {
+                            const isCurrentMonth = day.getMonth() === monthDays.month;
+                            const holiday = getHolidayForDate(day);
+                            const isWeekend = day.getDay() === 0 || day.getDay() === 6;
+                            const today = isToday(day);
+                            const dStr = day.toISOString().split('T')[0];
+
+                            // Collect statuses for all employees on this day
+                            const dayStatuses: { status: StatusType; count: number }[] = [];
+                            const statusCounts: Record<string, number> = {};
+                            filteredEmployees.forEach((emp) => {
+                                const st = getRealStatus(emp, day);
+                                if (st && st !== 'office' && st !== 'remote') {
+                                    statusCounts[st] = (statusCounts[st] || 0) + 1;
+                                }
+                            });
+                            Object.entries(statusCounts).forEach(([s, c]) => {
+                                dayStatuses.push({ status: s as StatusType, count: c });
+                            });
+                            dayStatuses.sort((a, b) => b.count - a.count);
+
+                            return (
+                                <button
+                                    key={idx}
+                                    onClick={() => setSelectedDate(day)}
+                                    className={`
+                                        relative flex flex-col items-center rounded-lg p-1.5 min-h-[80px] text-left transition-all border
+                                        hover:bg-muted/40 hover:border-primary/30 cursor-pointer
+                                        ${!isCurrentMonth ? 'opacity-30' : ''}
+                                        ${today ? 'bg-primary/5 border-primary/40 ring-1 ring-primary/20' : 'border-border/30'}
+                                        ${(isWeekend || holiday) && isCurrentMonth ? 'bg-red-500/5 border-red-200/30' : ''}
+                                    `}
+                                >
+                                    {/* Date Number */}
+                                    <div className={`text-sm font-bold w-full text-center ${
+                                        today ? 'text-primary' :
+                                        (isWeekend || holiday) ? 'text-red-500' :
+                                        'text-foreground'
+                                    }`}>
+                                        {day.getDate()}
+                                    </div>
+
+                                    {/* Holiday Label */}
+                                    {holiday && isCurrentMonth && (
+                                        <div className="text-[9px] text-red-500 font-medium leading-tight text-center line-clamp-1 w-full mt-0.5" title={holiday}>
+                                            {holiday}
+                                        </div>
+                                    )}
+
+                                    {/* Status Dots */}
+                                    {isCurrentMonth && dayStatuses.length > 0 && (
+                                        <div className="flex flex-wrap gap-0.5 justify-center mt-auto pt-1">
+                                            {dayStatuses.slice(0, 4).map(({ status, count }) => {
+                                                const cfg = STATUS_CONFIG[status];
+                                                if (!cfg) return null;
+                                                return (
+                                                    <div
+                                                        key={status}
+                                                        className={`flex items-center gap-0.5 px-1 py-0.5 rounded text-[9px] font-medium ${cfg.bgClass} ${cfg.textClass} border ${cfg.borderClass}`}
+                                                        title={`${cfg.label}: ${count} orang`}
+                                                    >
+                                                        <span>{cfg.icon}</span>
+                                                        <span>{count}</span>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    )}
+                                </button>
+                            );
+                        })}
+                    </div>
+                </CardContent>
+            </Card>
+            )}
 
             {/* Day Detail Modal */}
             {selectedDate && (
@@ -583,29 +759,67 @@ export default function WeeklyBoardPage() {
                             {(() => {
                                 const dayStatuses = filteredEmployees.map(e => ({
                                     ...e,
-                                    status: getRealStatus(e.id, selectedDate)
+                                    status: getRealStatus(e, selectedDate)
                                 }));
 
-                                const overtime = dayStatuses.filter(s => s.status === 'overtime');
-                                const leaves = dayStatuses.filter(s => s.status === 'leave');
-                                const sicks = dayStatuses.filter(s => s.status === 'sick');
-                                const wfhs = dayStatuses.filter(s => s.status === 'wfh');
-                                const office = dayStatuses.filter(s => s.status === 'office');
+                                // Dynamically group by ALL actual status types
+                                const displayOrder: { key: StatusType; title: string }[] = [
+                                    { key: 'lembur', title: 'Lembur (Overtime)' },
+                                    { key: 'cuti', title: 'Cuti (Leave)' },
+                                    { key: 'sakit', title: 'Sakit (Sick)' },
+                                    { key: 'izin', title: 'Izin (Permission)' },
+                                    { key: 'dinas', title: 'Dinas Luar (Business Trip)' },
+                                    { key: 'wfh', title: 'Work From Home' },
+                                    { key: 'wfa', title: 'Work From Anywhere' },
+                                    { key: 'remote', title: 'Remote' },
+                                    { key: 'pending', title: 'Pending Approval' },
+                                    { key: 'office', title: 'Di Kantor (In Office)' },
+                                ];
 
-                                const hasAnyData = overtime.length + leaves.length + sicks.length + wfhs.length + office.length > 0;
+                                const groups = displayOrder
+                                    .map(({ key, title }) => ({
+                                        key,
+                                        title,
+                                        items: dayStatuses.filter(s => s.status === key),
+                                    }))
+                                    .filter(g => g.items.length > 0);
+
+                                const totalWithStatus = groups.reduce((sum, g) => sum + g.items.length, 0);
+
+                                // Also count employees with null status (no record)
+                                const noRecord = dayStatuses.filter(s => s.status === null);
 
                                 return (
                                     <>
-                                        {overtime.length > 0 && <StatusGroup title="Lembur (Overtime)" items={overtime} type="lembur" />}
-                                        {leaves.length > 0 && <StatusGroup title="On Leave" items={leaves} type="cuti" />}
-                                        {sicks.length > 0 && <StatusGroup title="Sick" items={sicks} type="sakit" />}
-                                        {wfhs.length > 0 && <StatusGroup title="Working From Home" items={wfhs} type="wfh" />}
+                                        {groups.map(({ key, title, items }) => (
+                                            <StatusGroup key={key} title={title} items={items} type={key} />
+                                        ))}
 
-                                        {/* Show Office in detail view as strictly informational at the bottom */}
-                                        {office.length > 0 && <StatusGroup title="In Office" items={office} type="office" />}
+                                        {noRecord.length > 0 && (
+                                            <div>
+                                                <div className="flex items-center gap-2 mb-3 text-muted-foreground">
+                                                    <span className="text-lg">—</span>
+                                                    <h3 className="font-bold text-sm uppercase tracking-wider">Libur / Tidak Ada Data ({noRecord.length})</h3>
+                                                </div>
+                                                <div className="space-y-2 ml-7">
+                                                    {noRecord.map((emp) => (
+                                                        <div key={emp.id} className="flex items-center gap-2 text-sm text-muted-foreground">
+                                                            <div className="w-6 h-6 rounded-full bg-muted flex items-center justify-center text-[10px] font-bold overflow-hidden">
+                                                                {emp.avatar ? (
+                                                                    <img src={emp.avatar} alt={emp.name} className="w-full h-full object-cover" />
+                                                                ) : (
+                                                                    emp.name.split(' ').map((n: string) => n[0]).join('').slice(0, 2)
+                                                                )}
+                                                            </div>
+                                                            <span>{emp.name}</span>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        )}
 
-                                        {!hasAnyData && (
-                                            <p className="text-center text-muted-foreground py-4">No specific attendance records for this date.</p>
+                                        {totalWithStatus === 0 && noRecord.length === 0 && (
+                                            <p className="text-center text-muted-foreground py-4">Tidak ada data absensi untuk tanggal ini.</p>
                                         )}
                                     </>
                                 );

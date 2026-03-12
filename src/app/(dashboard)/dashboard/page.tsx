@@ -1795,6 +1795,15 @@ export default function DashboardPage() {
                                                 </div>
                                                 <span className="text-[10px] font-bold text-white uppercase tracking-wider text-center">Sharing Session</span>
                                             </Link>
+
+                                            {profile?.role === 'ceo' && (
+                                                <Link href="/dashboard/plan" className="group flex flex-col items-center justify-center gap-2 p-2 rounded-xl backdrop-blur-md transition-all hover:scale-105 active:scale-95 border bg-amber-500/10 border-amber-500/20 hover:bg-amber-500/20 dark:bg-white/5 dark:border-white/10 dark:hover:bg-white/10">
+                                                    <div className="w-8 h-8 rounded-lg bg-sky-500/20 flex items-center justify-center group-hover:bg-sky-500/30 transition-colors">
+                                                        <CalendarDays className="h-4 w-4 text-sky-300" />
+                                                    </div>
+                                                    <span className="text-[10px] font-bold text-white uppercase tracking-wider text-center">My Plan</span>
+                                                </Link>
+                                            )}
                                         </div>
 
                                         {/* Jira Quick Link */}
