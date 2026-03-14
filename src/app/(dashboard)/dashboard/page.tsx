@@ -714,6 +714,7 @@ export default function DashboardPage() {
 
     const [todayCheckinId, setTodayCheckinId] = useState<string | null>(null);
     const [approvedWfhWfaToday, setApprovedWfhWfaToday] = useState<{ type: 'wfh' | 'wfa' } | null>(null);
+    const [todayHoliday, setTodayHoliday] = useState<{ name: string } | null>(null);
 
     // Handle Clock In with selected status
     // Handle Clock In (Directly for WFH/WFA based on approval)
@@ -1112,6 +1113,17 @@ export default function DashboardPage() {
                     setApprovedWfhWfaToday({ type: leaveType });
                 }
 
+                // 3. Check if today is a company holiday
+                const { data: holiday } = await supabase
+                    .from('company_holidays')
+                    .select('name')
+                    .eq('date', today)
+                    .single();
+
+                if (holiday) {
+                    setTodayHoliday({ name: holiday.name });
+                }
+
             } catch (err) {
                 console.error('Error fetching today checkin:', err);
             }
@@ -1121,19 +1133,32 @@ export default function DashboardPage() {
         fetchTodayCheckinAndApprovals();
     }, [profile]);
 
+    // Computed: Is today a non-working day (weekend or holiday)?
+    const nonWorkingDayReason = useMemo(() => {
+        // getDay() in Jakarta timezone: 0=Sunday, 6=Saturday
+        const jakartaDow = new Date(new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Jakarta' })).getDay();
+        if (jakartaDow === 0) return 'Hari Minggu - tidak ada absensi';
+        if (jakartaDow === 6) return 'Hari Sabtu - tidak ada absensi';
+        if (todayHoliday) return `Hari Libur: ${todayHoliday.name}`;
+        return null;
+    }, [todayHoliday]);
+
     // Computed: Can user clock in today?
     const canClockInToday = useMemo(() => {
         // Already clocked in for today
         if (checkinState.isClockedIn) return false;
 
-        // Remote employee can always clock in
+        // Block on weekends and holidays
+        if (nonWorkingDayReason) return false;
+
+        // Remote employee can always clock in on working days
         if (profile?.employee_type === 'remote_employee') return true;
 
         // User has approved WFH/WFA for today
         if (approvedWfhWfaToday) return true;
 
         return false;
-    }, [checkinState.isClockedIn, profile?.employee_type, approvedWfhWfaToday]);
+    }, [checkinState.isClockedIn, profile?.employee_type, approvedWfhWfaToday, nonWorkingDayReason]);
 
     // Clock-in feedback message state (shows for 15 seconds after clock in)
     const [showClockInFeedback, setShowClockInFeedback] = useState(false);
@@ -1936,8 +1961,10 @@ export default function DashboardPage() {
                                                         Clock In
                                                     </button>
                                                     {!canClockInToday && (
-                                                        <div className="absolute bottom-full mb-2 left-0 w-max max-w-[200px] p-3 bg-black !text-white text-xs font-medium rounded-xl text-center opacity-0 group-hover/clockin:opacity-100 transition-opacity pointer-events-none z-[100] shadow-2xl border border-white/20">
-                                                            Setelah mengajukan WFH/WFA jangan lupa melakukan Absensi disini sesuai jam kerja
+                                                        <div className="absolute bottom-full mb-2 left-0 w-max max-w-[220px] p-3 bg-black !text-white text-xs font-medium rounded-xl text-center opacity-0 group-hover/clockin:opacity-100 transition-opacity pointer-events-none z-[100] shadow-2xl border border-white/20">
+                                                            {nonWorkingDayReason
+                                                                ? `🚫 ${nonWorkingDayReason}`
+                                                                : 'Setelah mengajukan WFH/WFA jangan lupa melakukan Absensi disini sesuai jam kerja'}
                                                         </div>
                                                     )}
                                                 </div>

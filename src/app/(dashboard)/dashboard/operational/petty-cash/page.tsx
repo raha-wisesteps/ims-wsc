@@ -99,7 +99,7 @@ export default function PettyCashPage() {
     // Access Control for Top Up
     const canTopUp = useMemo(() => {
         if (!profile) return false;
-        return ['super_admin', 'ceo'].includes(profile.role) ||
+        return ['super_admin', 'ceo', 'busdev'].includes(profile.role) ||
             ['Office Manager', 'Head of Operations'].includes(profile.job_title || "") ||
             profile.department === 'Finance' ||
             profile.is_office_manager ||

@@ -105,6 +105,7 @@ export default function WasteReportPage() {
     const [isSettingsOpen, setIsSettingsOpen] = useState(false);
     const [isConfirmOpen, setIsConfirmOpen] = useState(false);
     const [tempConfig, setTempConfig] = useState<WasteConfig>(DEFAULT_CONFIG);
+    const [prevFridayLog, setPrevFridayLog] = useState<DailyLog | null>(null);
 
     // Initial Fetch (History)
     useEffect(() => {
@@ -163,6 +164,32 @@ export default function WasteReportPage() {
                 .lte('date', fridayStr);
 
             if (logsError) throw logsError;
+
+            // 2b. Fetch previous Friday's log (for Monday calculation)
+            const prevFriday = new Date(monday);
+            prevFriday.setDate(monday.getDate() - 3);
+            const prevFridayStr = prevFriday.toISOString().split('T')[0];
+
+            const { data: prevFridayData } = await supabase
+                .from('waste_logs')
+                .select('*')
+                .eq('date', prevFridayStr)
+                .single();
+
+            if (prevFridayData) {
+                const pf = prevFridayData as WasteLogDB;
+                setPrevFridayLog({
+                    day: 'Fri',
+                    date: '',
+                    fullDate: prevFridayStr,
+                    green: (pf.green_status as WasteStatus) || 'empty',
+                    greenNote: (pf.green_note as WasteNote) || null,
+                    yellow: (pf.yellow_status as WasteStatus) || 'empty',
+                    yellowNote: (pf.yellow_note as WasteNote) || null,
+                });
+            } else {
+                setPrevFridayLog(null);
+            }
 
             // 3. Fetch Weekly Report Status & Config
             const { data: reportData, error: reportError } = await supabase
@@ -240,12 +267,10 @@ export default function WasteReportPage() {
         const updatedLogs = [...weekLogs];
         updatedLogs[index] = { ...updatedLogs[index], [type]: nextStatus };
 
-        // Auto-set note to 'new'
-        if (nextStatus !== 'empty') {
-            const noteKey = type === 'green' ? 'greenNote' : 'yellowNote';
-            if (updatedLogs[index][noteKey] === null) {
-                updatedLogs[index] = { ...updatedLogs[index], [noteKey]: 'new' };
-            }
+        const noteKey = type === 'green' ? 'greenNote' : 'yellowNote';
+        if (nextStatus !== 'empty' && updatedLogs[index][noteKey] === null) {
+            // Auto-set note to 'new' for half/full
+            updatedLogs[index] = { ...updatedLogs[index], [noteKey]: 'new' };
         }
 
         setWeekLogs(updatedLogs);
@@ -273,25 +298,58 @@ export default function WasteReportPage() {
         let totalYellowWeight = 0;
         let totalCarbon = 0;
 
-        logs.forEach(log => {
-            const getFillMultiplier = (status: WasteStatus) => {
-                if (status === 'full') return 1.0;
-                if (status === 'half') return 0.5;
-                return 0;
-            };
+        const getFillMultiplier = (status: WasteStatus) => {
+            if (status === 'full') return 1.0;
+            if (status === 'half') return 0.5;
+            return 0;
+        };
 
-            const calculateBin = (status: WasteStatus, note: WasteNote, density: number, emissionFactor: number) => {
-                if (status === 'empty' || note === 'holiday' || note === 'leftover' || note === null) {
-                    return { weight: 0, carbon: 0 };
+        const getPrevStatus = (index: number, type: 'green' | 'yellow'): WasteStatus => {
+            if (index === 0) {
+                // Monday → look at previous Friday
+                if (prevFridayLog) {
+                    return type === 'green' ? prevFridayLog.green : prevFridayLog.yellow;
                 }
+                return 'empty';
+            }
+            return type === 'green' ? logs[index - 1].green : logs[index - 1].yellow;
+        };
+
+        logs.forEach((log, index) => {
+            const calculateBin = (status: WasteStatus, note: WasteNote, density: number, emissionFactor: number, type: 'green' | 'yellow') => {
+                // Holiday → always skip regardless of status
+                if (note === 'holiday') return { weight: 0, carbon: 0 };
+
+                // Empty status — waste was collected/angkut
+                if (status === 'empty') {
+                    if (note === 'new') {
+                        // empty + new = sampah baru masuk dan langsung diangkut hari itu
+                        // Dihitung sebagai full bin (1 siklus penuh)
+                        const volume = config.binCapacity * 1.0;
+                        const weight = volume * density;
+                        const carbon = weight * emissionFactor;
+                        return { weight, carbon };
+                    }
+                    // empty + null/leftover = lihat status hari sebelumnya
+                    const prevStatus = getPrevStatus(index, type);
+                    const volume = config.binCapacity * getFillMultiplier(prevStatus);
+                    const weight = volume * density;
+                    const carbon = weight * emissionFactor;
+                    return { weight, carbon };
+                }
+
+                // Leftover on non-empty → skip (don't double count accumulating waste)
+                if (note === 'leftover') return { weight: 0, carbon: 0 };
+
+                // Half or Full (note is 'new' or null) → calculate current fill level
                 const volume = config.binCapacity * getFillMultiplier(status);
                 const weight = volume * density;
                 const carbon = weight * emissionFactor;
                 return { weight, carbon };
             };
 
-            const greenStats = calculateBin(log.green, log.greenNote, config.greenDensity, config.greenEmissionFactor);
-            const yellowStats = calculateBin(log.yellow, log.yellowNote, config.yellowDensity, config.yellowEmissionFactor);
+            const greenStats = calculateBin(log.green, log.greenNote, config.greenDensity, config.greenEmissionFactor, 'green');
+            const yellowStats = calculateBin(log.yellow, log.yellowNote, config.yellowDensity, config.yellowEmissionFactor, 'yellow');
 
             totalGreenWeight += greenStats.weight;
             totalCarbon += greenStats.carbon;
@@ -430,9 +488,13 @@ export default function WasteReportPage() {
                 week_end: friday,
                 total_green_weight: stats.totalGreenWeight,
                 total_yellow_weight: stats.totalYellowWeight,
+                total_carbon: stats.totalCarbon,
+                bin_capacity: config.binCapacity,
+                green_density: config.greenDensity,
+                yellow_density: config.yellowDensity,
                 green_emission_factor: config.greenEmissionFactor,
                 yellow_emission_factor: config.yellowEmissionFactor,
-                // created_by: user?.id // TODO: Uncomment after migration 127 is applied
+                // Draft save — no submitted_at, won't appear in history
             };
 
             const { error: reportError } = await supabase
@@ -442,9 +504,8 @@ export default function WasteReportPage() {
             if (reportError) throw reportError;
 
             setIsDirty(false);
-            toast.success("Changes saved & history updated.");
+            toast.success("Draft saved.");
             fetchWeekData(selectedDate);
-            fetchRecentHistory();
 
         } catch (error) {
             console.error("Error saving data:", error);
@@ -454,16 +515,73 @@ export default function WasteReportPage() {
         }
     };
 
-    // Submit Logic Removed
+    // 2. Submit Report (Finalize — saves + marks as submitted for history)
+    const handleSubmit = async () => {
+        setIsSaving(true);
+        try {
+            // Save all logs first
+            const allUpsertData = weekLogs.map(log => ({
+                date: log.fullDate,
+                green_status: log.green,
+                green_note: log.greenNote,
+                yellow_status: log.yellow,
+                yellow_note: log.yellowNote
+            }));
+
+            const { error: logsError } = await supabase
+                .from('waste_logs')
+                .upsert(allUpsertData, { onConflict: 'date' });
+
+            if (logsError) throw logsError;
+
+            // Calculate final stats
+            const stats = calculateStats(weekLogs);
+            const monday = weekLogs[0].fullDate;
+            const friday = weekLogs[4].fullDate;
+
+            const reportData = {
+                week_start: monday,
+                week_end: friday,
+                total_green_weight: stats.totalGreenWeight,
+                total_yellow_weight: stats.totalYellowWeight,
+                total_carbon: stats.totalCarbon,
+                bin_capacity: config.binCapacity,
+                green_density: config.greenDensity,
+                yellow_density: config.yellowDensity,
+                green_emission_factor: config.greenEmissionFactor,
+                yellow_emission_factor: config.yellowEmissionFactor,
+                submitted_at: new Date().toISOString(),
+            };
+
+            const { error: reportError } = await supabase
+                .from('waste_weekly_reports')
+                .upsert(reportData, { onConflict: 'week_start' });
+
+            if (reportError) throw reportError;
+
+            setIsDirty(false);
+            setIsSubmitted(true);
+            setIsConfirmOpen(false);
+            toast.success("Report submitted! Data masuk ke history.");
+            fetchWeekData(selectedDate);
+            fetchRecentHistory();
+
+        } catch (error) {
+            console.error("Error submitting report:", error);
+            toast.error("Failed to submit report.");
+        } finally {
+            setIsSaving(false);
+        }
+    };
 
     // Style Helpers
     const getStatusColor = (status: WasteStatus, type: "green" | "yellow") => {
-        if (status === "empty") return "bg-white/5 text-gray-500 border-white/10";
+        if (status === "empty") return "bg-gray-100 dark:bg-white/5 text-gray-500 border-gray-200 dark:border-white/10";
         if (status === "half") return type === "green"
-            ? "bg-emerald-500/20 text-emerald-400 border-emerald-500/30"
-            : "bg-yellow-500/20 text-yellow-500 border-yellow-500/30";
-        if (status === "full") return "bg-rose-500/20 text-rose-500 border-rose-500/30";
-        return "bg-white/5";
+            ? "bg-emerald-100 dark:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 border-emerald-300 dark:border-emerald-500/30"
+            : "bg-yellow-100 dark:bg-yellow-500/20 text-yellow-600 dark:text-yellow-500 border-yellow-300 dark:border-yellow-500/30";
+        if (status === "full") return "bg-rose-100 dark:bg-rose-500/20 text-rose-600 dark:text-rose-500 border-rose-300 dark:border-rose-500/30";
+        return "bg-gray-100 dark:bg-white/5";
     };
 
     const getStatusLabel = (status: WasteStatus) => {
@@ -489,10 +607,10 @@ export default function WasteReportPage() {
                         <Recycle className="w-6 h-6 text-white" />
                     </div>
                     <div>
-                        <div className="flex items-center gap-2 mb-1 text-sm text-gray-400">
-                            <Link href="/dashboard" className="hover:text-white transition-colors">Dashboard</Link>
+                        <div className="flex items-center gap-2 mb-1 text-sm text-gray-500 dark:text-gray-400">
+                            <Link href="/dashboard" className="hover:text-gray-900 dark:hover:text-white transition-colors">Dashboard</Link>
                             <ChevronRight className="h-4 w-4" />
-                            <Link href="/dashboard/sustainability" className="hover:text-white transition-colors">Sustainability</Link>
+                            <Link href="/dashboard/sustainability" className="hover:text-gray-900 dark:hover:text-white transition-colors">Sustainability</Link>
                             <ChevronRight className="h-4 w-4" />
                             <span className="text-gray-900 dark:text-white">Waste Management</span>
                         </div>
@@ -511,21 +629,21 @@ export default function WasteReportPage() {
                         <Settings className="w-5 h-5" />
                     </button>
 
-                    {/* Save Button */}
+                    {/* Submit Button */}
                     <button
-                        onClick={handleSave}
-                        disabled={!isDirty || isSaving}
+                        onClick={() => setIsConfirmOpen(true)}
+                        disabled={isSaving || isDirty}
                         className={cn(
                             "flex items-center gap-2 px-6 py-3 rounded-xl font-bold transition-all border",
-                            isDirty
-                                ? "bg-[#e8c559] text-[#171611] hover:bg-[#d4b44e] shadow-lg hover:shadow-orange-500/10 border-transparent"
+                            !isDirty && !isSaving
+                                ? "bg-[#e8c559] text-[#171611] hover:bg-[#d4b44e] shadow-lg hover:shadow-[#e8c559]/20 border-transparent"
                                 : "bg-gray-100 dark:bg-white/5 text-gray-400 dark:text-gray-500 border-transparent dark:border-white/10 opacity-50 cursor-not-allowed"
                         )}
+                        title={isDirty ? "Save draft terlebih dahulu sebelum submit" : "Submit report ke history"}
                     >
-                        <Save className="w-5 h-5" />
-                        Save Changes
+                        <BadgeCheck className="w-5 h-5" />
+                        {isSubmitted ? "Re-Submit" : "Submit"}
                     </button>
-                    {/* Submit Button Removed */}
                 </div>
             </div>
 
@@ -632,9 +750,14 @@ export default function WasteReportPage() {
                                 <div className="space-y-2">
                                     <h3 className="font-bold text-xl text-gray-900 dark:text-white">Submit Weekly Report?</h3>
                                     <p className="text-sm text-gray-500 dark:text-gray-400">
-                                        Are you sure you want to submit? <br />
-                                        <strong>Report cannot be edited after submission.</strong>
+                                        Data emisi akan masuk ke history. <br />
+                                        Anda tetap bisa re-submit jika ada perubahan.
                                     </p>
+                                    <div className="text-left bg-gray-50 dark:bg-white/5 rounded-lg p-3 text-xs space-y-1">
+                                        <p className="text-emerald-500">Organik: {currentStats.totalGreenWeight.toFixed(2)} kg</p>
+                                        <p className="text-yellow-500">Anorganik: {currentStats.totalYellowWeight.toFixed(2)} kg</p>
+                                        <p className="text-gray-400">Total Emisi: {currentStats.totalCarbon.toFixed(3)} kgCO2e</p>
+                                    </div>
                                 </div>
 
                                 <div className="grid grid-cols-2 gap-3 pt-2">
@@ -645,10 +768,11 @@ export default function WasteReportPage() {
                                         Cancel
                                     </button>
                                     <button
-
-                                        className="py-2.5 rounded-lg font-semibold bg-blue-600 hover:bg-blue-500 text-white transition-colors shadow-lg hover:shadow-blue-500/20"
+                                        onClick={handleSubmit}
+                                        disabled={isSaving}
+                                        className="py-2.5 rounded-lg font-semibold bg-blue-600 hover:bg-blue-500 text-white transition-colors shadow-lg hover:shadow-blue-500/20 disabled:opacity-50"
                                     >
-                                        Confirm Submit
+                                        {isSaving ? "Submitting..." : "Confirm Submit"}
                                     </button>
                                 </div>
                             </div>
@@ -657,70 +781,22 @@ export default function WasteReportPage() {
                 )
             }
 
-            {/* Summary Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                {/* Green Waste Stats */}
-                <div className="glass-panel p-6 rounded-2xl border border-emerald-500/20 bg-emerald-500/5 relative overflow-hidden shadow-sm">
-                    <div className="absolute top-0 right-0 p-4 opacity-10">
-                        <Leaf className="w-24 h-24 text-emerald-500" />
-                    </div>
-                    <div className="relative z-10">
-                        <p className="text-emerald-600 dark:text-emerald-400 text-sm font-bold uppercase tracking-wider mb-2">Total Organik</p>
-                        <div className="flex items-baseline gap-2">
-                            <span className="text-4xl font-black text-gray-900 dark:text-white">{currentStats.totalGreenWeight.toFixed(2)}</span>
-                            <span className="text-sm text-gray-500 dark:text-gray-400 font-medium">kg</span>
-                        </div>
-                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">Factor: {config.greenEmissionFactor} kgCO2e/kg</p>
-                    </div>
-                </div>
-
-                {/* Yellow Waste Stats */}
-                <div className="glass-panel p-6 rounded-2xl border border-yellow-500/20 bg-yellow-500/5 relative overflow-hidden shadow-sm">
-                    <div className="absolute top-0 right-0 p-4 opacity-10">
-                        <Trash2 className="w-24 h-24 text-yellow-500" />
-                    </div>
-                    <div className="relative z-10">
-                        <p className="text-yellow-600 dark:text-yellow-400 text-sm font-bold uppercase tracking-wider mb-2">Total Anorganik</p>
-                        <div className="flex items-baseline gap-2">
-                            <span className="text-4xl font-black text-gray-900 dark:text-white">{currentStats.totalYellowWeight.toFixed(2)}</span>
-                            <span className="text-sm text-gray-500 dark:text-gray-400 font-medium">kg</span>
-                        </div>
-                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">Factor: {config.yellowEmissionFactor} kgCO2e/kg</p>
-                    </div>
-                </div>
-
-                {/* Carbon Emission Stats */}
-                <div className="glass-panel p-6 rounded-2xl border border-gray-500/20 bg-gray-500/5 relative overflow-hidden shadow-sm">
-                    <div className="absolute top-0 right-0 p-4 opacity-10">
-                        <Cloud className="w-24 h-24 text-gray-500" />
-                    </div>
-                    <div className="relative z-10">
-                        <p className="text-gray-600 dark:text-gray-400 text-sm font-bold uppercase tracking-wider mb-2">Est. Jejak Karbon</p>
-                        <div className="flex items-baseline gap-2">
-                            <span className="text-4xl font-black text-gray-900 dark:text-white">{currentStats.totalCarbon.toFixed(2)}</span>
-                            <span className="text-sm text-gray-500 dark:text-gray-400 font-medium">kgCO2e</span>
-                        </div>
-                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">Total Estimated Emissions</p>
-                    </div>
-                </div>
-            </div>
-
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
                 {/* Main Content: Weekly Table & History */}
                 <div className="lg:col-span-2 space-y-8">
-                    {/* Active Week Table */}
-                    <div className="glass-panel p-6 rounded-xl border border-white/10">
+                    {/* Active Week Card */}
+                    <div className="bg-white dark:bg-[#1a1c23] p-6 rounded-xl border border-gray-200 dark:border-white/10 shadow-sm">
                         {/* Week Navigation */}
                         <div className="flex items-center justify-between mb-6">
                             <div className="flex items-center gap-4">
-                                <div className="flex items-center bg-white/5 rounded-lg border border-white/10 p-1">
+                                <div className="flex items-center bg-gray-100 dark:bg-white/5 rounded-lg border border-gray-200 dark:border-white/10 p-1">
                                     <button
                                         onClick={() => handleWeekChange('prev')}
-                                        className="p-1 hover:bg-white/10 rounded-md transition-colors text-gray-400 hover:text-white"
+                                        className="p-1 hover:bg-gray-200 dark:hover:bg-white/10 rounded-md transition-colors text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white"
                                     >
                                         <ChevronLeft className="w-5 h-5" />
                                     </button>
-                                    <div className="px-3 py-1 flex items-center gap-2 text-sm font-medium text-white border-l border-r border-white/10 mx-1">
+                                    <div className="px-3 py-1 flex items-center gap-2 text-sm font-medium text-gray-900 dark:text-white border-l border-r border-gray-200 dark:border-white/10 mx-1">
                                         <Calendar className="w-4 h-4 text-blue-500" />
                                         <span>
                                             {weekLogs.length > 0 ? `${weekLogs[0].date} - ${weekLogs[4].date}` : "Loading..."}
@@ -728,31 +804,80 @@ export default function WasteReportPage() {
                                     </div>
                                     <button
                                         onClick={() => handleWeekChange('next')}
-                                        className="p-1 hover:bg-white/10 rounded-md transition-colors text-gray-400 hover:text-white"
+                                        className="p-1 hover:bg-gray-200 dark:hover:bg-white/10 rounded-md transition-colors text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white"
                                     >
                                         <ChevronRight className="w-5 h-5" />
                                     </button>
                                 </div>
 
+                                {/* Draft/Submitted Badge */}
+                                <div className={cn(
+                                    "flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium",
+                                    isSubmitted
+                                        ? "bg-emerald-100 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
+                                        : "bg-amber-100 dark:bg-amber-500/10 text-amber-700 dark:text-amber-400"
+                                )}>
+                                    {isSubmitted ? <BadgeCheck className="w-3.5 h-3.5" /> : <Save className="w-3.5 h-3.5" />}
+                                    {isSubmitted ? "Submitted" : "Draft"}
+                                </div>
+                            </div>
 
+                            {/* Save Draft Button — inside weekly card */}
+                            <button
+                                onClick={handleSave}
+                                disabled={!isDirty || isSaving}
+                                className={cn(
+                                    "flex items-center gap-2 px-4 py-2 rounded-lg font-semibold text-sm transition-all border",
+                                    isDirty
+                                        ? "bg-[#e8c559] text-[#171611] hover:bg-[#d4b44e] shadow-sm border-transparent"
+                                        : "bg-gray-100 dark:bg-white/5 text-gray-400 dark:text-gray-500 border-gray-200 dark:border-white/10 opacity-50 cursor-not-allowed"
+                                )}
+                            >
+                                <Save className="w-4 h-4" />
+                                Save Draft
+                            </button>
+                        </div>
+
+                        {/* Weekly Summary — per-page totals */}
+                        <div className="grid grid-cols-3 gap-3 mb-6">
+                            <div className="p-3 rounded-xl bg-emerald-50 dark:bg-emerald-500/5 border border-emerald-200 dark:border-emerald-500/20">
+                                <p className="text-emerald-600 dark:text-emerald-400 text-[10px] font-bold uppercase tracking-wider mb-1">Organik</p>
+                                <div className="flex items-baseline gap-1">
+                                    <span className="text-xl font-black text-gray-900 dark:text-white">{currentStats.totalGreenWeight.toFixed(2)}</span>
+                                    <span className="text-[10px] text-gray-500 dark:text-gray-400">kg</span>
+                                </div>
+                            </div>
+                            <div className="p-3 rounded-xl bg-yellow-50 dark:bg-yellow-500/5 border border-yellow-200 dark:border-yellow-500/20">
+                                <p className="text-yellow-600 dark:text-yellow-400 text-[10px] font-bold uppercase tracking-wider mb-1">Anorganik</p>
+                                <div className="flex items-baseline gap-1">
+                                    <span className="text-xl font-black text-gray-900 dark:text-white">{currentStats.totalYellowWeight.toFixed(2)}</span>
+                                    <span className="text-[10px] text-gray-500 dark:text-gray-400">kg</span>
+                                </div>
+                            </div>
+                            <div className="p-3 rounded-xl bg-gray-50 dark:bg-white/5 border border-gray-200 dark:border-white/10">
+                                <p className="text-gray-600 dark:text-gray-400 text-[10px] font-bold uppercase tracking-wider mb-1">Jejak Karbon</p>
+                                <div className="flex items-baseline gap-1">
+                                    <span className="text-xl font-black text-gray-900 dark:text-white">{currentStats.totalCarbon.toFixed(3)}</span>
+                                    <span className="text-[10px] text-gray-500 dark:text-gray-400">kgCO2e</span>
+                                </div>
                             </div>
                         </div>
 
                         <div className="overflow-x-auto">
                             <table className="w-full text-sm">
                                 <thead>
-                                    <tr className="text-left text-gray-500 border-b border-white/5">
+                                    <tr className="text-left text-gray-500 dark:text-gray-400 border-b border-gray-200 dark:border-white/5">
                                         <th className="pb-4 font-medium pl-2 w-24">Day</th>
                                         <th className="pb-4 font-medium text-center">Green ({config.binCapacity}L)</th>
                                         <th className="pb-4 font-medium text-center">Yellow ({config.binCapacity}L)</th>
                                     </tr>
                                 </thead>
-                                <tbody className="divide-y divide-white/5">
+                                <tbody className="divide-y divide-gray-100 dark:divide-white/5">
                                     {weekLogs.map((log, idx) => (
-                                        <tr key={log.day} className={`group hover:bg-white/[0.02] transition-colors ${isToday(log.fullDate) ? 'bg-white/5' : ''}`}>
+                                        <tr key={log.day} className={`group hover:bg-gray-50 dark:hover:bg-white/[0.02] transition-colors ${isToday(log.fullDate) ? 'bg-blue-50 dark:bg-white/5' : ''}`}>
                                             <td className="py-4 pl-2 align-top">
                                                 <div className="flex flex-col mt-2">
-                                                    <span className={`font-bold ${isToday(log.fullDate) ? 'text-white' : 'text-gray-400'}`}>
+                                                    <span className={`font-bold ${isToday(log.fullDate) ? 'text-gray-900 dark:text-white' : 'text-gray-500 dark:text-gray-400'}`}>
                                                         {log.day} {isToday(log.fullDate) && <span className="ml-2 text-[10px] bg-blue-500 text-white px-1.5 py-0.5 rounded">TODAY</span>}
                                                     </span>
                                                     <span className="text-xs text-gray-500">{log.date}</span>
@@ -778,7 +903,7 @@ export default function WasteReportPage() {
                                                             ${log.greenNote === 'new' ? 'bg-blue-500/10 text-blue-400 border-blue-500/20' :
                                                                 log.greenNote === 'leftover' ? 'bg-orange-500/10 text-orange-400 border-orange-500/20' :
                                                                     log.greenNote === 'holiday' ? 'bg-purple-500/10 text-purple-400 border-purple-500/20' :
-                                                                        'bg-white/5 text-gray-500 border-transparent hover:border-white/10'}`}
+                                                                        'bg-gray-100 dark:bg-white/5 text-gray-500 border-transparent hover:border-gray-300 dark:hover:border-white/10'}`}
                                                     >
                                                         {log.greenNote === 'new' && <span>✨ Baru</span>}
                                                         {log.greenNote === 'leftover' && <span>🕰️ Sisa</span>}
@@ -807,7 +932,7 @@ export default function WasteReportPage() {
                                                             ${log.yellowNote === 'new' ? 'bg-blue-500/10 text-blue-400 border-blue-500/20' :
                                                                 log.yellowNote === 'leftover' ? 'bg-orange-500/10 text-orange-400 border-orange-500/20' :
                                                                     log.yellowNote === 'holiday' ? 'bg-purple-500/10 text-purple-400 border-purple-500/20' :
-                                                                        'bg-white/5 text-gray-500 border-transparent hover:border-white/10'}`}
+                                                                        'bg-gray-100 dark:bg-white/5 text-gray-500 border-transparent hover:border-gray-300 dark:hover:border-white/10'}`}
                                                     >
                                                         {log.yellowNote === 'new' && <span>✨ Baru</span>}
                                                         {log.yellowNote === 'leftover' && <span>🕰️ Sisa</span>}
@@ -828,7 +953,7 @@ export default function WasteReportPage() {
                         <div className="flex items-center justify-between px-2">
                             <div className="flex items-center gap-3">
                                 <History className="w-5 h-5 text-gray-500" />
-                                <h3 className="font-bold text-white">Recent History</h3>
+                                <h3 className="font-bold text-gray-900 dark:text-white">Recent History</h3>
                             </div>
                             <Link href="/dashboard/sustainability/waste/history" className="text-xs text-blue-400 hover:text-blue-300 transition-colors">
                                 View Full History &rarr;
@@ -842,24 +967,24 @@ export default function WasteReportPage() {
                         )}
 
                         {recentHistory.map((report) => (
-                            <div key={report.id} className="glass-panel rounded-xl border border-white/5 overflow-hidden">
-                                <div className="p-4 bg-white/5 border-b border-white/5 flex items-center justify-between">
+                            <div key={report.id} className="rounded-xl border border-gray-200 dark:border-white/5 overflow-hidden bg-white dark:bg-transparent">
+                                <div className="p-4 bg-gray-50 dark:bg-white/5 border-b border-gray-200 dark:border-white/5 flex items-center justify-between">
                                     <div className="flex items-center gap-3">
-                                        <div className="p-2 rounded-lg bg-emerald-500/10 text-emerald-500">
+                                        <div className="p-2 rounded-lg bg-emerald-100 dark:bg-emerald-500/10 text-emerald-600 dark:text-emerald-500">
                                             <Check className="w-4 h-4" />
                                         </div>
                                         <div>
-                                            <h4 className="font-bold text-white text-sm">{report.weekRange}</h4>
-                                            <p className="text-[10px] text-gray-400">
+                                            <h4 className="font-bold text-gray-900 dark:text-white text-sm">{report.weekRange}</h4>
+                                            <p className="text-[10px] text-gray-500 dark:text-gray-400">
                                                 Submitted: {report.submittedAt}
                                             </p>
                                         </div>
                                     </div>
                                     <div className="text-right">
-                                        <p className="text-xs font-bold text-white">{report.totalCarbon.toFixed(2)} <span className="text-gray-500 font-normal">kgCO2e</span></p>
-                                        <p className="text-[10px] text-gray-400">
-                                            <span className="text-emerald-400">{report.totalGreenWeight.toFixed(1)}kg</span> /
-                                            <span className="text-yellow-400 ml-1">{report.totalYellowWeight.toFixed(1)}kg</span>
+                                        <p className="text-xs font-bold text-gray-900 dark:text-white">{report.totalCarbon.toFixed(2)} <span className="text-gray-500 font-normal">kgCO2e</span></p>
+                                        <p className="text-[10px] text-gray-500 dark:text-gray-400">
+                                            <span className="text-emerald-600 dark:text-emerald-400">{report.totalGreenWeight.toFixed(1)}kg</span> /
+                                            <span className="text-yellow-600 dark:text-yellow-400 ml-1">{report.totalYellowWeight.toFixed(1)}kg</span>
                                         </p>
                                     </div>
                                 </div>
@@ -870,13 +995,13 @@ export default function WasteReportPage() {
 
                 {/* Right Sidebar: Guidelines */}
                 <div className="space-y-6">
-                    <div className="glass-panel p-6 rounded-xl border border-white/10">
-                        <h3 className="font-bold text-white mb-4">Waste Separation Guide</h3>
+                    <div className="bg-white dark:bg-transparent p-6 rounded-xl border border-gray-200 dark:border-white/10">
+                        <h3 className="font-bold text-gray-900 dark:text-white mb-4">Waste Separation Guide</h3>
 
                         <div className="space-y-6">
                             <div className="relative pl-4 border-l-2 border-emerald-500">
-                                <h4 className="text-emerald-500 font-bold text-sm mb-2">🟢 Green Bin (Organik) - {config.binCapacity}L</h4>
-                                <ul className="text-xs text-gray-400 space-y-1 list-disc list-inside">
+                                <h4 className="text-emerald-600 dark:text-emerald-500 font-bold text-sm mb-2">🟢 Green Bin (Organik) - {config.binCapacity}L</h4>
+                                <ul className="text-xs text-gray-600 dark:text-gray-400 space-y-1 list-disc list-inside">
                                     <li>Sisa Makanan, Buah, Sayur</li>
                                     <li>Ampas Kopi</li>
                                     <li>Daun dan Ranting</li>
@@ -888,8 +1013,8 @@ export default function WasteReportPage() {
                             </div>
 
                             <div className="relative pl-4 border-l-2 border-yellow-500">
-                                <h4 className="text-yellow-500 font-bold text-sm mb-2">🟡 Yellow Bin (Anorganik) - {config.binCapacity}L</h4>
-                                <ul className="text-xs text-gray-400 space-y-1 list-disc list-inside">
+                                <h4 className="text-yellow-600 dark:text-yellow-500 font-bold text-sm mb-2">🟡 Yellow Bin (Anorganik) - {config.binCapacity}L</h4>
+                                <ul className="text-xs text-gray-600 dark:text-gray-400 space-y-1 list-disc list-inside">
                                     <li>Plastik, Kemasan</li>
                                     <li>Logam, Aluminium Foil</li>
                                     <li>Styrofoam, Karet</li>
@@ -902,9 +1027,9 @@ export default function WasteReportPage() {
                         </div>
                     </div>
 
-                    <div className="glass-panel p-6 rounded-xl bg-gradient-to-b from-blue-500/10 to-transparent border border-blue-500/20">
-                        <h3 className="font-bold text-blue-400 mb-2">💡 Operational Note</h3>
-                        <p className="text-sm text-gray-300 leading-relaxed">
+                    <div className="bg-white dark:bg-transparent p-6 rounded-xl bg-gradient-to-b from-blue-50 dark:from-blue-500/10 to-transparent border border-blue-200 dark:border-blue-500/20">
+                        <h3 className="font-bold text-blue-600 dark:text-blue-400 mb-2">💡 Operational Note</h3>
+                        <p className="text-sm text-gray-600 dark:text-gray-300 leading-relaxed">
                             Pastikan update status bin setiap <strong>pulang kerja (17:00)</strong>.
                             <br /><br />
                             <strong>✨ Baru:</strong> Sampah baru (dihitung).
@@ -912,6 +1037,12 @@ export default function WasteReportPage() {
                             <strong>🕰️ Sisa:</strong> Sisa kemarin (tidak dihitung).
                             <br />
                             <strong>🌴 Libur:</strong> Tidak ada sampah (0 kg).
+                            <br />
+                            <strong>🗑️ Empty:</strong> Sampah sudah diangkut (dihitung dari status hari sebelumnya).
+                            <br /><br />
+                            <strong>Save Draft:</strong> Simpan data sementara.
+                            <br />
+                            <strong>Submit:</strong> Finalisasi & masuk ke history.
                         </p>
                     </div>
                 </div>

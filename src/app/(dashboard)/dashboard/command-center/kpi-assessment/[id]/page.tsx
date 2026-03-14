@@ -72,6 +72,8 @@ interface SharingSessionItem {
     title: string;
     session_date: string;
     session_type: 'internal_training' | 'sharing_session';
+    _attended?: boolean;
+    _isSpeaker?: boolean;
 }
 
 
@@ -98,9 +100,19 @@ export default function AssessmentPage() {
     const [expandedSysRec, setExpandedSysRec] = useState<Record<string, boolean>>({});
     const [totalEligibleReviewers, setTotalEligibleReviewers] = useState<Record<string, number>>({});
 
+    // B1 - Sales Target state
+    const [b1SalesBooking, setB1SalesBooking] = useState(0);
+    const [b1AnnualTarget, setB1AnnualTarget] = useState(0);
+    const [b1Achievement, setB1Achievement] = useState(0);
+    const [b1Opportunities, setB1Opportunities] = useState<{ id: string; title: string; value: number }[]>([]);
+
+    // S3 - CSI (Client Satisfaction Index) state
+    const [csiProjects, setCsiProjects] = useState<{ id: string; name: string; csi: number }[]>([]);
+    const [csiAvg, setCsiAvg] = useState<{ avg: number; count: number }>({ avg: 0, count: 0 });
+
     // K2 & K3 Sharing Session / Internal Training state
+    const [k2Stats, setK2Stats] = useState<{ total: number; attended: number; attendancePct: number; speakerCount: number }>({ total: 0, attended: 0, attendancePct: 0, speakerCount: 0 });
     const [k2Sessions, setK2Sessions] = useState<SharingSessionItem[]>([]);
-    const [k2Count, setK2Count] = useState(0);
     const [k3Stats, setK3Stats] = useState<{ attended: number; total: number; percentage: number }>({ attended: 0, total: 0, percentage: 0 });
     const [k3Sessions, setK3Sessions] = useState<SharingSessionItem[]>([]);
 
@@ -257,18 +269,111 @@ export default function AssessmentPage() {
                     });
                 }
 
-                // 7b. Fetch K2 Sharing Sessions (where user is speaker, type = sharing_session)
-                const { data: speakerSessions } = await supabase
+                // 7b-pre. Fetch B1 - Sales Target (team total, stage='sales', tahun ini)
+                const currentYear = new Date().getFullYear();
+
+                const { data: b1Config } = await supabase
+                    .from('bisdev_config')
+                    .select('annual_target')
+                    .eq('year', currentYear)
+                    .maybeSingle();
+
+                const annualTarget = Number(b1Config?.annual_target) || 4000000000;
+                setB1AnnualTarget(annualTarget);
+
+                const { data: b1Opps } = await supabase
+                    .from('crm_opportunities')
+                    .select('id, title, value')
+                    .eq('stage', 'sales')
+                    .gte('created_at', `${currentYear}-01-01`)
+                    .lt('created_at', `${currentYear + 1}-01-01`);
+
+                if (b1Opps) {
+                    const salesBooking = b1Opps.reduce((s: number, o: any) => s + (Number(o.value) || 0), 0);
+                    setB1SalesBooking(salesBooking);
+                    setB1Achievement(annualTarget > 0 ? (salesBooking / annualTarget) * 100 : 0);
+                    setB1Opportunities(b1Opps.map((o: any) => ({ id: o.id, title: o.title, value: Number(o.value) || 0 })));
+                }
+
+                // 7a. Fetch S3 - CSI dari projects milik staff yang dinilai (lead + member + helper)
+                const { data: csiLeadProjects } = await supabase
+                    .from('projects')
+                    .select('id, name, csi')
+                    .eq('lead_id', profileId)
+                    .eq('category', 'project')
+                    .not('csi', 'is', null);
+
+                const { data: csiMemberProjects } = await supabase
+                    .from('project_members')
+                    .select('project:projects(id, name, csi, category)')
+                    .eq('profile_id', profileId);
+
+                const { data: csiHelperProjects } = await supabase
+                    .from('project_helpers')
+                    .select('project:projects(id, name, csi, category)')
+                    .eq('profile_id', profileId);
+
+                const csiMap = new Map<string, { id: string; name: string; csi: number }>();
+                csiLeadProjects?.forEach((p: any) => p.csi != null && csiMap.set(p.id, { id: p.id, name: p.name, csi: p.csi }));
+                csiMemberProjects?.forEach((m: any) => {
+                    const p = m.project;
+                    if (p?.category === 'project' && p.csi != null && !csiMap.has(p.id)) {
+                        csiMap.set(p.id, { id: p.id, name: p.name, csi: p.csi });
+                    }
+                });
+                csiHelperProjects?.forEach((h: any) => {
+                    const p = h.project;
+                    if (p?.category === 'project' && p.csi != null && !csiMap.has(p.id)) {
+                        csiMap.set(p.id, { id: p.id, name: p.name, csi: p.csi });
+                    }
+                });
+
+                const allCsiProjects = Array.from(csiMap.values());
+                setCsiProjects(allCsiProjects);
+                const avgCsi = allCsiProjects.length > 0
+                    ? allCsiProjects.reduce((s: number, p: any) => s + p.csi, 0) / allCsiProjects.length
+                    : 0;
+                setCsiAvg({ avg: avgCsi, count: allCsiProjects.length });
+
+                // 7b. Fetch K2: semua sharing sessions + kehadiran peserta + sesi sebagai speaker
+                const { data: allSharingSessions } = await supabase
                     .from('sharing_sessions')
-                    .select('id, title, session_date, session_type')
-                    .eq('speaker_id', profileId)
+                    .select('id, title, session_date, session_type, speaker_id')
                     .eq('session_type', 'sharing_session')
                     .gte('session_date', '2026-01-01')
                     .order('session_date', { ascending: false });
 
-                if (speakerSessions) {
-                    setK2Sessions(speakerSessions);
-                    setK2Count(speakerSessions.length);
+                if (allSharingSessions && allSharingSessions.length > 0) {
+                    const ssIds = allSharingSessions.map((s: any) => s.id);
+
+                    const { data: k2Participation } = await supabase
+                        .from('sharing_session_participants')
+                        .select('session_id')
+                        .eq('profile_id', profileId)
+                        .eq('participation_status', 'full')
+                        .in('session_id', ssIds);
+
+                    const attendedSet = new Set(k2Participation?.map((p: any) => p.session_id) || []);
+                    const speakerSet = new Set(
+                        allSharingSessions.filter((s: any) => s.speaker_id === profileId).map((s: any) => s.id)
+                    );
+                    // Pemateri dihitung hadir juga
+                    const effectiveAttendedSet = new Set([...attendedSet, ...speakerSet]);
+
+                    const total = allSharingSessions.length;
+                    const attended = effectiveAttendedSet.size;
+                    const speakerCount = speakerSet.size;
+                    const attendancePct = total > 0 ? (attended / total) * 100 : 0;
+
+                    setK2Stats({ total, attended, attendancePct, speakerCount });
+                    setK2Sessions(allSharingSessions.map((s: any) => ({
+                        id: s.id,
+                        title: s.title,
+                        session_date: s.session_date,
+                        session_type: s.session_type,
+                        _attended: attendedSet.has(s.id),
+                        _isSpeaker: speakerSet.has(s.id),
+                    })));
                 }
 
                 // 7c. Fetch K3 Internal Training Attendance
@@ -824,11 +929,59 @@ export default function AssessmentPage() {
                                                 );
                                             })()}
 
+                                            {/* SYSTEM RECOMMENDATION FOR B1 (SALES TARGET) */}
+                                            {metric.id === 'B1' && (
+                                                <div className="mt-2 p-3 rounded-lg bg-purple-500/10 border border-purple-500/20">
+                                                    <p className="text-[10px] text-purple-300 font-bold mb-1 flex items-center gap-1">
+                                                        <BarChart3 className="w-3 h-3" /> SYSTEM RECOMMENDATION
+                                                    </p>
+                                                    <div className="flex justify-between items-end mb-1">
+                                                        <span className="text-xs text-gray-300">Achievement:</span>
+                                                        <span className="text-sm font-bold text-white">
+                                                            {b1Achievement.toFixed(1)}%
+                                                            <span className="text-xs font-normal text-gray-400 ml-1">
+                                                                ({b1Achievement >= 120 ? 'Melampaui target' : b1Achievement >= 100 ? 'Tercapai' : b1Achievement >= 80 ? 'Mendekati' : 'Di bawah target'})
+                                                            </span>
+                                                        </span>
+                                                    </div>
+                                                    <div className="h-1.5 w-full bg-black/40 rounded-full overflow-hidden mb-1">
+                                                        <div className="h-full bg-purple-500 transition-all" style={{ width: `${Math.min(100, b1Achievement)}%` }} />
+                                                    </div>
+                                                    <div className="flex justify-between text-[10px] text-gray-400 mb-2">
+                                                        <span>Actual: <span className="text-white font-semibold">{new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(b1SalesBooking)}</span></span>
+                                                        <span>Target: <span className="text-gray-300">{new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(b1AnnualTarget)}</span></span>
+                                                    </div>
+                                                    <p className="text-[9px] text-gray-500 mb-2">
+                                                        → Score: {b1Achievement >= 120 ? '5' : b1Achievement >= 100 ? '4' : b1Achievement >= 80 ? '3' : b1Achievement >= 60 ? '2' : '1'}
+                                                        {' '}({b1Achievement >= 120 ? '≥ 120%' : b1Achievement >= 100 ? '100–119%' : b1Achievement >= 80 ? '80–99%' : b1Achievement >= 60 ? '60–79%' : '< 60%'})
+                                                    </p>
+                                                    <button
+                                                        onClick={() => setExpandedSysRec(p => ({ ...p, B1: !p.B1 }))}
+                                                        className="flex items-center gap-1 text-[10px] text-purple-400 hover:text-purple-300"
+                                                    >
+                                                        {expandedSysRec.B1 ? <ChevronUp className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
+                                                        {expandedSysRec.B1 ? 'Hide Detail' : 'View Detail'}
+                                                    </button>
+                                                    {expandedSysRec.B1 && (
+                                                        <div className="mt-2 space-y-1 max-h-40 overflow-y-auto animate-in fade-in slide-in-from-top-2 duration-200">
+                                                            {b1Opportunities.length === 0 ? (
+                                                                <p className="text-[10px] text-gray-500 italic">Belum ada sales opportunity tahun ini.</p>
+                                                            ) : b1Opportunities.map(o => (
+                                                                <div key={o.id} className="flex items-center justify-between text-[10px] p-1.5 rounded bg-black/20">
+                                                                    <span className="text-gray-300 flex-1 truncate">{o.title}</span>
+                                                                    <span className="ml-2 font-bold text-purple-300 shrink-0">{new Intl.NumberFormat('id-ID', { notation: 'compact', compactDisplay: 'short' }).format(o.value)}</span>
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            )}
+
                                             {/* SYSTEM RECOMMENDATION FOR B3 (CONVERSION RATE) */}
                                             {metric.id === 'B3' && (
                                                 <div className="mt-2 p-3 rounded-lg bg-purple-500/10 border border-purple-500/20">
                                                     <p className="text-[10px] text-purple-300 font-bold mb-1 flex items-center gap-1">
-                                                        <BarChart3 className="w-3 h-3" /> SYSTEM RECOMMENDATION (IMS Data)
+                                                        <BarChart3 className="w-3 h-3" /> SYSTEM RECOMMENDATION
                                                     </p>
                                                     <div className="flex justify-between items-end mb-1">
                                                         <span className="text-xs text-gray-300">Conversion Rate:</span>
@@ -873,29 +1026,86 @@ export default function AssessmentPage() {
                                                 </div>
                                             )}
 
+                                            {/* SYSTEM RECOMMENDATION FOR S3 (INDEKS KEPUASAN KLIEN) */}
+                                            {metric.id === 'S3' && (
+                                                <div className="mt-2 p-3 rounded-lg bg-indigo-500/10 border border-indigo-500/20">
+                                                    <p className="text-[10px] text-indigo-300 font-bold mb-1 flex items-center gap-1">
+                                                        <Star className="w-3 h-3" /> SYSTEM RECOMMENDATION
+                                                    </p>
+                                                    {csiAvg.count === 0 ? (
+                                                        <p className="text-[10px] text-gray-500 italic">Belum ada data CSI dari project.</p>
+                                                    ) : (
+                                                        <>
+                                                            <div className="flex justify-between items-end mb-1">
+                                                                <span className="text-xs text-gray-300">Rata-rata Indeks Kepuasan:</span>
+                                                                <span className="text-sm font-bold text-white">
+                                                                    {csiAvg.avg.toFixed(2)}
+                                                                    <span className="text-xs font-normal text-gray-400 ml-1">/ 5.0</span>
+                                                                </span>
+                                                            </div>
+                                                            <div className="h-1.5 w-full bg-black/40 rounded-full overflow-hidden mb-1">
+                                                                <div className="h-full bg-indigo-500 transition-all" style={{ width: `${(csiAvg.avg / 5) * 100}%` }} />
+                                                            </div>
+                                                            <p className="text-[9px] text-gray-500 mb-2">
+                                                                → Score: {csiAvg.avg >= 4.60 ? '5' : csiAvg.avg >= 4.00 ? '4' : csiAvg.avg >= 3.40 ? '3' : csiAvg.avg >= 2.80 ? '2' : '1'}
+                                                                {' '}({csiAvg.avg >= 4.60 ? 'Excellent ≥ 4.60' : csiAvg.avg >= 4.00 ? 'Sangat Baik' : csiAvg.avg >= 3.40 ? 'Baik' : csiAvg.avg >= 2.80 ? 'Cukup' : 'Kurang'})
+                                                                <span className="text-gray-600 ml-1">dari {csiAvg.count} project</span>
+                                                            </p>
+                                                            <button
+                                                                onClick={() => setExpandedSysRec(p => ({ ...p, S3: !p.S3 }))}
+                                                                className="flex items-center gap-1 text-[10px] text-indigo-400 hover:text-indigo-300"
+                                                            >
+                                                                {expandedSysRec.S3 ? <ChevronUp className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
+                                                                {expandedSysRec.S3 ? 'Hide Detail' : 'View Detail'}
+                                                            </button>
+                                                            {expandedSysRec.S3 && csiProjects.length > 0 && (
+                                                                <div className="mt-2 space-y-1 max-h-40 overflow-y-auto animate-in fade-in slide-in-from-top-2 duration-200">
+                                                                    {csiProjects.map(p => (
+                                                                        <div key={p.id} className="flex items-center justify-between text-[10px] p-1.5 rounded bg-black/20">
+                                                                            <span className="text-gray-300 flex-1 truncate">{p.name}</span>
+                                                                            <span className="ml-2 font-bold text-indigo-300 shrink-0">{p.csi.toFixed(1)}</span>
+                                                                        </div>
+                                                                    ))}
+                                                                </div>
+                                                            )}
+                                                        </>
+                                                    )}
+                                                </div>
+                                            )}
+
                                             {/* SYSTEM RECOMMENDATION FOR K2 (KNOWLEDGE SHARING) */}
                                             {metric.id === 'K2' && (
                                                 <div className="mt-2 p-3 rounded-lg bg-blue-500/10 border border-blue-500/20">
                                                     <p className="text-[10px] text-blue-300 font-bold mb-1 flex items-center gap-1">
-                                                        <BarChart3 className="w-3 h-3" /> SYSTEM RECOMMENDATION (IMS Data)
+                                                        <BarChart3 className="w-3 h-3" /> SYSTEM RECOMMENDATION
                                                     </p>
                                                     <div className="flex justify-between items-end mb-1">
-                                                        <span className="text-xs text-gray-300">Sharing Sessions Diadakan:</span>
+                                                        <span className="text-xs text-gray-300">Kehadiran Sharing Session:</span>
                                                         <span className="text-sm font-bold text-white">
-                                                            {k2Count} sesi
+                                                            {k2Stats.attendancePct.toFixed(0)}%
                                                             <span className="text-xs font-normal text-gray-400 ml-1">
-                                                                (per 6 bulan)
+                                                                ({k2Stats.attended}/{k2Stats.total} sesi)
                                                             </span>
                                                         </span>
                                                     </div>
                                                     <div className="h-1.5 w-full bg-black/40 rounded-full overflow-hidden mb-1">
-                                                        <div className="h-full bg-blue-500 transition-all" style={{ width: `${Math.min(100, (k2Count / 4) * 100)}%` }} />
+                                                        <div className="h-full bg-blue-500 transition-all" style={{ width: `${Math.min(100, k2Stats.attendancePct)}%` }} />
+                                                    </div>
+                                                    <div className="flex justify-between items-center mb-2">
+                                                        <span className="text-xs text-gray-400">Pemateri:</span>
+                                                        <span className={`text-xs font-bold ${k2Stats.speakerCount > 0 ? 'text-emerald-400' : 'text-gray-500'}`}>
+                                                            {k2Stats.speakerCount > 0 ? `${k2Stats.speakerCount}x` : 'Belum pernah'}
+                                                        </span>
                                                     </div>
                                                     <p className="text-[9px] text-gray-500 mb-2">
-                                                        → Score: {k2Count >= 4 ? '5' : k2Count >= 3 ? '4' : k2Count >= 2 ? '3' : k2Count >= 1 ? '2' : '1'}
-                                                        {' '}({k2Count >= 4 ? 'Sangat aktif' : k2Count >= 3 ? 'Aktif' : k2Count >= 2 ? 'Cukup' : k2Count >= 1 ? 'Minimal' : 'Tidak ada'})
+                                                        {(() => {
+                                                            const pct = k2Stats.attendancePct;
+                                                            const spk = k2Stats.speakerCount;
+                                                            const score = pct >= 80 && spk >= 1 ? 5 : pct >= 80 ? 4 : pct >= 60 ? 3 : pct >= 20 ? 2 : 1;
+                                                            const label = score === 5 ? 'Hadir ≥80% + Pemateri' : score === 4 ? 'Hadir ≥80%, Belum pemateri' : score === 3 ? 'Hadir 60–79%' : score === 2 ? 'Hadir 20–59%' : 'Hadir <20%';
+                                                            return `→ Score: ${score} (${label})`;
+                                                        })()}
                                                     </p>
-
                                                     <button
                                                         onClick={() => setExpandedSysRec(p => ({ ...p, K2: !p.K2 }))}
                                                         className="flex items-center gap-1 text-[10px] text-blue-400 hover:text-blue-300"
@@ -903,12 +1113,13 @@ export default function AssessmentPage() {
                                                         {expandedSysRec.K2 ? <ChevronUp className="w-3 h-3" /> : <Eye className="w-3 h-3" />}
                                                         {expandedSysRec.K2 ? 'Hide Detail' : 'View Detail'}
                                                     </button>
-
                                                     {expandedSysRec.K2 && k2Sessions.length > 0 && (
                                                         <div className="mt-2 space-y-1 max-h-40 overflow-y-auto animate-in fade-in slide-in-from-top-2 duration-200">
                                                             {k2Sessions.map(s => (
                                                                 <div key={s.id} className="flex items-center gap-2 text-[10px] p-1.5 rounded bg-black/20">
-                                                                    <span className="text-blue-400">📢</span>
+                                                                    <span className="w-4 text-center shrink-0">
+                                                                        {s._isSpeaker ? '📢' : s._attended ? '✅' : '❌'}
+                                                                    </span>
                                                                     <span className="text-gray-300 flex-1 truncate">{s.title}</span>
                                                                     <span className="text-gray-500 text-[9px] shrink-0">{new Date(s.session_date).toLocaleDateString('id-ID', { day: 'numeric', month: 'short' })}</span>
                                                                 </div>
@@ -922,7 +1133,7 @@ export default function AssessmentPage() {
                                             {metric.id === 'K3' && (
                                                 <div className="mt-2 p-3 rounded-lg bg-blue-500/10 border border-blue-500/20">
                                                     <p className="text-[10px] text-blue-300 font-bold mb-1 flex items-center gap-1">
-                                                        <BarChart3 className="w-3 h-3" /> SYSTEM RECOMMENDATION (IMS Data)
+                                                        <BarChart3 className="w-3 h-3" /> SYSTEM RECOMMENDATION
                                                     </p>
                                                     <div className="flex justify-between items-end mb-1">
                                                         <span className="text-xs text-gray-300">Kehadiran Training:</span>

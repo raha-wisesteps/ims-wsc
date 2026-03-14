@@ -139,7 +139,7 @@ export default function AssetDetailPage() {
 
     // Access Control
     const canEdit = profile && (
-        ['ceo', 'super_admin', 'hr'].includes(profile.role) ||
+        ['ceo', 'super_admin', 'hr', 'busdev'].includes(profile.role) ||
         profile.is_office_manager ||
         (asset?.created_by === profile.id)
     );

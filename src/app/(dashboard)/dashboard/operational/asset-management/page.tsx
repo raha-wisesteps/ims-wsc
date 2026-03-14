@@ -86,7 +86,7 @@ export default function AssetManagementPage() {
 
     // Access Control
     const canManage = profile && (
-        ['ceo', 'super_admin', 'hr'].includes(profile.role) ||
+        ['ceo', 'super_admin', 'hr', 'busdev'].includes(profile.role) ||
         profile.is_office_manager
     );
 

@@ -69,25 +69,48 @@ export default function WasteHistoryPage() {
         }
     };
 
-    const calculateDailyStats = (log: WasteLog, config: typeof DEFAULT_CONFIG) => {
+    const calculateDailyStats = (log: WasteLog, config: typeof DEFAULT_CONFIG, prevLog?: WasteLog | null) => {
         const getFillMultiplier = (status: string) => {
             if (status === 'full') return 1.0;
             if (status === 'half') return 0.5;
             return 0;
         };
 
-        const calculateBin = (status: string, note: string | null, density: number, emissionFactor: number) => {
-            if (status === 'empty' || note === 'holiday' || note === 'leftover' || note === null) {
-                return { volume: 0, weight: 0, carbon: 0 };
+        const calculateBin = (status: string, note: string | null, density: number, emissionFactor: number, type: 'green' | 'yellow') => {
+            // Holiday → always skip
+            if (note === 'holiday') return { volume: 0, weight: 0, carbon: 0 };
+
+            // Empty status — waste was collected/angkut
+            if (status === 'empty') {
+                if (note === 'new') {
+                    // empty + new = sampah baru masuk dan langsung diangkut
+                    const volume = config.binCapacity * 1.0;
+                    const weight = volume * density;
+                    const carbon = weight * emissionFactor;
+                    return { volume, weight, carbon };
+                }
+                // empty + null/leftover = lihat status hari sebelumnya
+                const prevStatus = prevLog
+                    ? (type === 'green' ? prevLog.green_status : prevLog.yellow_status)
+                    : 'empty';
+                const volume = config.binCapacity * getFillMultiplier(prevStatus);
+                const weight = volume * density;
+                const carbon = weight * emissionFactor;
+                return { volume, weight, carbon };
             }
+
+            // Leftover on non-empty → skip (don't double count)
+            if (note === 'leftover') return { volume: 0, weight: 0, carbon: 0 };
+
+            // Half or Full (note is 'new' or null) → calculate current fill level
             const volume = config.binCapacity * getFillMultiplier(status);
             const weight = volume * density;
             const carbon = weight * emissionFactor;
             return { volume, weight, carbon };
         };
 
-        const green = calculateBin(log.green_status, log.green_note, config.greenDensity, config.greenEmissionFactor);
-        const yellow = calculateBin(log.yellow_status, log.yellow_note, config.yellowDensity, config.yellowEmissionFactor);
+        const green = calculateBin(log.green_status, log.green_note, config.greenDensity, config.greenEmissionFactor, 'green');
+        const yellow = calculateBin(log.yellow_status, log.yellow_note, config.yellowDensity, config.yellowEmissionFactor, 'yellow');
 
         return {
             greenVolume: green.volume,
@@ -116,14 +139,15 @@ export default function WasteHistoryPage() {
                 return;
             }
 
-            // 2. Prepare Data for Excel
-            const excelData = (logs as WasteLog[]).map(log => {
+            // 2. Prepare Data for Excel (sort ascending for prev-day logic)
+            const sortedLogs = (logs as WasteLog[]).sort((a, b) => a.date.localeCompare(b.date));
+
+            const excelData = sortedLogs.map((log, index) => {
                 // Find matching report to get the config used for that week
                 const logDate = new Date(log.date);
                 const matchingReport = reports.find(r => {
                     const start = new Date(r.week_start);
                     const end = new Date(r.week_end);
-                    // Normalize times for comparison
                     start.setHours(0, 0, 0, 0);
                     end.setHours(23, 59, 59, 999);
                     logDate.setHours(12, 0, 0, 0);
@@ -139,7 +163,9 @@ export default function WasteHistoryPage() {
                     yellowEmissionFactor: matchingReport.yellow_emission_factor ?? DEFAULT_CONFIG.yellowEmissionFactor
                 } : DEFAULT_CONFIG;
 
-                const stats = calculateDailyStats(log, config);
+                // Get previous day's log for empty calculation
+                const prevLog = index > 0 ? sortedLogs[index - 1] : null;
+                const stats = calculateDailyStats(log, config, prevLog);
 
                 return {
                     "Date": log.date,
@@ -251,10 +277,10 @@ export default function WasteHistoryPage() {
             </div>
 
             {/* List */}
-            <div className="glass-panel rounded-xl border border-white/10 overflow-hidden">
+            <div className="bg-white dark:bg-transparent rounded-xl border border-gray-200 dark:border-white/10 overflow-hidden">
                 <div className="overflow-x-auto">
-                    <table className="w-full text-sm text-left text-gray-400">
-                        <thead className="text-xs text-gray-500 uppercase bg-white/5">
+                    <table className="w-full text-sm text-left text-gray-600 dark:text-gray-400">
+                        <thead className="text-xs text-gray-500 uppercase bg-gray-50 dark:bg-white/5">
                             <tr>
                                 <th scope="col" className="px-6 py-4">Week Range</th>
                                 <th scope="col" className="px-6 py-4">Submitted At</th>
@@ -264,7 +290,7 @@ export default function WasteHistoryPage() {
                                 <th scope="col" className="px-6 py-4 text-center">Action</th>
                             </tr>
                         </thead>
-                        <tbody className="divide-y divide-white/5">
+                        <tbody className="divide-y divide-gray-100 dark:divide-white/5">
                             {isLoading ? (
                                 <tr>
                                     <td colSpan={6} className="px-6 py-8 text-center text-gray-500">
@@ -280,27 +306,27 @@ export default function WasteHistoryPage() {
                                 </tr>
                             ) : (
                                 reports.map((report) => (
-                                    <tr key={report.id} className="bg-transparent hover:bg-white/[0.02] transition-colors">
-                                        <td className="px-6 py-4 font-medium text-white flex items-center gap-2">
+                                    <tr key={report.id} className="bg-transparent hover:bg-gray-50 dark:hover:bg-white/[0.02] transition-colors">
+                                        <td className="px-6 py-4 font-medium text-gray-900 dark:text-white flex items-center gap-2">
                                             <Calendar className="w-4 h-4 text-emerald-500" />
                                             {new Date(report.week_start).toLocaleDateString()} - {new Date(report.week_end).toLocaleDateString()}
                                         </td>
                                         <td className="px-6 py-4">
                                             {new Date(report.submitted_at).toLocaleString()}
                                         </td>
-                                        <td className="px-6 py-4 text-center text-emerald-400 font-bold">
+                                        <td className="px-6 py-4 text-center text-emerald-600 dark:text-emerald-400 font-bold">
                                             {report.total_green_weight.toFixed(2)}
                                         </td>
-                                        <td className="px-6 py-4 text-center text-yellow-400 font-bold">
+                                        <td className="px-6 py-4 text-center text-yellow-600 dark:text-yellow-400 font-bold">
                                             {report.total_yellow_weight.toFixed(2)}
                                         </td>
-                                        <td className="px-6 py-4 text-right text-white font-bold text-base">
+                                        <td className="px-6 py-4 text-right text-gray-900 dark:text-white font-bold text-base">
                                             {report.total_carbon.toFixed(3)}
                                         </td>
                                         <td className="px-6 py-4 text-center">
                                             <button
                                                 onClick={() => handleDelete(report.id, report.week_start, report.week_end)}
-                                                className="p-2 rounded-lg text-gray-500 hover:text-red-500 hover:bg-white/5 transition-colors"
+                                                className="p-2 rounded-lg text-gray-500 hover:text-red-500 hover:bg-gray-100 dark:hover:bg-white/5 transition-colors"
                                                 title="Delete Report"
                                             >
                                                 <Trash2 className="w-4 h-4" />

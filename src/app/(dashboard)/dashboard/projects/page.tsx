@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
+import { useAuth } from "@/contexts/AuthContext";
 import Image from "next/image";
 import { Briefcase, ChevronRight } from "lucide-react";
 
@@ -51,6 +52,7 @@ interface Project {
     is_archived: boolean;
     proposal_status?: 'success' | 'fail' | null;
     proposal_reason?: string | null;
+    csi?: number | null;
 }
 
 interface Profile {
@@ -76,6 +78,7 @@ const getInitials = (name: string) => {
 
 export default function ProjectBoardPage() {
     const supabase = createClient();
+    const { profile: authProfile } = useAuth();
     const [searchQuery, setSearchQuery] = useState("");
     const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
     const [projects, setProjects] = useState<Project[]>([]);
@@ -134,6 +137,7 @@ export default function ProjectBoardPage() {
         drive_link: string;
         proposal_status?: 'success' | 'fail' | null;
         proposal_reason?: string | null;
+        csi: number | null;
     }>({
         progress: 0,
         status: "planning",
@@ -141,7 +145,8 @@ export default function ProjectBoardPage() {
         jira_link: "",
         drive_link: "",
         proposal_status: null,
-        proposal_reason: null
+        proposal_reason: null,
+        csi: null
     });
     const [detailsNewHelper, setDetailsNewHelper] = useState({ name: "", profileId: "", startDate: "", endDate: "" });
 
@@ -213,7 +218,8 @@ export default function ProjectBoardPage() {
                     drive_link: p.drive_link,
                     is_archived: p.is_archived,
                     proposal_status: p.proposal_status,
-                    proposal_reason: p.proposal_reason
+                    proposal_reason: p.proposal_reason,
+                    csi: p.csi ?? null
                 }));
                 setProjects(formattedProjects);
             }
@@ -617,7 +623,8 @@ export default function ProjectBoardPage() {
             jira_link: project.jira_link || "",
             drive_link: project.drive_link || "",
             proposal_status: project.proposal_status || null,
-            proposal_reason: project.proposal_reason || null
+            proposal_reason: project.proposal_reason || null,
+            csi: project.csi ?? null
         });
         setDetailsNewHelper({ name: "", profileId: "", startDate: "", endDate: "" });
         setIsDetailsOpen(true);
@@ -649,7 +656,8 @@ export default function ProjectBoardPage() {
                     jira_link: detailsEditData.jira_link || null,
                     drive_link: detailsEditData.drive_link || null,
                     proposal_status: detailsEditData.proposal_status || null,
-                    proposal_reason: detailsEditData.proposal_reason || null
+                    proposal_reason: detailsEditData.proposal_reason || null,
+                    csi: detailsEditData.csi ?? null
                 })
                 .eq('id', selectedProject.id);
 
@@ -1805,6 +1813,58 @@ export default function ProjectBoardPage() {
                                         </div>
                                     </div>
                                 )}
+
+                                {/* CSI Section — only for category = 'project' with RBAC */}
+                                {selectedProject.category === 'project' && (() => {
+                                    const canSeeCsi =
+                                        authProfile?.role === 'ceo' ||
+                                        authProfile?.role === 'super_admin' ||
+                                        authProfile?.is_busdev === true ||
+                                        authProfile?.id === selectedProject.lead.id;
+
+                                    if (!canSeeCsi) return null;
+
+                                    return (
+                                        <div>
+                                            <h3 className="text-sm font-bold text-[var(--text-muted)] uppercase tracking-wider mb-3">Client Satisfactory Index</h3>
+                                            <div className="bg-black/5 dark:bg-white/5 rounded-xl p-4 border border-[var(--glass-border)]">
+                                                <label className="block text-xs font-semibold text-[var(--text-secondary)] mb-2">
+                                                    CSI Score
+                                                    <span className="ml-2 font-normal text-[var(--text-muted)]">(0.0 – 5.0)</span>
+                                                </label>
+                                                <input
+                                                    type="number"
+                                                    step="0.1"
+                                                    min="0"
+                                                    max="5"
+                                                    placeholder="0.0 – 5.0"
+                                                    className="w-full rounded-xl border border-[var(--glass-border)] bg-white dark:bg-[#2a2f2e] px-4 py-3 text-sm text-[var(--text-primary)] focus:ring-2 focus:ring-[#e8c559]/50 focus:border-[#e8c559]"
+                                                    value={detailsEditData.csi ?? ""}
+                                                    onChange={(e) => {
+                                                        const val = e.target.value;
+                                                        if (val === "") {
+                                                            setDetailsEditData({ ...detailsEditData, csi: null });
+                                                        } else {
+                                                            const num = parseFloat(val);
+                                                            if (!isNaN(num) && num >= 0 && num <= 5) {
+                                                                setDetailsEditData({ ...detailsEditData, csi: num });
+                                                            }
+                                                        }
+                                                    }}
+                                                />
+                                                {detailsEditData.csi !== null && (
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setDetailsEditData({ ...detailsEditData, csi: null })}
+                                                        className="mt-2 text-xs font-bold text-rose-500 hover:text-rose-600 bg-rose-50 hover:bg-rose-100 dark:bg-rose-500/10 dark:hover:bg-rose-500/20 px-2 py-1 rounded-md transition-colors"
+                                                    >
+                                                        Clear
+                                                    </button>
+                                                )}
+                                            </div>
+                                        </div>
+                                    );
+                                })()}
 
                                 {/* Team Section (Read Only) */}
                                 <div>
